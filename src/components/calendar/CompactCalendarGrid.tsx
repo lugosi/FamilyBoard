@@ -35,7 +35,7 @@ export function CompactCalendarGrid({
   onSelectEvent,
 }: Props) {
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-800 bg-black text-[11px] leading-tight text-slate-200">
+    <div className="overflow-hidden rounded-lg border border-slate-800 bg-black text-[10px] leading-tight text-slate-200 sm:text-[11px]">
       <div className="grid grid-cols-7 border-b border-slate-700/90">
         {WEEKDAY.map((d) => (
           <div
@@ -134,7 +134,7 @@ function CompactWeekBlock({
           return (
             <div
               key={key}
-              className={`flex min-h-[5.25rem] flex-col gap-px p-0.5 ${
+              className={`flex min-h-[4.5rem] flex-col gap-px p-0.5 sm:min-h-[5.25rem] lg:min-h-[5.5rem] xl:min-h-[6.25rem] ${
                 today ? "bg-slate-900/40" : ""
               }`}
             >

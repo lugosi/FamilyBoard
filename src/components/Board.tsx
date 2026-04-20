@@ -361,16 +361,16 @@ export function Board() {
     | undefined;
 
   return (
-    <div className="min-h-full bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-4">
+    <div className="flex min-h-dvh flex-col bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+      <div className="box-border flex w-full min-w-0 flex-1 flex-col gap-2 px-2 py-2 sm:gap-3 sm:px-4 sm:py-3 md:gap-4 lg:px-6 lg:py-4 xl:px-8 xl:py-5 2xl:px-10">
         {message ?? urlBanner ? (
           <p className="rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2 text-sm text-slate-100">
             {message ?? urlBanner}
           </p>
         ) : null}
 
-        <div className="grid gap-6 lg:grid-cols-3">
-          <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg shadow-slate-950/40 lg:col-span-2">
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
+          <section className="min-w-0 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
             {!status?.googleConfigured ? (
               <p className="mt-4 text-sm text-slate-400">
                 Set{" "}
@@ -409,7 +409,7 @@ export function Board() {
                     />
                   )}
                 </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-800 pt-3">
+                <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-800 pt-3 sm:gap-2">
                   <label className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/50 px-3 py-2 text-xs text-slate-300">
                     Calendar
                     <select
@@ -463,8 +463,8 @@ export function Board() {
             ) : null}
           </section>
 
-          <div className="flex flex-col gap-6">
-            <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-slate-950/40">
+          <div className="flex min-w-0 flex-col gap-3 sm:gap-4">
+            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-lg font-medium text-white">Weather</h2>
                 <button
@@ -542,7 +542,7 @@ export function Board() {
               )}
             </section>
 
-            <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-slate-950/40">
+            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-lg font-medium text-white">Hue</h2>
                 <button
