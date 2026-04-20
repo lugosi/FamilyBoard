@@ -21,10 +21,10 @@ See `.env.example`. Use a writable `DATA_DIR` in production so OAuth tokens and 
 
 Pushes to `main` build the image and push to **GitHub Container Registry** via Actions.
 
-- Image: **`ghcr.io/lugosi/family-board:latest`** (replace `lugosi` if you fork).
-- After the first run: GitHub → **Packages** → **family-board** → **Package settings** → set visibility to **Public** if you want TrueNAS to pull without registry login.
+- Image: **`ghcr.io/lugosi/familyboard:latest`** (replace `lugosi` if you fork).
+- After the first run: GitHub → **Packages** → **familyboard** → **Package settings** → set visibility to **Public** if you want TrueNAS to pull without registry login.
 
-TrueNAS Custom App → image repository `ghcr.io/lugosi/family-board`, tag `latest`.
+TrueNAS Custom App → image repository `ghcr.io/lugosi/familyboard`, tag `latest`.
 
 ## Docker (local)
 

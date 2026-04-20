@@ -1,5 +1,5 @@
 # Build and push to GitHub Container Registry (ghcr.io) on each push to main.
-# TrueNAS: use image ghcr.io/<owner>/family-board:latest (set visibility to Public if you want unauthenticated pull).
+# TrueNAS: use image ghcr.io/<owner>/familyboard:latest (set visibility to Public if you want unauthenticated pull).
 
 name: Publish Docker image
 
@@ -33,8 +33,8 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          # Lowercase path — required by OCI registries; matches repo name family-board
-          images: ghcr.io/${{ github.repository_owner }}/family-board
+          # Lowercase path for OCI registries.
+          images: ghcr.io/${{ github.repository_owner }}/familyboard
           tags: |
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
             type=sha,prefix=
