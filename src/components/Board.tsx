@@ -103,6 +103,25 @@ export function Board() {
     return null;
   }, [search]);
 
+  const alertText = message ?? urlBanner;
+  /** Exact text of the last dismissed alert; cleared when there is no alert. */
+  const [dismissedAlertSignature, setDismissedAlertSignature] = useState<
+    string | null
+  >(null);
+  useEffect(() => {
+    if (alertText !== null) return;
+    queueMicrotask(() => {
+      setDismissedAlertSignature(null);
+    });
+  }, [alertText]);
+  const showBanner =
+    Boolean(alertText) && alertText !== dismissedAlertSignature;
+  const calendarComfortable = !showBanner;
+
+  function dismissAlertBanner() {
+    if (alertText) setDismissedAlertSignature(alertText);
+  }
+
   const fetchBoard = useCallback(
     async (signal?: AbortSignal) => {
       const sRes = await fetch("/api/auth/status", { signal });
@@ -361,16 +380,26 @@ export function Board() {
     | undefined;
 
   return (
-    <div className="flex min-h-dvh flex-col bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
-      <div className="box-border flex w-full min-w-0 flex-1 flex-col gap-2 px-2 py-2 sm:gap-3 sm:px-4 sm:py-3 md:gap-4 lg:px-6 lg:py-4 xl:px-8 xl:py-5 2xl:px-10">
-        {message ?? urlBanner ? (
-          <p className="rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2 text-sm text-slate-100">
-            {message ?? urlBanner}
-          </p>
+    <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+      <div className="box-border flex min-h-0 w-full min-w-0 flex-1 flex-col gap-2 overflow-hidden px-2 py-2 sm:gap-3 sm:px-4 sm:py-3 md:gap-4 lg:px-6 lg:py-4 xl:px-8 xl:py-5 2xl:px-10">
+        {showBanner ? (
+          <div className="flex shrink-0 items-start gap-2 rounded-lg border border-slate-700 bg-slate-800/60 py-2 pl-3 pr-2 text-sm text-slate-100">
+            <p className="min-w-0 flex-1 pt-0.5 leading-snug">{alertText}</p>
+            <button
+              type="button"
+              className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-slate-700/80 hover:text-white"
+              aria-label="Dismiss notification"
+              onClick={dismissAlertBanner}
+            >
+              <span className="block text-lg leading-none" aria-hidden>
+                ×
+              </span>
+            </button>
+          </div>
         ) : null}
 
-        <div className="grid min-w-0 grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
-          <section className="min-w-0 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
+        <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overflow-x-hidden sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
+          <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4 lg:h-full lg:min-h-0">
             {!status?.googleConfigured ? (
               <p className="mt-4 text-sm text-slate-400">
                 Set{" "}
@@ -397,19 +426,22 @@ export function Board() {
 
             {status?.googleLinked ? (
               <>
-                <div className="mt-4">
+                <div className="mt-4 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                   {weekStarts.length === 0 ? (
                     <p className="text-sm text-slate-400">No weeks in this range.</p>
                   ) : (
-                    <CompactCalendarGrid
-                      weekStarts={weekStarts}
-                      events={events}
-                      showCalendarSource={selectedCalendarId === "__all__"}
-                      onSelectEvent={(ev) => openEdit(ev)}
-                    />
+                    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+                      <CompactCalendarGrid
+                        weekStarts={weekStarts}
+                        events={events}
+                        showCalendarSource={selectedCalendarId === "__all__"}
+                        comfortable={calendarComfortable}
+                        onSelectEvent={(ev) => openEdit(ev)}
+                      />
+                    </div>
                   )}
                 </div>
-                <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-800 pt-3 sm:gap-2">
+                <div className="mt-3 flex shrink-0 flex-wrap items-center gap-1.5 border-t border-slate-800 pt-3 sm:gap-2">
                   <label className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/50 px-3 py-2 text-xs text-slate-300">
                     Calendar
                     <select
@@ -463,7 +495,7 @@ export function Board() {
             ) : null}
           </section>
 
-          <div className="flex min-w-0 flex-col gap-3 sm:gap-4">
+          <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto sm:gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto">
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-lg font-medium text-white">Weather</h2>

@@ -20,6 +20,8 @@ type Props = {
   weekStarts: Date[];
   events: GEvent[];
   showCalendarSource?: boolean;
+  /** Larger type and day cells when the layout has extra vertical room (e.g. alert dismissed). */
+  comfortable?: boolean;
   onSelectEvent: (ev: GEvent) => void;
 };
 
@@ -32,15 +34,23 @@ export function CompactCalendarGrid({
   weekStarts,
   events,
   showCalendarSource = false,
+  comfortable = false,
   onSelectEvent,
 }: Props) {
+  const rootText = comfortable
+    ? "text-[11px] leading-tight text-slate-200 sm:text-[12px]"
+    : "text-[10px] leading-tight text-slate-200 sm:text-[11px]";
+  const headText = comfortable
+    ? "py-1.5 text-[11px] font-medium tracking-wide text-slate-500"
+    : "py-1 text-[10px] font-medium tracking-wide text-slate-500";
+
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-800 bg-black text-[10px] leading-tight text-slate-200 sm:text-[11px]">
+    <div className={`overflow-hidden rounded-lg border border-slate-800 bg-black ${rootText}`}>
       <div className="grid grid-cols-7 border-b border-slate-700/90">
         {WEEKDAY.map((d) => (
           <div
             key={d}
-            className="border-l border-slate-800 py-1 text-center text-[10px] font-medium tracking-wide text-slate-500 first:border-l-0"
+            className={`border-l border-slate-800 text-center first:border-l-0 ${headText}`}
           >
             {d}
           </div>
@@ -52,6 +62,7 @@ export function CompactCalendarGrid({
           weekStartMonday={ws}
           events={events}
           showCalendarSource={showCalendarSource}
+          comfortable={comfortable}
           onSelectEvent={onSelectEvent}
         />
       ))}
@@ -63,11 +74,13 @@ function CompactWeekBlock({
   weekStartMonday,
   events,
   showCalendarSource,
+  comfortable,
   onSelectEvent,
 }: {
   weekStartMonday: Date;
   events: GEvent[];
   showCalendarSource: boolean;
+  comfortable: boolean;
   onSelectEvent: (ev: GEvent) => void;
 }) {
   const bars = useMemo(
@@ -87,7 +100,9 @@ function CompactWeekBlock({
             return (
               <div
                 key={laneIndex}
-                className="grid min-h-[15px] grid-cols-7 border-b border-slate-900 bg-black/50"
+                className={`grid grid-cols-7 border-b border-slate-900 bg-black/50 ${
+                  comfortable ? "min-h-[18px]" : "min-h-[15px]"
+                }`}
               >
                 {inLane.map((bar) => {
                   const span = bar.endCol - bar.startCol + 1;
@@ -96,7 +111,9 @@ function CompactWeekBlock({
                       key={`${bar.event.id ?? bar.event.summary}-${laneIndex}-${bar.startCol}`}
                       type="button"
                       onClick={() => onSelectEvent(bar.event)}
-                      className={`mx-px truncate rounded px-0.5 py-px text-left text-[10px] font-medium shadow-sm ${eventBarClass(bar.event.summary)}`}
+                      className={`mx-px truncate rounded px-0.5 py-px text-left font-medium shadow-sm ${
+                        comfortable ? "text-[11px]" : "text-[10px]"
+                      } ${eventBarClass(bar.event.summary)}`}
                       // For "All calendars", use source calendar color for easier scanning.
                       style={{
                         gridColumnStart: bar.startCol + 1,
@@ -131,20 +148,38 @@ function CompactWeekBlock({
               ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
               : String(d.getDate());
 
+          const dayMinH = comfortable
+            ? "min-h-[5.25rem] sm:min-h-[6rem] lg:min-h-[6.5rem] xl:min-h-[7.25rem]"
+            : "min-h-[4.5rem] sm:min-h-[5.25rem] lg:min-h-[5.5rem] xl:min-h-[6.25rem]";
+
           return (
             <div
               key={key}
-              className={`flex min-h-[4.5rem] flex-col gap-px p-0.5 sm:min-h-[5.25rem] lg:min-h-[5.5rem] xl:min-h-[6.25rem] ${
+              className={`flex flex-col gap-px p-0.5 ${dayMinH} ${
                 today ? "bg-slate-900/40" : ""
               }`}
             >
-              <div className="flex h-5 shrink-0 items-start justify-center">
+              <div
+                className={`flex shrink-0 items-start justify-center ${
+                  comfortable ? "h-6" : "h-5"
+                }`}
+              >
                 {today ? (
-                  <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-0.5 text-[11px] font-medium text-white">
+                  <span
+                    className={`flex items-center justify-center rounded-full bg-blue-600 px-0.5 font-medium text-white ${
+                      comfortable
+                        ? "h-5 min-w-[20px] text-xs"
+                        : "h-[18px] min-w-[18px] text-[11px]"
+                    }`}
+                  >
                     {d.getDate()}
                   </span>
                 ) : (
-                  <span className="text-[11px] text-slate-400">{dayLabel}</span>
+                  <span
+                    className={`text-slate-400 ${comfortable ? "text-xs" : "text-[11px]"}`}
+                  >
+                    {dayLabel}
+                  </span>
                 )}
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-px">
@@ -169,7 +204,11 @@ function CompactWeekBlock({
                             : undefined
                         }
                       />
-                      <span className="min-w-0 truncate text-[10px] text-slate-200">
+                      <span
+                        className={`min-w-0 truncate text-slate-200 ${
+                          comfortable ? "text-[11px]" : "text-[10px]"
+                        }`}
+                      >
                         <span className="text-slate-500">
                           {formatCompactTime(t)}{" "}
                         </span>
@@ -184,7 +223,11 @@ function CompactWeekBlock({
                   );
                 })}
                 {more > 0 ? (
-                  <span className="pl-2 text-[10px] text-slate-500">{more} more</span>
+                  <span
+                    className={`pl-2 text-slate-500 ${comfortable ? "text-[11px]" : "text-[10px]"}`}
+                  >
+                    {more} more
+                  </span>
                 ) : null}
               </div>
             </div>
