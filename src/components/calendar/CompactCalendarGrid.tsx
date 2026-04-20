@@ -19,10 +19,21 @@ const VISIBLE_TIMED = 4;
 type Props = {
   weekStarts: Date[];
   events: GEvent[];
+  showCalendarSource?: boolean;
   onSelectEvent: (ev: GEvent) => void;
 };
 
-export function CompactCalendarGrid({ weekStarts, events, onSelectEvent }: Props) {
+type SourceEvent = GEvent & {
+  sourceCalendarSummary?: string;
+  sourceCalendarColor?: string | null;
+};
+
+export function CompactCalendarGrid({
+  weekStarts,
+  events,
+  showCalendarSource = false,
+  onSelectEvent,
+}: Props) {
   return (
     <div className="overflow-hidden rounded-lg border border-slate-800 bg-black text-[11px] leading-tight text-slate-200">
       <div className="grid grid-cols-7 border-b border-slate-700/90">
@@ -40,6 +51,7 @@ export function CompactCalendarGrid({ weekStarts, events, onSelectEvent }: Props
           key={ws.getTime()}
           weekStartMonday={ws}
           events={events}
+          showCalendarSource={showCalendarSource}
           onSelectEvent={onSelectEvent}
         />
       ))}
@@ -50,10 +62,12 @@ export function CompactCalendarGrid({ weekStarts, events, onSelectEvent }: Props
 function CompactWeekBlock({
   weekStartMonday,
   events,
+  showCalendarSource,
   onSelectEvent,
 }: {
   weekStartMonday: Date;
   events: GEvent[];
+  showCalendarSource: boolean;
   onSelectEvent: (ev: GEvent) => void;
 }) {
   const bars = useMemo(
@@ -83,9 +97,13 @@ function CompactWeekBlock({
                       type="button"
                       onClick={() => onSelectEvent(bar.event)}
                       className={`mx-px truncate rounded px-0.5 py-px text-left text-[10px] font-medium shadow-sm ${eventBarClass(bar.event.summary)}`}
+                      // For "All calendars", use source calendar color for easier scanning.
                       style={{
                         gridColumnStart: bar.startCol + 1,
                         gridColumnEnd: `span ${span}`,
+                        ...(showCalendarSource
+                          ? sourceCalendarBarStyle(bar.event as SourceEvent)
+                          : {}),
                       }}
                       title={bar.event.summary ?? ""}
                     >
@@ -140,12 +158,26 @@ function CompactWeekBlock({
                       className="flex min-w-0 items-start gap-0.5 rounded px-px text-left hover:bg-white/5"
                     >
                       <span
-                        className={`mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full ${eventColorDotClass(ev.summary)}`}
+                        className={`mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full ${
+                          showCalendarSource
+                            ? ""
+                            : eventColorDotClass(ev.summary)
+                        }`}
+                        style={
+                          showCalendarSource
+                            ? sourceCalendarDotStyle(ev as SourceEvent)
+                            : undefined
+                        }
                       />
                       <span className="min-w-0 truncate text-[10px] text-slate-200">
                         <span className="text-slate-500">
                           {formatCompactTime(t)}{" "}
                         </span>
+                        {showCalendarSource ? (
+                          <span className="text-slate-400">
+                            {shortCalendarLabel(ev as SourceEvent)}{" "}
+                          </span>
+                        ) : null}
                         {ev.summary || "(No title)"}
                       </span>
                     </button>
@@ -161,4 +193,25 @@ function CompactWeekBlock({
       </div>
     </div>
   );
+}
+
+function shortCalendarLabel(ev: SourceEvent): string {
+  const s = ev.sourceCalendarSummary?.trim();
+  if (!s) return "";
+  if (s.length <= 12) return `[${s}]`;
+  return `[${s.slice(0, 11)}…]`;
+}
+
+function sourceCalendarDotStyle(ev: SourceEvent): { backgroundColor: string } {
+  return { backgroundColor: ev.sourceCalendarColor ?? "#6b7280" };
+}
+
+function sourceCalendarBarStyle(
+  ev: SourceEvent,
+): { backgroundColor?: string; borderColor?: string } {
+  if (!ev.sourceCalendarColor) return {};
+  return {
+    backgroundColor: ev.sourceCalendarColor,
+    borderColor: ev.sourceCalendarColor,
+  };
 }

@@ -18,6 +18,9 @@ export async function PATCH(
   ctx: { params: Promise<{ eventId: string }> },
 ) {
   const { eventId } = await ctx.params;
+  const calendarId =
+    new URL(request.url).searchParams.get("calendarId")?.trim() ||
+    getDefaultCalendarId();
   let body: PatchBody;
   try {
     body = (await request.json()) as PatchBody;
@@ -40,7 +43,6 @@ export async function PATCH(
   try {
     const auth = await getOAuth2WithRefresh(getGoogleRedirectUri(request));
     const calendar = getCalendarClient(auth);
-    const calendarId = getDefaultCalendarId();
     const updated = await calendar.events.patch({
       calendarId,
       eventId,
@@ -59,10 +61,12 @@ export async function DELETE(
   ctx: { params: Promise<{ eventId: string }> },
 ) {
   const { eventId } = await ctx.params;
+  const calendarId =
+    new URL(request.url).searchParams.get("calendarId")?.trim() ||
+    getDefaultCalendarId();
   try {
     const auth = await getOAuth2WithRefresh(getGoogleRedirectUri(request));
     const calendar = getCalendarClient(auth);
-    const calendarId = getDefaultCalendarId();
     await calendar.events.delete({ calendarId, eventId });
     return NextResponse.json({ ok: true });
   } catch (e) {

@@ -31,6 +31,21 @@ type Status = {
   weatherConfigured: boolean;
 };
 
+type CalendarOption = {
+  id: string;
+  summary: string;
+  primary: boolean;
+  selected: boolean;
+  accessRole: string;
+  backgroundColor: string | null;
+};
+
+type CalendarEvent = GEvent & {
+  sourceCalendarId?: string;
+  sourceCalendarSummary?: string;
+  sourceCalendarColor?: string | null;
+};
+
 function toInputValue(isoOrDate: string): string {
   const d = new Date(isoOrDate);
   if (Number.isNaN(d.getTime())) return "";
@@ -48,7 +63,7 @@ function initialNewEventRange() {
 export function Board() {
   const search = useSearchParams();
   const [status, setStatus] = useState<Status | null>(null);
-  const [events, setEvents] = useState<GEvent[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [lights, setLights] = useState<Light[]>([]);
   const [weather, setWeather] = useState<Record<string, unknown> | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -56,6 +71,7 @@ export function Board() {
 
   const [newSummary, setNewSummary] = useState("Family dinner");
   const [newTimes, setNewTimes] = useState(() => initialNewEventRange());
+  const [newEventOpen, setNewEventOpen] = useState(false);
 
   const [editOpen, setEditOpen] = useState<GEvent | null>(null);
   const [editSummary, setEditSummary] = useState("");
@@ -77,6 +93,8 @@ export function Board() {
     const k = defaultCalendarRangeKeys(4);
     return { from: k.fromKey, to: k.toInclusiveKey };
   });
+  const [calendars, setCalendars] = useState<CalendarOption[]>([]);
+  const [selectedCalendarId, setSelectedCalendarId] = useState("primary");
 
   const urlBanner = useMemo(() => {
     const err = search.get("google_error");
@@ -94,18 +112,41 @@ export function Board() {
       setStatus(s);
 
       if (s.googleLinked) {
+        let activeCalendarId = selectedCalendarId;
+        const listRes = await fetch("/api/calendar/calendars", { signal });
+        if (signal?.aborted) return;
+        if (listRes.ok) {
+          const listData = (await listRes.json()) as { calendars: CalendarOption[] };
+          const options = listData.calendars ?? [];
+          setCalendars(options);
+          const stillExists =
+            selectedCalendarId === "__all__" ||
+            options.some((c) => c.id === selectedCalendarId);
+          if (!stillExists) {
+            const preferred =
+              options.find((c) => c.primary)?.id ??
+              options.find((c) => c.selected)?.id ??
+              options[0]?.id ??
+              "primary";
+            activeCalendarId = preferred;
+            setSelectedCalendarId(preferred);
+          }
+        }
+
         const cRes = await fetch(
-          `/api/calendar/events?from=${encodeURIComponent(fetchIso.from)}&to=${encodeURIComponent(fetchIso.to)}`,
+          `/api/calendar/events?from=${encodeURIComponent(fetchIso.from)}&to=${encodeURIComponent(fetchIso.to)}&calendarId=${encodeURIComponent(activeCalendarId)}`,
           { signal },
         );
         if (signal?.aborted) return;
         if (cRes.status === 401) {
           setEvents([]);
         } else if (cRes.ok) {
-          const data = (await cRes.json()) as { events: GEvent[] };
+          const data = (await cRes.json()) as { events: CalendarEvent[] };
           setEvents(data.events ?? []);
         }
       } else {
+        setCalendars([]);
+        setSelectedCalendarId("primary");
         setEvents([]);
       }
 
@@ -134,7 +175,7 @@ export function Board() {
         setWeather(null);
       }
     },
-    [fetchIso.from, fetchIso.to],
+    [fetchIso.from, fetchIso.to, selectedCalendarId],
   );
 
   useEffect(() => {
@@ -149,6 +190,10 @@ export function Board() {
   }, [fetchBoard]);
 
   async function addEvent() {
+    if (selectedCalendarId === "__all__") {
+      setMessage("Pick a specific calendar before creating a new event.");
+      return;
+    }
     setBusy("add");
     setMessage(null);
     const res = await fetch("/api/calendar/events", {
@@ -158,6 +203,7 @@ export function Board() {
         summary: newSummary,
         start: new Date(newTimes.start).toISOString(),
         end: new Date(newTimes.end).toISOString(),
+        calendarId: selectedCalendarId,
       }),
     });
     setBusy(null);
@@ -167,10 +213,11 @@ export function Board() {
       return;
     }
     setMessage("Event created.");
+    setNewEventOpen(false);
     await fetchBoard();
   }
 
-  function openEdit(ev: GEvent) {
+  function openEdit(ev: CalendarEvent) {
     const s = ev.start?.dateTime ?? ev.start?.date;
     const e = ev.end?.dateTime ?? ev.end?.date;
     if (!ev.id || !s || !e || ev.start?.date) {
@@ -185,9 +232,17 @@ export function Board() {
 
   async function saveEdit() {
     if (!editOpen?.id) return;
+    const eventCalendarId =
+      (editOpen as CalendarEvent).sourceCalendarId ?? selectedCalendarId;
+    if (eventCalendarId === "__all__") {
+      setMessage("Unable to determine event calendar. Please refresh and try again.");
+      return;
+    }
     setBusy("save");
     setMessage(null);
-    const res = await fetch(`/api/calendar/events/${encodeURIComponent(editOpen.id)}`, {
+    const res = await fetch(
+      `/api/calendar/events/${encodeURIComponent(editOpen.id)}?calendarId=${encodeURIComponent(eventCalendarId)}`,
+      {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -195,7 +250,8 @@ export function Board() {
         start: new Date(editStart).toISOString(),
         end: new Date(editEnd).toISOString(),
       }),
-    });
+      },
+    );
     setBusy(null);
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -209,11 +265,20 @@ export function Board() {
 
   async function deleteEdit() {
     if (!editOpen?.id) return;
+    const eventCalendarId =
+      (editOpen as CalendarEvent).sourceCalendarId ?? selectedCalendarId;
+    if (eventCalendarId === "__all__") {
+      setMessage("Unable to determine event calendar. Please refresh and try again.");
+      return;
+    }
     setBusy("delete");
     setMessage(null);
-    const res = await fetch(`/api/calendar/events/${encodeURIComponent(editOpen.id)}`, {
-      method: "DELETE",
-    });
+    const res = await fetch(
+      `/api/calendar/events/${encodeURIComponent(editOpen.id)}?calendarId=${encodeURIComponent(eventCalendarId)}`,
+      {
+        method: "DELETE",
+      },
+    );
     setBusy(null);
     if (!res.ok) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -353,6 +418,33 @@ export function Board() {
                 ) : null}
                 {status?.googleLinked ? (
                   <>
+                    <label className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/50 px-3 py-2 text-xs text-slate-300">
+                      Calendar
+                      <select
+                        className="rounded bg-slate-900 px-2 py-1 text-xs text-slate-100 outline-none"
+                        value={selectedCalendarId}
+                        onChange={(e) => setSelectedCalendarId(e.target.value)}
+                      >
+                        <option value="__all__">All calendars</option>
+                        {calendars.length === 0 ? (
+                          <option value="primary">primary</option>
+                        ) : (
+                          calendars.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.summary}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      disabled={selectedCalendarId === "__all__"}
+                      className="rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={() => setNewEventOpen(true)}
+                    >
+                      New event
+                    </button>
                     <button
                       type="button"
                       className="rounded-full border border-slate-600 px-4 py-2 text-sm text-slate-100 hover:border-slate-400"
@@ -395,49 +487,6 @@ export function Board() {
 
             {status?.googleLinked ? (
               <>
-                <div className="mt-5 grid gap-3 rounded-xl border border-slate-800 bg-slate-950/40 p-4 sm:grid-cols-3">
-                  <label className="sm:col-span-3 text-xs font-medium uppercase tracking-wide text-slate-400">
-                    New event
-                    <input
-                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
-                      value={newSummary}
-                      onChange={(e) => setNewSummary(e.target.value)}
-                    />
-                  </label>
-                  <label className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                    Start
-                    <input
-                      type="datetime-local"
-                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
-                      value={newTimes.start}
-                      onChange={(e) =>
-                        setNewTimes((t) => ({ ...t, start: e.target.value }))
-                      }
-                    />
-                  </label>
-                  <label className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                    End
-                    <input
-                      type="datetime-local"
-                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
-                      value={newTimes.end}
-                      onChange={(e) =>
-                        setNewTimes((t) => ({ ...t, end: e.target.value }))
-                      }
-                    />
-                  </label>
-                  <div className="flex items-end">
-                    <button
-                      type="button"
-                      disabled={busy === "add"}
-                      onClick={() => void addEvent()}
-                      className="w-full rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
-                    >
-                      {busy === "add" ? "Saving…" : "Add event"}
-                    </button>
-                  </div>
-                </div>
-
                 <div className="mt-4">
                   {weekStarts.length === 0 ? (
                     <p className="text-sm text-slate-400">No weeks in this range.</p>
@@ -445,6 +494,7 @@ export function Board() {
                     <CompactCalendarGrid
                       weekStarts={weekStarts}
                       events={events}
+                      showCalendarSource={selectedCalendarId === "__all__"}
                       onSelectEvent={(ev) => openEdit(ev)}
                     />
                   )}
@@ -590,6 +640,68 @@ export function Board() {
         onApply={() => applyRangePicker()}
         onReset={() => resetCalendarRange()}
       />
+
+      {newEventOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+            <h3 className="text-lg font-semibold text-white">New event</h3>
+            <p className="mt-1 text-xs text-slate-400">
+              Calendar:{" "}
+              {calendars.find((c) => c.id === selectedCalendarId)?.summary ??
+                selectedCalendarId}
+            </p>
+            <div className="mt-4 space-y-3">
+              <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
+                Title
+                <input
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
+                  value={newSummary}
+                  onChange={(e) => setNewSummary(e.target.value)}
+                />
+              </label>
+              <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
+                Start
+                <input
+                  type="datetime-local"
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
+                  value={newTimes.start}
+                  onChange={(e) =>
+                    setNewTimes((t) => ({ ...t, start: e.target.value }))
+                  }
+                />
+              </label>
+              <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
+                End
+                <input
+                  type="datetime-local"
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
+                  value={newTimes.end}
+                  onChange={(e) =>
+                    setNewTimes((t) => ({ ...t, end: e.target.value }))
+                  }
+                />
+              </label>
+            </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-full bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700"
+                onClick={() => setNewEventOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy === "add"}
+                className="rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+                onClick={() => void addEvent()}
+              >
+                {busy === "add" ? "Saving…" : "Create event"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {editOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
