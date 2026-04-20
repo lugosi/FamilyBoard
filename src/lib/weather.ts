@@ -14,6 +14,11 @@ export type WeatherSnapshot = {
     minC: number;
     code: number;
   }>;
+  hourlyToday: Array<{
+    time: string;
+    temperatureC: number;
+    code: number;
+  }>;
 };
 
 export function getWeatherCoordinates(): { lat: number; lon: number } | null {
@@ -37,6 +42,7 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
       "wind_speed_10m",
     ].join(","),
     daily: "weather_code,temperature_2m_max,temperature_2m_min",
+    hourly: "temperature_2m,weather_code",
     timezone: process.env.WEATHER_TIMEZONE?.trim() || "auto",
     forecast_days: "5",
   });
@@ -62,6 +68,11 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
       temperature_2m_max?: number[];
       temperature_2m_min?: number[];
     };
+    hourly?: {
+      time?: string[];
+      weather_code?: number[];
+      temperature_2m?: number[];
+    };
   };
 
   const tz = data.timezone ?? "UTC";
@@ -81,6 +92,21 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
     code: codes[i] ?? 0,
   }));
 
+  const hourlyTimes = data.hourly?.time ?? [];
+  const hourlyTemps = data.hourly?.temperature_2m ?? [];
+  const hourlyCodes = data.hourly?.weather_code ?? [];
+  const now = Date.now();
+  const hourlyToday = hourlyTimes
+    .map((time, i) => ({
+      time,
+      temperatureC: hourlyTemps[i] ?? 0,
+      code: hourlyCodes[i] ?? 0,
+      ts: new Date(time).getTime(),
+    }))
+    .filter((h) => Number.isFinite(h.ts) && h.ts >= now - 60 * 60 * 1000)
+    .slice(0, 12)
+    .map(({ time, temperatureC, code }) => ({ time, temperatureC, code }));
+
   return {
     latitude: coords.lat,
     longitude: coords.lon,
@@ -92,5 +118,6 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
       windKmh: cur.wind_speed_10m ?? 0,
     },
     daily,
+    hourlyToday,
   };
 }
