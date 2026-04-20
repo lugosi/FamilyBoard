@@ -10,6 +10,9 @@ import { useEffect, useRef, useState } from "react";
 
 const SPRITE = 32;
 const NEKO_SPEED = 10;
+/** No pointer movement for this long → treat as "not using mouse" for wander. */
+const POINTER_QUIET_MS = 5_000;
+const WANDER_INTERVAL_MS = 30_000;
 
 const spriteSets = {
   idle: [[-3, -3]],
@@ -121,6 +124,20 @@ export function OnekoCat({ enabled }: { enabled: boolean }) {
     let idleAnimation: IdleName | null = null;
     let idleAnimationFrame = 0;
     let lastFrameTimestamp: number | undefined;
+    let lastPointerMs = Date.now();
+
+    function randomWanderTarget() {
+      const m = 48;
+      const iw = window.innerWidth;
+      const ih = window.innerHeight;
+      if (iw <= 2 * m || ih <= 2 * m) {
+        mousePosX = iw / 2;
+        mousePosY = ih / 2;
+        return;
+      }
+      mousePosX = m + Math.random() * (iw - 2 * m);
+      mousePosY = m + Math.random() * (ih - 2 * m);
+    }
 
     function resetIdleAnimation() {
       idleAnimation = null;
@@ -218,6 +235,7 @@ export function OnekoCat({ enabled }: { enabled: boolean }) {
     }
 
     function onPointerMove(e: PointerEvent) {
+      lastPointerMs = Date.now();
       mousePosX = e.clientX;
       mousePosY = e.clientY;
     }
@@ -226,10 +244,16 @@ export function OnekoCat({ enabled }: { enabled: boolean }) {
     nekoEl.style.top = `${nekoPosY - 16}px`;
     setSprite(nekoEl, "idle", 0);
 
+    const wanderTimer = window.setInterval(() => {
+      if (Date.now() - lastPointerMs < POINTER_QUIET_MS) return;
+      randomWanderTarget();
+    }, WANDER_INTERVAL_MS);
+
     document.addEventListener("pointermove", onPointerMove);
     rafRef.current = window.requestAnimationFrame(onAnimationFrame);
 
     return () => {
+      window.clearInterval(wanderTimer);
       document.removeEventListener("pointermove", onPointerMove);
       window.cancelAnimationFrame(rafRef.current);
     };
