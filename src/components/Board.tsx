@@ -15,7 +15,7 @@ import {
   type CalendarRangeKeys,
   type GEvent,
 } from "@/lib/calendar-layout";
-import { BurnInCat } from "@/components/BurnInCat";
+import { OnekoCat } from "@/components/OnekoCat";
 import { WeatherIcon } from "@/components/WeatherIcon";
 
 type HueArea = {
@@ -832,14 +832,14 @@ export function Board() {
                   ) : null}
                   <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
                     <span className="text-sm text-slate-400 sm:text-base">
-                      Moving cat (burn-in)
+                      Neko (follows mouse, burn-in)
                     </span>
                     <input
                       type="checkbox"
                       className="h-5 w-5 shrink-0 rounded border-slate-600 bg-slate-900 accent-sky-500"
                       checked={burnInCat}
                       onChange={(e) => setBurnInCatEnabled(e.target.checked)}
-                      aria-label="Toggle moving cat for screen burn-in prevention"
+                      aria-label="Toggle classic Neko cat that follows the pointer"
                     />
                   </label>
                 </div>
@@ -1069,7 +1069,7 @@ export function Board() {
         </div>
       ) : null}
     </div>
-    <BurnInCat enabled={burnInCat} />
+    <OnekoCat enabled={burnInCat} />
     </>
   );
 }
