@@ -7,6 +7,7 @@ const TOKEN_FILE = "google-tokens.json";
 
 export const GOOGLE_CALENDAR_SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
 ];
 
 export type StoredGoogleTokens = {
