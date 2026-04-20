@@ -7,6 +7,8 @@ import {
   getOAuth2WithRefresh,
 } from "@/lib/google";
 
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const from = url.searchParams.get("from");
@@ -77,8 +79,13 @@ export async function GET(request: Request) {
 
 type NewEventBody = {
   summary?: string;
+  /** Timed: ISO strings */
   start?: string;
   end?: string;
+  /** All-day: `endDate` is exclusive (day after last day). */
+  allDay?: boolean;
+  startDate?: string;
+  endDate?: string;
   calendarId?: string;
 };
 
@@ -89,9 +96,22 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  if (!body.summary?.trim() || !body.start || !body.end) {
+  const summary = body.summary?.trim();
+  const hasAllDay =
+    body.allDay === true &&
+    typeof body.startDate === "string" &&
+    typeof body.endDate === "string";
+  const hasTimed = Boolean(body.start && body.end);
+
+  if (!summary) {
+    return NextResponse.json({ error: "summary is required" }, { status: 400 });
+  }
+  if (!hasTimed && !hasAllDay) {
     return NextResponse.json(
-      { error: "summary, start, and end are required" },
+      {
+        error:
+          "Provide start and end (timed), or allDay with startDate and endDate (end date exclusive).",
+      },
       { status: 400 },
     );
   }
@@ -107,13 +127,42 @@ export async function POST(request: Request) {
   try {
     const auth = await getOAuth2WithRefresh(getGoogleRedirectUri(request));
     const calendar = getCalendarClient(auth);
+
+    let requestBody: {
+      summary: string;
+      start: { dateTime: string; timeZone: string } | { date: string };
+      end: { dateTime: string; timeZone: string } | { date: string };
+    };
+
+    if (hasAllDay) {
+      if (!DATE_KEY.test(body.startDate!) || !DATE_KEY.test(body.endDate!)) {
+        return NextResponse.json(
+          { error: "startDate and endDate must be YYYY-MM-DD" },
+          { status: 400 },
+        );
+      }
+      if (body.endDate! <= body.startDate!) {
+        return NextResponse.json(
+          { error: "endDate must be after startDate (end is exclusive)" },
+          { status: 400 },
+        );
+      }
+      requestBody = {
+        summary,
+        start: { date: body.startDate! },
+        end: { date: body.endDate! },
+      };
+    } else {
+      requestBody = {
+        summary,
+        start: { dateTime: body.start!, timeZone: tz },
+        end: { dateTime: body.end!, timeZone: tz },
+      };
+    }
+
     const created = await calendar.events.insert({
       calendarId,
-      requestBody: {
-        summary: body.summary.trim(),
-        start: { dateTime: body.start, timeZone: tz },
-        end: { dateTime: body.end, timeZone: tz },
-      },
+      requestBody,
     });
     return NextResponse.json({ event: created.data });
   } catch (e) {

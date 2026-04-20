@@ -70,10 +70,57 @@ function inclusiveLastDayFromGoogleAllDayEnd(exclusiveEndDate: string): string {
   return dateKeyLocal(addDays(parseLocalDateKey(exclusiveEndDate), -1));
 }
 
+function dateKeyToDatetimeLocal(key: string, hour: number, minute: number): string {
+  const d = parseLocalDateKey(key);
+  d.setHours(hour, minute, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(hour)}:${pad(minute)}`;
+}
+
 function shortWeekdayFromForecastDate(dateStr: string): string {
   const d = new Date(`${dateStr}T12:00:00`);
   if (Number.isNaN(d.getTime())) return dateStr;
   return d.toLocaleDateString(undefined, { weekday: "short" });
+}
+
+/** Prefer a calendar named "Berkeley" when picking a default from the list. */
+function pickDefaultCalendarId(options: CalendarOption[]): string {
+  if (options.length === 0) return "primary";
+  const berkeley = options.find(
+    (c) => c.summary.trim().toLowerCase() === "berkeley",
+  );
+  if (berkeley) return berkeley.id;
+  return (
+    options.find((c) => c.primary)?.id ??
+    options.find((c) => c.selected)?.id ??
+    options[0]!.id
+  );
+}
+
+const SESSION_EXPLICIT_CALENDAR = "familyboard_explicit_calendar";
+
+function markCalendarExplicitlyChosen() {
+  try {
+    sessionStorage.setItem(SESSION_EXPLICIT_CALENDAR, "1");
+  } catch {
+    /* ignore */
+  }
+}
+
+function userChoseCalendarExplicitly(): boolean {
+  try {
+    return sessionStorage.getItem(SESSION_EXPLICIT_CALENDAR) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function clearCalendarExplicitChoice() {
+  try {
+    sessionStorage.removeItem(SESSION_EXPLICIT_CALENDAR);
+  } catch {
+    /* ignore */
+  }
 }
 
 export function Board() {
@@ -87,6 +134,7 @@ export function Board() {
 
   const [newSummary, setNewSummary] = useState("Family dinner");
   const [newTimes, setNewTimes] = useState(() => initialNewEventRange());
+  const [newAllDay, setNewAllDay] = useState(false);
   const [newEventOpen, setNewEventOpen] = useState(false);
 
   const [editOpen, setEditOpen] = useState<GEvent | null>(null);
@@ -197,13 +245,23 @@ export function Board() {
             selectedCalendarId === "__all__" ||
             options.some((c) => c.id === selectedCalendarId);
           if (!stillExists) {
-            const preferred =
-              options.find((c) => c.primary)?.id ??
-              options.find((c) => c.selected)?.id ??
-              options[0]?.id ??
-              "primary";
+            const preferred = pickDefaultCalendarId(options);
             activeCalendarId = preferred;
             setSelectedCalendarId(preferred);
+          } else if (!userChoseCalendarExplicitly()) {
+            const berkeleyCal = options.find(
+              (c) => c.summary.trim().toLowerCase() === "berkeley",
+            );
+            if (berkeleyCal && selectedCalendarId !== berkeleyCal.id) {
+              const primaryCal = options.find((c) => c.primary);
+              const onGenericPrimary =
+                selectedCalendarId === "primary" ||
+                Boolean(primaryCal && selectedCalendarId === primaryCal.id);
+              if (onGenericPrimary) {
+                activeCalendarId = berkeleyCal.id;
+                setSelectedCalendarId(berkeleyCal.id);
+              }
+            }
           }
         }
 
@@ -221,6 +279,7 @@ export function Board() {
       } else {
         setCalendars([]);
         setSelectedCalendarId("primary");
+        clearCalendarExplicitChoice();
         setEvents([]);
       }
 
@@ -271,6 +330,43 @@ export function Board() {
     return () => window.clearInterval(id);
   }, [fetchBoard]);
 
+  function openNewEventModal() {
+    setNewAllDay(false);
+    setNewTimes(initialNewEventRange());
+    setNewEventOpen(true);
+  }
+
+  function onNewAllDayChange(checked: boolean) {
+    if (checked) {
+      setNewTimes((t) => {
+        const s = new Date(t.start);
+        const e = new Date(t.end);
+        const startKey = Number.isNaN(s.getTime())
+          ? dateKeyLocal(new Date())
+          : dateKeyLocal(s);
+        let endKey = Number.isNaN(e.getTime()) ? startKey : dateKeyLocal(e);
+        if (parseLocalDateKey(endKey) < parseLocalDateKey(startKey)) endKey = startKey;
+        return { start: startKey, end: endKey };
+      });
+    } else {
+      setNewTimes((t) => {
+        const sk = t.start.trim();
+        const ek = t.end.trim();
+        if (!DATE_KEY_RE.test(sk) || !DATE_KEY_RE.test(ek)) {
+          return initialNewEventRange();
+        }
+        const startD = parseLocalDateKey(sk);
+        const lastD = parseLocalDateKey(ek);
+        const last = lastD < startD ? startD : lastD;
+        return {
+          start: dateKeyToDatetimeLocal(dateKeyLocal(startD), 9, 0),
+          end: dateKeyToDatetimeLocal(dateKeyLocal(last), 10, 0),
+        };
+      });
+    }
+    setNewAllDay(checked);
+  }
+
   async function addEvent() {
     if (selectedCalendarId === "__all__") {
       setMessage("Pick a specific calendar before creating a new event.");
@@ -278,15 +374,44 @@ export function Board() {
     }
     setBusy("add");
     setMessage(null);
-    const res = await fetch("/api/calendar/events", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+
+    let payload: Record<string, unknown>;
+    if (newAllDay) {
+      const startKey = newTimes.start.trim();
+      const lastInclusive = newTimes.end.trim();
+      if (!DATE_KEY_RE.test(startKey) || !DATE_KEY_RE.test(lastInclusive)) {
+        setBusy(null);
+        setMessage("Start and end must be valid dates.");
+        return;
+      }
+      const startD = parseLocalDateKey(startKey);
+      const lastD = parseLocalDateKey(lastInclusive);
+      if (lastD < startD) {
+        setBusy(null);
+        setMessage("End date must be on or after the start date.");
+        return;
+      }
+      const exclusiveEnd = dateKeyLocal(addDays(lastD, 1));
+      payload = {
+        summary: newSummary,
+        calendarId: selectedCalendarId,
+        allDay: true,
+        startDate: startKey,
+        endDate: exclusiveEnd,
+      };
+    } else {
+      payload = {
         summary: newSummary,
         start: new Date(newTimes.start).toISOString(),
         end: new Date(newTimes.end).toISOString(),
         calendarId: selectedCalendarId,
-      }),
+      };
+    }
+
+    const res = await fetch("/api/calendar/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
     setBusy(null);
     if (!res.ok) {
@@ -452,6 +577,7 @@ export function Board() {
 
   async function logoutGoogle() {
     await fetch("/api/auth/logout", { method: "POST" });
+    clearCalendarExplicitChoice();
     setMessage("Disconnected Google.");
     await fetchBoard();
   }
@@ -561,7 +687,10 @@ export function Board() {
                     <select
                       className="rounded bg-slate-900 px-2 py-1.5 text-sm text-slate-100 outline-none sm:text-base"
                       value={selectedCalendarId}
-                      onChange={(e) => setSelectedCalendarId(e.target.value)}
+                      onChange={(e) => {
+                        markCalendarExplicitlyChosen();
+                        setSelectedCalendarId(e.target.value);
+                      }}
                     >
                       <option value="__all__">All calendars</option>
                       {calendars.length === 0 ? (
@@ -579,7 +708,7 @@ export function Board() {
                     type="button"
                     disabled={selectedCalendarId === "__all__"}
                     className="rounded-full bg-sky-600 px-4 py-2 text-base font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:py-2.5 sm:text-lg"
-                    onClick={() => setNewEventOpen(true)}
+                    onClick={() => openNewEventModal()}
                   >
                     New event
                   </button>
@@ -823,10 +952,19 @@ export function Board() {
                   onChange={(e) => setNewSummary(e.target.value)}
                 />
               </label>
-              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
-                Start
+              <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5 text-base text-slate-200 sm:text-lg">
                 <input
-                  type="datetime-local"
+                  type="checkbox"
+                  className="h-5 w-5 shrink-0 rounded border-slate-600 bg-slate-900 accent-sky-500"
+                  checked={newAllDay}
+                  onChange={(e) => onNewAllDayChange(e.target.checked)}
+                />
+                <span>All-day event</span>
+              </label>
+              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
+                {newAllDay ? "Start date" : "Start"}
+                <input
+                  type={newAllDay ? "date" : "datetime-local"}
                   className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
                   value={newTimes.start}
                   onChange={(e) =>
@@ -835,9 +973,9 @@ export function Board() {
                 />
               </label>
               <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
-                End
+                {newAllDay ? "End date (inclusive)" : "End"}
                 <input
-                  type="datetime-local"
+                  type={newAllDay ? "date" : "datetime-local"}
                   className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
                   value={newTimes.end}
                   onChange={(e) =>
