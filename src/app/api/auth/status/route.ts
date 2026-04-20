@@ -1,0 +1,22 @@
+import { NextResponse } from "next/server";
+import { readGoogleTokens } from "@/lib/google";
+import { getHueBridgeIp, readHueUsername } from "@/lib/hue";
+import { getWeatherCoordinates } from "@/lib/weather";
+
+export async function GET() {
+  const google = await readGoogleTokens();
+  const hueIp = getHueBridgeIp();
+  const hueUser = await readHueUsername();
+  const weather = getWeatherCoordinates();
+
+  return NextResponse.json({
+    googleLinked: Boolean(google?.refresh_token),
+    googleConfigured: Boolean(
+      process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET,
+    ),
+    hueReady: Boolean(hueIp && hueUser),
+    hueBridgeIp: hueIp,
+    huePaired: Boolean(hueUser),
+    weatherConfigured: Boolean(weather),
+  });
+}

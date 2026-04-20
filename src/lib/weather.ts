@@ -1,0 +1,96 @@
+export type WeatherSnapshot = {
+  latitude: number;
+  longitude: number;
+  timezone: string;
+  current: {
+    temperatureC: number;
+    humidity: number;
+    code: number;
+    windKmh: number;
+  };
+  daily: Array<{
+    date: string;
+    maxC: number;
+    minC: number;
+    code: number;
+  }>;
+};
+
+export function getWeatherCoordinates(): { lat: number; lon: number } | null {
+  const lat = Number(process.env.WEATHER_LAT);
+  const lon = Number(process.env.WEATHER_LON);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { lat, lon };
+}
+
+export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
+  const coords = getWeatherCoordinates();
+  if (!coords) return null;
+
+  const params = new URLSearchParams({
+    latitude: String(coords.lat),
+    longitude: String(coords.lon),
+    current: [
+      "temperature_2m",
+      "relative_humidity_2m",
+      "weather_code",
+      "wind_speed_10m",
+    ].join(","),
+    daily: "weather_code,temperature_2m_max,temperature_2m_min",
+    timezone: process.env.WEATHER_TIMEZONE?.trim() || "auto",
+    forecast_days: "5",
+  });
+
+  const res = await fetch(
+    `https://api.open-meteo.com/v1/forecast?${params.toString()}`,
+    { next: { revalidate: 300 } },
+  );
+  if (!res.ok) {
+    throw new Error(`Weather request failed (${res.status})`);
+  }
+  const data = (await res.json()) as {
+    timezone?: string;
+    current?: {
+      temperature_2m?: number;
+      relative_humidity_2m?: number;
+      weather_code?: number;
+      wind_speed_10m?: number;
+    };
+    daily?: {
+      time?: string[];
+      weather_code?: number[];
+      temperature_2m_max?: number[];
+      temperature_2m_min?: number[];
+    };
+  };
+
+  const tz = data.timezone ?? "UTC";
+  const cur = data.current;
+  if (typeof cur?.temperature_2m !== "number") {
+    return null;
+  }
+
+  const times = data.daily?.time ?? [];
+  const codes = data.daily?.weather_code ?? [];
+  const max = data.daily?.temperature_2m_max ?? [];
+  const min = data.daily?.temperature_2m_min ?? [];
+  const daily = times.map((date, i) => ({
+    date,
+    maxC: max[i] ?? 0,
+    minC: min[i] ?? 0,
+    code: codes[i] ?? 0,
+  }));
+
+  return {
+    latitude: coords.lat,
+    longitude: coords.lon,
+    timezone: tz,
+    current: {
+      temperatureC: cur.temperature_2m,
+      humidity: cur.relative_humidity_2m ?? 0,
+      code: cur.weather_code ?? 0,
+      windKmh: cur.wind_speed_10m ?? 0,
+    },
+    daily,
+  };
+}
