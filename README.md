@@ -17,7 +17,16 @@ Open [http://localhost:3000](http://localhost:3000), use **Link Google**, then a
 
 See `.env.example`. Use a writable `DATA_DIR` in production so OAuth tokens and Hue pairing survive restarts.
 
-## Docker
+## Publish with GitHub (recommended for TrueNAS)
+
+Pushes to `main` build the image and push to **GitHub Container Registry** via Actions.
+
+- Image: **`ghcr.io/lugosi/family-board:latest`** (replace `lugosi` if you fork).
+- After the first run: GitHub → **Packages** → **family-board** → **Package settings** → set visibility to **Public** if you want TrueNAS to pull without registry login.
+
+TrueNAS Custom App → image repository `ghcr.io/lugosi/family-board`, tag `latest`.
+
+## Docker (local)
 
 ```bash
 docker build -t family-board .
