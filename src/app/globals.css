@@ -25,17 +25,18 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Burn-in helper: cat GIF sprite travels across the viewport */
-@keyframes burnin-cat-run {
+/* Burn-in helper: diagonal-ish path using CSS vars set per lap (see BurnInCat.tsx) */
+@keyframes burnin-cat-run-var {
   from {
-    transform: translate3d(-280px, 0, 0);
+    transform: translate3d(-300px, var(--cat-dy0, 0px), 0) rotate(var(--cat-tilt, 0deg));
   }
   to {
-    transform: translate3d(calc(100vw + 280px), 0, 0);
+    transform: translate3d(calc(100vw + 300px), var(--cat-dy1, 0px), 0)
+      rotate(var(--cat-tilt, 0deg));
   }
 }
 
 .burnin-cat-track {
-  animation: burnin-cat-run 22s linear infinite;
+  animation: burnin-cat-run-var 20s linear infinite;
   width: max-content;
 }

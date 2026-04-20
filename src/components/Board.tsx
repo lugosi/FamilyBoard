@@ -104,6 +104,18 @@ export function Board() {
   const [selectedCalendarId, setSelectedCalendarId] = useState("primary");
 
   const [burnInCat, setBurnInCat] = useState(true);
+
+  const [nightGreyscale, setNightGreyscale] = useState(false);
+  useEffect(() => {
+    function tickNight() {
+      const h = new Date().getHours();
+      setNightGreyscale(h >= 22 || h < 7);
+    }
+    tickNight();
+    const nid = window.setInterval(tickNight, 60_000);
+    return () => window.clearInterval(nid);
+  }, []);
+
   useEffect(() => {
     queueMicrotask(() => {
       try {
@@ -417,7 +429,12 @@ export function Board() {
     | undefined;
 
   return (
-    <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-base text-slate-100 sm:text-lg">
+    <>
+    <div
+      className={`flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-base text-slate-100 sm:text-lg ${
+        nightGreyscale ? "grayscale" : ""
+      }`}
+    >
       <div className="box-border flex min-h-0 w-full min-w-0 flex-1 flex-col gap-2 overflow-hidden px-2 py-2 sm:gap-3 sm:px-4 sm:py-3 md:gap-4 lg:px-6 lg:py-4 xl:px-8 xl:py-5 2xl:px-10">
         {showBanner ? (
           <div className="flex shrink-0 items-start gap-2 rounded-lg border border-slate-700 bg-slate-800/60 py-2 pl-3 pr-2 text-base text-slate-100 sm:text-lg">
@@ -575,24 +592,29 @@ export function Board() {
                     {Math.round(current.windMph ?? 0)} mph
                   </p>
                   {hourlyToday && hourlyToday.length > 0 ? (
-                    <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/50 px-2 py-2.5">
-                      <div className="flex min-w-max items-center gap-4 text-sm text-slate-300 sm:text-base">
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/50 px-1 py-2 sm:px-2">
+                      <div className="flex w-full flex-nowrap items-stretch justify-between gap-0.5 sm:gap-1">
                         {hourlyToday.map((h) => {
                           const d = new Date(h.time ?? "");
+                          const label = Number.isNaN(d.getTime())
+                            ? (h.time ?? "").slice(11, 16)
+                            : d.toLocaleTimeString([], { hour: "numeric" });
                           return (
-                            <span key={h.time} className="whitespace-nowrap">
-                              {Number.isNaN(d.getTime())
-                                ? (h.time ?? "").slice(11, 16)
-                                : d.toLocaleTimeString([], {
-                                    hour: "numeric",
-                                  })}
-                              {" "}
+                            <div
+                              key={h.time}
+                              className="flex min-w-0 flex-1 flex-col items-center gap-0.5 text-center"
+                            >
+                              <span className="w-full truncate text-[10px] leading-tight text-slate-400 sm:text-xs">
+                                {label}
+                              </span>
                               <WeatherIcon
                                 code={Number(h.code ?? 0)}
-                                className="h-5 w-5 sm:h-6 sm:w-6"
-                              />{" "}
-                              {Math.round(h.temperatureF ?? 0)}°F
-                            </span>
+                                className="h-4 w-4 shrink-0 sm:h-5 sm:w-5"
+                              />
+                              <span className="w-full truncate text-[10px] font-medium leading-tight text-slate-200 sm:text-xs">
+                                {Math.round(h.temperatureF ?? 0)}°
+                              </span>
+                            </div>
                           );
                         })}
                       </div>
@@ -713,8 +735,6 @@ export function Board() {
           </div>
         </div>
       </div>
-
-      <BurnInCat enabled={burnInCat} />
 
       <CalendarRangePickerModal
         open={rangePickerOpen}
@@ -850,5 +870,7 @@ export function Board() {
         </div>
       ) : null}
     </div>
+    <BurnInCat enabled={burnInCat} />
+    </>
   );
 }
