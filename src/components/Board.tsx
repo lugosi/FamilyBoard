@@ -13,7 +13,8 @@ import {
   type CalendarRangeKeys,
   type GEvent,
 } from "@/lib/calendar-layout";
-import { wmoEmoji, wmoLabel } from "@/lib/wmo";
+import { WeatherIcon } from "@/components/WeatherIcon";
+import { wmoLabel } from "@/lib/wmo";
 
 type HueArea = {
   id: string;
@@ -370,13 +371,13 @@ export function Board() {
   }
 
   const current = weather?.current as
-    | { temperatureC?: number; humidity?: number; code?: number; windKmh?: number }
+    | { temperatureF?: number; humidity?: number; code?: number; windMph?: number }
     | undefined;
   const daily = weather?.daily as
-    | Array<{ date?: string; maxC?: number; minC?: number; code?: number }>
+    | Array<{ date?: string; maxF?: number; minF?: number; code?: number }>
     | undefined;
   const hourlyToday = weather?.hourlyToday as
-    | Array<{ time?: string; temperatureC?: number; code?: number }>
+    | Array<{ time?: string; temperatureF?: number; code?: number }>
     | undefined;
 
   return (
@@ -399,7 +400,7 @@ export function Board() {
         ) : null}
 
         <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overflow-x-hidden sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
-          <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4 lg:h-full lg:min-h-0">
+          <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
             {!status?.googleConfigured ? (
               <p className="mt-4 text-sm text-slate-400">
                 Set{" "}
@@ -426,11 +427,11 @@ export function Board() {
 
             {status?.googleLinked ? (
               <>
-                <div className="mt-4 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-2 sm:pt-3">
                   {weekStarts.length === 0 ? (
                     <p className="text-sm text-slate-400">No weeks in this range.</p>
                   ) : (
-                    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+                    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
                       <CompactCalendarGrid
                         weekStarts={weekStarts}
                         events={events}
@@ -523,17 +524,17 @@ export function Board() {
                 <div className="mt-3 space-y-2">
                   <div className="flex items-end justify-between">
                     <p className="text-4xl font-semibold text-white">
-                      {Math.round(current.temperatureC ?? 0)}°
-                      <span className="text-lg text-slate-400">C</span>
+                      {Math.round(current.temperatureF ?? 0)}°
+                      <span className="text-lg text-slate-400">F</span>
                     </p>
-                    <p className="text-3xl">{wmoEmoji(current.code ?? 0)}</p>
+                    <WeatherIcon code={Number(current.code ?? 0)} className="h-14 w-14 sm:h-16 sm:w-16" />
                   </div>
                   <p className="text-sm text-slate-300">
                     {wmoLabel(current.code ?? 0)}
                   </p>
                   <p className="text-xs text-slate-500">
                     Humidity {Math.round(current.humidity ?? 0)}% · Wind{" "}
-                    {Math.round(current.windKmh ?? 0)} km/h
+                    {Math.round(current.windMph ?? 0)} mph
                   </p>
                   {hourlyToday && hourlyToday.length > 0 ? (
                     <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/50 px-2 py-2">
@@ -548,7 +549,11 @@ export function Board() {
                                     hour: "numeric",
                                   })}
                               {" "}
-                              {wmoEmoji(h.code ?? 0)} {Math.round(h.temperatureC ?? 0)}°
+                              <WeatherIcon
+                                code={Number(h.code ?? 0)}
+                                className="h-4 w-4"
+                              />{" "}
+                              {Math.round(h.temperatureF ?? 0)}°F
                             </span>
                           );
                         })}
@@ -558,10 +563,16 @@ export function Board() {
                   {daily && daily.length > 0 ? (
                     <ul className="mt-3 space-y-1 border-t border-slate-800 pt-3 text-xs text-slate-300">
                       {daily.slice(0, 5).map((d) => (
-                        <li key={d.date} className="flex justify-between gap-2">
-                          <span>{d.date}</span>
-                          <span>
-                            {Math.round(d.minC ?? 0)}–{Math.round(d.maxC ?? 0)}°C ·{" "}
+                        <li key={d.date} className="flex items-center justify-between gap-2">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <WeatherIcon
+                              code={Number(d.code ?? 0)}
+                              className="h-7 w-7 shrink-0"
+                            />
+                            <span className="truncate">{d.date}</span>
+                          </span>
+                          <span className="shrink-0 text-right">
+                            {Math.round(d.minF ?? 0)}–{Math.round(d.maxF ?? 0)}°F ·{" "}
                             {wmoLabel(d.code ?? 0)}
                           </span>
                         </li>

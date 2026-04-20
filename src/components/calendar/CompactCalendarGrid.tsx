@@ -45,8 +45,10 @@ export function CompactCalendarGrid({
     : "py-1 text-[10px] font-medium tracking-wide text-slate-500";
 
   return (
-    <div className={`overflow-hidden rounded-lg border border-slate-800 bg-black ${rootText}`}>
-      <div className="grid grid-cols-7 border-b border-slate-700/90">
+    <div
+      className={`flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-lg border border-slate-800 bg-black ${rootText}`}
+    >
+      <div className="grid shrink-0 grid-cols-7 border-b border-slate-700/90">
         {WEEKDAY.map((d) => (
           <div
             key={d}
@@ -56,16 +58,19 @@ export function CompactCalendarGrid({
           </div>
         ))}
       </div>
-      {weekStarts.map((ws) => (
-        <CompactWeekBlock
-          key={ws.getTime()}
-          weekStartMonday={ws}
-          events={events}
-          showCalendarSource={showCalendarSource}
-          comfortable={comfortable}
-          onSelectEvent={onSelectEvent}
-        />
-      ))}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {weekStarts.map((ws) => (
+          <div key={ws.getTime()} className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <CompactWeekBlock
+              weekStartMonday={ws}
+              events={events}
+              showCalendarSource={showCalendarSource}
+              comfortable={comfortable}
+              onSelectEvent={onSelectEvent}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -92,9 +97,9 @@ function CompactWeekBlock({
   const laneCount = maxLane + 1;
 
   return (
-    <div className="border-b border-slate-800 last:border-b-0">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col border-b border-slate-800 last:border-b-0">
       {laneCount > 0 ? (
-        <div className="space-y-px bg-slate-950/80 px-px pt-px">
+        <div className="shrink-0 space-y-px bg-slate-950/80 px-px pt-px">
           {Array.from({ length: laneCount }, (_, laneIndex) => {
             const inLane = bars.filter((b) => b.lane === laneIndex);
             return (
@@ -134,7 +139,7 @@ function CompactWeekBlock({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-7 divide-x divide-slate-800/90">
+      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-7 grid-rows-[minmax(0,1fr)] divide-x divide-slate-800/90">
         {Array.from({ length: 7 }, (_, dayIndex) => {
           const d = addDays(weekStartMonday, dayIndex);
           const key = dateKeyLocal(d);
@@ -149,13 +154,13 @@ function CompactWeekBlock({
               : String(d.getDate());
 
           const dayMinH = comfortable
-            ? "min-h-[5.25rem] sm:min-h-[6rem] lg:min-h-[6.5rem] xl:min-h-[7.25rem]"
-            : "min-h-[4.5rem] sm:min-h-[5.25rem] lg:min-h-[5.5rem] xl:min-h-[6.25rem]";
+            ? "min-h-[3.25rem] sm:min-h-[3.5rem]"
+            : "min-h-[2.75rem] sm:min-h-[3rem]";
 
           return (
             <div
               key={key}
-              className={`flex flex-col gap-px p-0.5 ${dayMinH} ${
+              className={`flex h-full min-h-0 min-w-0 flex-col gap-px p-0.5 ${dayMinH} ${
                 today ? "bg-slate-900/40" : ""
               }`}
             >

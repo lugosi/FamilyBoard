@@ -3,20 +3,20 @@ export type WeatherSnapshot = {
   longitude: number;
   timezone: string;
   current: {
-    temperatureC: number;
+    temperatureF: number;
     humidity: number;
     code: number;
-    windKmh: number;
+    windMph: number;
   };
   daily: Array<{
     date: string;
-    maxC: number;
-    minC: number;
+    maxF: number;
+    minF: number;
     code: number;
   }>;
   hourlyToday: Array<{
     time: string;
-    temperatureC: number;
+    temperatureF: number;
     code: number;
   }>;
 };
@@ -35,6 +35,8 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
   const params = new URLSearchParams({
     latitude: String(coords.lat),
     longitude: String(coords.lon),
+    temperature_unit: "fahrenheit",
+    wind_speed_unit: "mph",
     current: [
       "temperature_2m",
       "relative_humidity_2m",
@@ -87,8 +89,8 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
   const min = data.daily?.temperature_2m_min ?? [];
   const daily = times.map((date, i) => ({
     date,
-    maxC: max[i] ?? 0,
-    minC: min[i] ?? 0,
+    maxF: max[i] ?? 0,
+    minF: min[i] ?? 0,
     code: codes[i] ?? 0,
   }));
 
@@ -99,23 +101,23 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
   const hourlyToday = hourlyTimes
     .map((time, i) => ({
       time,
-      temperatureC: hourlyTemps[i] ?? 0,
+      temperatureF: hourlyTemps[i] ?? 0,
       code: hourlyCodes[i] ?? 0,
       ts: new Date(time).getTime(),
     }))
     .filter((h) => Number.isFinite(h.ts) && h.ts >= now - 60 * 60 * 1000)
     .slice(0, 12)
-    .map(({ time, temperatureC, code }) => ({ time, temperatureC, code }));
+    .map(({ time, temperatureF, code }) => ({ time, temperatureF, code }));
 
   return {
     latitude: coords.lat,
     longitude: coords.lon,
     timezone: tz,
     current: {
-      temperatureC: cur.temperature_2m,
+      temperatureF: cur.temperature_2m,
       humidity: cur.relative_humidity_2m ?? 0,
       code: cur.weather_code ?? 0,
-      windKmh: cur.wind_speed_10m ?? 0,
+      windMph: cur.wind_speed_10m ?? 0,
     },
     daily,
     hourlyToday,
