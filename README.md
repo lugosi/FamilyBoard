@@ -17,6 +17,15 @@ Open [http://localhost:3000](http://localhost:3000), use **Link Google**, then a
 
 See `.env.example`. Use a writable `DATA_DIR` in production so OAuth tokens and Hue pairing survive restarts.
 
+### TrueNAS port configuration
+
+You can change the app listen port at runtime with `APP_PORT` (default `3000`).
+
+- In TrueNAS **Edit** for the app, set env var `APP_PORT` to your target internal port.
+- Update the app **container port mapping** to match the same internal port.
+- Update `PUBLIC_APP_URL` to include the external host/port users open in a browser.
+- Keep Google OAuth redirect URI synced: `${PUBLIC_APP_URL}/api/auth/google/callback`.
+
 ## Publish with GitHub (recommended for TrueNAS)
 
 Pushes to `main` build the image and push to **GitHub Container Registry** via Actions.
