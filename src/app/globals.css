@@ -24,3 +24,18 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Burn-in helper: cat GIF sprite travels across the viewport */
+@keyframes burnin-cat-run {
+  from {
+    transform: translate3d(-280px, 0, 0);
+  }
+  to {
+    transform: translate3d(calc(100vw + 280px), 0, 0);
+  }
+}
+
+.burnin-cat-track {
+  animation: burnin-cat-run 22s linear infinite;
+  width: max-content;
+}

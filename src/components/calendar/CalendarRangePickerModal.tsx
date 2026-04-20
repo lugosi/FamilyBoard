@@ -36,51 +36,51 @@ export function CalendarRangePickerModal({
         aria-modal="true"
         aria-labelledby="range-picker-title"
       >
-        <h3 id="range-picker-title" className="text-lg font-semibold text-white">
+        <h3 id="range-picker-title" className="text-xl font-semibold text-white sm:text-2xl">
           Visible date range
         </h3>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-base text-slate-400 sm:text-lg">
           Choose the first and last day to show. Weeks are shown Monday–Sunday
           (Google-style). The calendar loads every event in this range.
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
+          <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
             From
             <input
               type="date"
               value={draftFrom}
               onChange={(e) => onDraftFrom(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
+              className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
             />
           </label>
-          <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
+          <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
             Through
             <input
               type="date"
               value={draftTo}
               onChange={(e) => onDraftTo(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
+              className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
             />
           </label>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
           <button
             type="button"
-            className="rounded-full border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:border-slate-400"
+            className="rounded-full border border-slate-600 px-4 py-2.5 text-base text-slate-200 hover:border-slate-400 sm:text-lg"
             onClick={onClose}
           >
             Cancel
           </button>
           <button
             type="button"
-            className="rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500"
+            className="rounded-full bg-sky-600 px-4 py-2.5 text-base font-medium text-white hover:bg-sky-500 sm:text-lg"
             onClick={onApply}
           >
             Apply
           </button>
           <button
             type="button"
-            className="rounded-full border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+            className="rounded-full border border-slate-600 px-4 py-2.5 text-base text-slate-300 hover:bg-slate-800 sm:text-lg"
             onClick={onReset}
           >
             This week + 3 weeks

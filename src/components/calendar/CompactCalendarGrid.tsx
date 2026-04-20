@@ -38,11 +38,11 @@ export function CompactCalendarGrid({
   onSelectEvent,
 }: Props) {
   const rootText = comfortable
-    ? "text-[11px] leading-tight text-slate-200 sm:text-[12px]"
-    : "text-[10px] leading-tight text-slate-200 sm:text-[11px]";
+    ? "text-[13px] leading-snug text-slate-200 sm:text-[14px]"
+    : "text-[12px] leading-snug text-slate-200 sm:text-[13px]";
   const headText = comfortable
-    ? "py-1.5 text-[11px] font-medium tracking-wide text-slate-500"
-    : "py-1 text-[10px] font-medium tracking-wide text-slate-500";
+    ? "py-1.5 text-[12px] font-medium tracking-wide text-slate-500 sm:text-[13px]"
+    : "py-1 text-[11px] font-medium tracking-wide text-slate-500 sm:text-[12px]";
 
   return (
     <div
@@ -106,7 +106,7 @@ function CompactWeekBlock({
               <div
                 key={laneIndex}
                 className={`grid grid-cols-7 border-b border-slate-900 bg-black/50 ${
-                  comfortable ? "min-h-[18px]" : "min-h-[15px]"
+                  comfortable ? "min-h-[20px]" : "min-h-[17px]"
                 }`}
               >
                 {inLane.map((bar) => {
@@ -117,7 +117,7 @@ function CompactWeekBlock({
                       type="button"
                       onClick={() => onSelectEvent(bar.event)}
                       className={`mx-px truncate rounded px-0.5 py-px text-left font-medium shadow-sm ${
-                        comfortable ? "text-[11px]" : "text-[10px]"
+                        comfortable ? "text-[12px]" : "text-[11px]"
                       } ${eventBarClass(bar.event.summary)}`}
                       // For "All calendars", use source calendar color for easier scanning.
                       style={{
@@ -154,8 +154,8 @@ function CompactWeekBlock({
               : String(d.getDate());
 
           const dayMinH = comfortable
-            ? "min-h-[3.25rem] sm:min-h-[3.5rem]"
-            : "min-h-[2.75rem] sm:min-h-[3rem]";
+            ? "min-h-[3.5rem] sm:min-h-[3.75rem]"
+            : "min-h-[3rem] sm:min-h-[3.25rem]";
 
           return (
             <div
@@ -166,22 +166,22 @@ function CompactWeekBlock({
             >
               <div
                 className={`flex shrink-0 items-start justify-center ${
-                  comfortable ? "h-6" : "h-5"
+                  comfortable ? "h-7" : "h-6"
                 }`}
               >
                 {today ? (
                   <span
                     className={`flex items-center justify-center rounded-full bg-blue-600 px-0.5 font-medium text-white ${
                       comfortable
-                        ? "h-5 min-w-[20px] text-xs"
-                        : "h-[18px] min-w-[18px] text-[11px]"
+                        ? "h-6 min-w-[22px] text-sm"
+                        : "h-5 min-w-[20px] text-xs"
                     }`}
                   >
                     {d.getDate()}
                   </span>
                 ) : (
                   <span
-                    className={`text-slate-400 ${comfortable ? "text-xs" : "text-[11px]"}`}
+                    className={`text-slate-400 ${comfortable ? "text-sm" : "text-xs"}`}
                   >
                     {dayLabel}
                   </span>
@@ -211,7 +211,7 @@ function CompactWeekBlock({
                       />
                       <span
                         className={`min-w-0 truncate text-slate-200 ${
-                          comfortable ? "text-[11px]" : "text-[10px]"
+                          comfortable ? "text-[13px]" : "text-[12px]"
                         }`}
                       >
                         <span className="text-slate-500">
@@ -229,7 +229,7 @@ function CompactWeekBlock({
                 })}
                 {more > 0 ? (
                   <span
-                    className={`pl-2 text-slate-500 ${comfortable ? "text-[11px]" : "text-[10px]"}`}
+                    className={`pl-2 text-slate-500 ${comfortable ? "text-[12px]" : "text-[11px]"}`}
                   >
                     {more} more
                   </span>

@@ -13,8 +13,8 @@ import {
   type CalendarRangeKeys,
   type GEvent,
 } from "@/lib/calendar-layout";
+import { BurnInCat } from "@/components/BurnInCat";
 import { WeatherIcon } from "@/components/WeatherIcon";
-import { wmoLabel } from "@/lib/wmo";
 
 type HueArea = {
   id: string;
@@ -61,6 +61,12 @@ function initialNewEventRange() {
   return { start: toInputValue(s.toISOString()), end: toInputValue(e.toISOString()) };
 }
 
+function shortWeekdayFromForecastDate(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString(undefined, { weekday: "short" });
+}
+
 export function Board() {
   const search = useSearchParams();
   const [status, setStatus] = useState<Status | null>(null);
@@ -96,6 +102,28 @@ export function Board() {
   });
   const [calendars, setCalendars] = useState<CalendarOption[]>([]);
   const [selectedCalendarId, setSelectedCalendarId] = useState("primary");
+
+  const [burnInCat, setBurnInCat] = useState(true);
+  useEffect(() => {
+    queueMicrotask(() => {
+      try {
+        const v = localStorage.getItem("familyboard_burnin_cat");
+        if (v === "0") setBurnInCat(false);
+        else if (v === "1") setBurnInCat(true);
+      } catch {
+        /* ignore */
+      }
+    });
+  }, []);
+
+  function setBurnInCatEnabled(next: boolean) {
+    setBurnInCat(next);
+    try {
+      localStorage.setItem("familyboard_burnin_cat", next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
 
   const urlBanner = useMemo(() => {
     const err = search.get("google_error");
@@ -207,6 +235,14 @@ export function Board() {
       window.clearTimeout(id);
       ac.abort();
     };
+  }, [fetchBoard]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const ac = new AbortController();
+      void fetchBoard(ac.signal).catch(() => {});
+    }, 60_000);
+    return () => window.clearInterval(id);
   }, [fetchBoard]);
 
   async function addEvent() {
@@ -381,10 +417,10 @@ export function Board() {
     | undefined;
 
   return (
-    <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+    <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-base text-slate-100 sm:text-lg">
       <div className="box-border flex min-h-0 w-full min-w-0 flex-1 flex-col gap-2 overflow-hidden px-2 py-2 sm:gap-3 sm:px-4 sm:py-3 md:gap-4 lg:px-6 lg:py-4 xl:px-8 xl:py-5 2xl:px-10">
         {showBanner ? (
-          <div className="flex shrink-0 items-start gap-2 rounded-lg border border-slate-700 bg-slate-800/60 py-2 pl-3 pr-2 text-sm text-slate-100">
+          <div className="flex shrink-0 items-start gap-2 rounded-lg border border-slate-700 bg-slate-800/60 py-2 pl-3 pr-2 text-base text-slate-100 sm:text-lg">
             <p className="min-w-0 flex-1 pt-0.5 leading-snug">{alertText}</p>
             <button
               type="button"
@@ -402,7 +438,7 @@ export function Board() {
         <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overflow-x-hidden sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
           <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
             {!status?.googleConfigured ? (
-              <p className="mt-4 text-sm text-slate-400">
+              <p className="mt-4 text-base text-slate-400 sm:text-lg">
                 Set{" "}
                 <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
                   GOOGLE_CLIENT_ID
@@ -417,7 +453,7 @@ export function Board() {
             {status?.googleConfigured && !status.googleLinked ? (
               <div className="mt-3">
                 <a
-                  className="inline-flex rounded-full bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
+                  className="inline-flex rounded-full bg-white px-5 py-2.5 text-base font-medium text-slate-900 hover:bg-slate-100 sm:text-lg"
                   href="/api/auth/google"
                 >
                   Link Google
@@ -429,7 +465,9 @@ export function Board() {
               <>
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-2 sm:pt-3">
                   {weekStarts.length === 0 ? (
-                    <p className="text-sm text-slate-400">No weeks in this range.</p>
+                    <p className="text-base text-slate-400 sm:text-lg">
+                      No weeks in this range.
+                    </p>
                   ) : (
                     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
                       <CompactCalendarGrid
@@ -442,11 +480,11 @@ export function Board() {
                     </div>
                   )}
                 </div>
-                <div className="mt-3 flex shrink-0 flex-wrap items-center gap-1.5 border-t border-slate-800 pt-3 sm:gap-2">
-                  <label className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/50 px-3 py-2 text-xs text-slate-300">
+                <div className="mt-3 flex shrink-0 flex-wrap items-center gap-2 border-t border-slate-800 pt-3 sm:gap-2">
+                  <label className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/50 px-3 py-2 text-sm text-slate-300 sm:text-base">
                     Calendar
                     <select
-                      className="rounded bg-slate-900 px-2 py-1 text-xs text-slate-100 outline-none"
+                      className="rounded bg-slate-900 px-2 py-1.5 text-sm text-slate-100 outline-none sm:text-base"
                       value={selectedCalendarId}
                       onChange={(e) => setSelectedCalendarId(e.target.value)}
                     >
@@ -465,28 +503,28 @@ export function Board() {
                   <button
                     type="button"
                     disabled={selectedCalendarId === "__all__"}
-                    className="rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-full bg-sky-600 px-4 py-2 text-base font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:py-2.5 sm:text-lg"
                     onClick={() => setNewEventOpen(true)}
                   >
                     New event
                   </button>
                   <button
                     type="button"
-                    className="rounded-full border border-slate-600 px-4 py-2 text-sm text-slate-100 hover:border-slate-400"
+                    className="rounded-full border border-slate-600 px-4 py-2 text-base text-slate-100 hover:border-slate-400 sm:py-2.5 sm:text-lg"
                     onClick={() => openRangePicker()}
                   >
                     Dates
                   </button>
                   <button
                     type="button"
-                    className="rounded-full border border-slate-600 px-4 py-2 text-sm text-slate-100 hover:border-slate-400"
+                    className="rounded-full border border-slate-600 px-4 py-2 text-base text-slate-100 hover:border-slate-400 sm:py-2.5 sm:text-lg"
                     onClick={() => void fetchBoard()}
                   >
                     Refresh
                   </button>
                   <button
                     type="button"
-                    className="rounded-full border border-rose-900/60 px-4 py-2 text-sm text-rose-100 hover:border-rose-700"
+                    className="rounded-full border border-rose-900/60 px-4 py-2 text-base text-rose-100 hover:border-rose-700 sm:py-2.5 sm:text-lg"
                     onClick={() => void logoutGoogle()}
                   >
                     Disconnect
@@ -499,17 +537,17 @@ export function Board() {
           <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto sm:gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto">
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-lg font-medium text-white">Weather</h2>
+                <h2 className="text-xl font-medium text-white sm:text-2xl">Weather</h2>
                 <button
                   type="button"
-                  className="text-xs text-slate-400 hover:text-white"
+                  className="text-sm text-slate-400 hover:text-white sm:text-base"
                   onClick={() => void fetchBoard()}
                 >
                   Refresh
                 </button>
               </div>
               {!status?.weatherConfigured ? (
-                <p className="mt-3 text-sm text-slate-400">
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">
                   Set{" "}
                   <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
                     WEATHER_LAT
@@ -521,24 +559,24 @@ export function Board() {
                   .
                 </p>
               ) : current ? (
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-end justify-between">
-                    <p className="text-4xl font-semibold text-white">
+                <div className="mt-3 space-y-3">
+                  <div className="flex items-end justify-between gap-2">
+                    <p className="text-5xl font-semibold leading-none text-white sm:text-6xl">
                       {Math.round(current.temperatureF ?? 0)}°
-                      <span className="text-lg text-slate-400">F</span>
+                      <span className="text-xl text-slate-400 sm:text-2xl">F</span>
                     </p>
-                    <WeatherIcon code={Number(current.code ?? 0)} className="h-14 w-14 sm:h-16 sm:w-16" />
+                    <WeatherIcon
+                      code={Number(current.code ?? 0)}
+                      className="h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem]"
+                    />
                   </div>
-                  <p className="text-sm text-slate-300">
-                    {wmoLabel(current.code ?? 0)}
-                  </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-sm text-slate-500 sm:text-base">
                     Humidity {Math.round(current.humidity ?? 0)}% · Wind{" "}
                     {Math.round(current.windMph ?? 0)} mph
                   </p>
                   {hourlyToday && hourlyToday.length > 0 ? (
-                    <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/50 px-2 py-2">
-                      <div className="flex min-w-max items-center gap-3 text-[11px] text-slate-300">
+                    <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/50 px-2 py-2.5">
+                      <div className="flex min-w-max items-center gap-4 text-sm text-slate-300 sm:text-base">
                         {hourlyToday.map((h) => {
                           const d = new Date(h.time ?? "");
                           return (
@@ -551,7 +589,7 @@ export function Board() {
                               {" "}
                               <WeatherIcon
                                 code={Number(h.code ?? 0)}
-                                className="h-4 w-4"
+                                className="h-5 w-5 sm:h-6 sm:w-6"
                               />{" "}
                               {Math.round(h.temperatureF ?? 0)}°F
                             </span>
@@ -561,43 +599,59 @@ export function Board() {
                     </div>
                   ) : null}
                   {daily && daily.length > 0 ? (
-                    <ul className="mt-3 space-y-1 border-t border-slate-800 pt-3 text-xs text-slate-300">
-                      {daily.slice(0, 5).map((d) => (
-                        <li key={d.date} className="flex items-center justify-between gap-2">
-                          <span className="flex min-w-0 items-center gap-2">
+                    <div className="mt-3 border-t border-slate-800 pt-3">
+                      <div className="flex flex-wrap items-stretch justify-between gap-2 sm:flex-nowrap">
+                        {daily.slice(0, 5).map((d) => (
+                          <div
+                            key={d.date}
+                            className="flex min-w-[4.5rem] flex-1 flex-col items-center gap-1.5 rounded-lg border border-slate-800/90 bg-slate-950/50 py-2.5 sm:min-w-0 sm:py-3"
+                          >
+                            <span className="text-sm font-semibold uppercase tracking-wide text-slate-400 sm:text-base">
+                              {shortWeekdayFromForecastDate(d.date ?? "")}
+                            </span>
                             <WeatherIcon
                               code={Number(d.code ?? 0)}
-                              className="h-7 w-7 shrink-0"
+                              className="h-9 w-9 sm:h-11 sm:w-11"
                             />
-                            <span className="truncate">{d.date}</span>
-                          </span>
-                          <span className="shrink-0 text-right">
-                            {Math.round(d.minF ?? 0)}–{Math.round(d.maxF ?? 0)}°F ·{" "}
-                            {wmoLabel(d.code ?? 0)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                            <span className="text-base font-medium text-white sm:text-lg">
+                              {Math.round(d.minF ?? 0)}–{Math.round(d.maxF ?? 0)}°F
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   ) : null}
+                  <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
+                    <span className="text-sm text-slate-400 sm:text-base">
+                      Moving cat (burn-in)
+                    </span>
+                    <input
+                      type="checkbox"
+                      className="h-5 w-5 shrink-0 rounded border-slate-600 bg-slate-900 accent-sky-500"
+                      checked={burnInCat}
+                      onChange={(e) => setBurnInCatEnabled(e.target.checked)}
+                      aria-label="Toggle moving cat for screen burn-in prevention"
+                    />
+                  </label>
                 </div>
               ) : (
-                <p className="mt-3 text-sm text-slate-400">Loading weather…</p>
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading weather…</p>
               )}
             </section>
 
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-lg font-medium text-white">Hue</h2>
+                <h2 className="text-xl font-medium text-white sm:text-2xl">Hue</h2>
                 <button
                   type="button"
-                  className="text-xs text-slate-400 hover:text-white"
+                  className="text-sm text-slate-400 hover:text-white sm:text-base"
                   onClick={() => void fetchBoard()}
                 >
                   Refresh
                 </button>
               </div>
               {!status?.hueBridgeIp ? (
-                <p className="mt-3 text-sm text-slate-400">
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">
                   Set{" "}
                   <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
                     HUE_BRIDGE_IP
@@ -605,7 +659,7 @@ export function Board() {
                   on the server.
                 </p>
               ) : !status.huePaired ? (
-                <div className="mt-3 space-y-3 text-sm text-slate-300">
+                <div className="mt-3 space-y-3 text-base text-slate-300 sm:text-lg">
                   <p>
                     Press the{" "}
                     <span className="font-medium text-white">link</span> button on
@@ -615,23 +669,27 @@ export function Board() {
                     type="button"
                     disabled={busy === "pair"}
                     onClick={() => void pairHue()}
-                    className="w-full rounded-full bg-amber-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-amber-400 disabled:opacity-50"
+                    className="w-full rounded-full bg-amber-500 px-4 py-2.5 text-base font-medium text-slate-950 hover:bg-amber-400 disabled:opacity-50 sm:text-lg"
                   >
                     {busy === "pair" ? "Pairing…" : "Pair bridge"}
                   </button>
                 </div>
               ) : areas.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-400">No rooms or zones found.</p>
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                  No rooms or zones found.
+                </p>
               ) : (
-                <ul className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {areas.map((area) => (
                     <li
                       key={area.id}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/30 px-2 py-1.5"
+                      className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-2"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-white">{area.name}</p>
-                        <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                        <p className="truncate text-base font-medium text-white sm:text-lg">
+                          {area.name}
+                        </p>
+                        <p className="text-xs uppercase tracking-wide text-slate-500 sm:text-sm">
                           {area.type}
                         </p>
                       </div>
@@ -639,7 +697,7 @@ export function Board() {
                         type="button"
                         disabled={busy === `hue-${area.id}`}
                         onClick={() => void toggleArea(area.id, !area.on)}
-                        className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                        className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
                           area.on
                             ? "bg-amber-300 text-slate-900"
                             : "bg-slate-800 text-slate-200"
@@ -656,6 +714,8 @@ export function Board() {
         </div>
       </div>
 
+      <BurnInCat enabled={burnInCat} />
+
       <CalendarRangePickerModal
         open={rangePickerOpen}
         draftFrom={pickerDraft.from}
@@ -670,37 +730,37 @@ export function Board() {
       {newEventOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
           <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
-            <h3 className="text-lg font-semibold text-white">New event</h3>
-            <p className="mt-1 text-xs text-slate-400">
+            <h3 className="text-xl font-semibold text-white sm:text-2xl">New event</h3>
+            <p className="mt-1 text-sm text-slate-400 sm:text-base">
               Calendar:{" "}
               {calendars.find((c) => c.id === selectedCalendarId)?.summary ??
                 selectedCalendarId}
             </p>
             <div className="mt-4 space-y-3">
-              <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
+              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
                 Title
                 <input
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
                   value={newSummary}
                   onChange={(e) => setNewSummary(e.target.value)}
                 />
               </label>
-              <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
+              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
                 Start
                 <input
                   type="datetime-local"
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
                   value={newTimes.start}
                   onChange={(e) =>
                     setNewTimes((t) => ({ ...t, start: e.target.value }))
                   }
                 />
               </label>
-              <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
+              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
                 End
                 <input
                   type="datetime-local"
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
                   value={newTimes.end}
                   onChange={(e) =>
                     setNewTimes((t) => ({ ...t, end: e.target.value }))
@@ -711,7 +771,7 @@ export function Board() {
             <div className="mt-5 flex flex-wrap gap-2">
               <button
                 type="button"
-                className="rounded-full bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700"
+                className="rounded-full bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
                 onClick={() => setNewEventOpen(false)}
               >
                 Cancel
@@ -719,7 +779,7 @@ export function Board() {
               <button
                 type="button"
                 disabled={busy === "add"}
-                className="rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+                className="rounded-full bg-sky-600 px-4 py-2.5 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
                 onClick={() => void addEvent()}
               >
                 {busy === "add" ? "Saving…" : "Create event"}
@@ -732,30 +792,30 @@ export function Board() {
       {editOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
           <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
-            <h3 className="text-lg font-semibold text-white">Edit event</h3>
+            <h3 className="text-xl font-semibold text-white sm:text-2xl">Edit event</h3>
             <div className="mt-4 space-y-3">
-              <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
+              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
                 Title
                 <input
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
                   value={editSummary}
                   onChange={(e) => setEditSummary(e.target.value)}
                 />
               </label>
-              <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
+              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
                 Start
                 <input
                   type="datetime-local"
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
                   value={editStart}
                   onChange={(e) => setEditStart(e.target.value)}
                 />
               </label>
-              <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
+              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
                 End
                 <input
                   type="datetime-local"
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
                   value={editEnd}
                   onChange={(e) => setEditEnd(e.target.value)}
                 />
@@ -764,7 +824,7 @@ export function Board() {
             <div className="mt-5 flex flex-wrap gap-2">
               <button
                 type="button"
-                className="rounded-full bg-slate-800 px-4 py-2 text-sm text-white hover:bg-slate-700"
+                className="rounded-full bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
                 onClick={() => setEditOpen(null)}
               >
                 Cancel
@@ -772,7 +832,7 @@ export function Board() {
               <button
                 type="button"
                 disabled={busy === "save"}
-                className="rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+                className="rounded-full bg-sky-600 px-4 py-2.5 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
                 onClick={() => void saveEdit()}
               >
                 {busy === "save" ? "Saving…" : "Save"}
@@ -780,7 +840,7 @@ export function Board() {
               <button
                 type="button"
                 disabled={busy === "delete"}
-                className="rounded-full bg-rose-700 px-4 py-2 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-50"
+                className="rounded-full bg-rose-700 px-4 py-2.5 text-base font-medium text-white hover:bg-rose-600 disabled:opacity-50 sm:text-lg"
                 onClick={() => void deleteEdit()}
               >
                 {busy === "delete" ? "Deleting…" : "Delete"}
