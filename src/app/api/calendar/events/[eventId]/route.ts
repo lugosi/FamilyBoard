@@ -9,9 +9,16 @@ import {
 
 type PatchBody = {
   summary?: string;
+  /** Timed event: ISO strings */
   start?: string;
   end?: string;
+  /** All-day event: calendar dates (end is exclusive per Google Calendar). */
+  allDay?: boolean;
+  startDate?: string;
+  endDate?: string;
 };
+
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function PATCH(
   request: Request,
@@ -27,9 +34,15 @@ export async function PATCH(
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  if (!body.summary && !body.start && !body.end) {
+  const hasTimed = Boolean(body.start || body.end);
+  const hasAllDay =
+    body.allDay === true &&
+    typeof body.startDate === "string" &&
+    typeof body.endDate === "string";
+
+  if (!body.summary && !hasTimed && !hasAllDay) {
     return NextResponse.json(
-      { error: "Provide summary and/or start and end" },
+      { error: "Provide summary and/or start and end (or all-day startDate/endDate)" },
       { status: 400 },
     );
   }
@@ -37,8 +50,20 @@ export async function PATCH(
   const tz = getDefaultTimeZone();
   const patch: Record<string, unknown> = {};
   if (body.summary !== undefined) patch.summary = body.summary;
-  if (body.start) patch.start = { dateTime: body.start, timeZone: tz };
-  if (body.end) patch.end = { dateTime: body.end, timeZone: tz };
+
+  if (hasAllDay) {
+    if (!DATE_KEY.test(body.startDate!) || !DATE_KEY.test(body.endDate!)) {
+      return NextResponse.json(
+        { error: "startDate and endDate must be YYYY-MM-DD" },
+        { status: 400 },
+      );
+    }
+    patch.start = { date: body.startDate };
+    patch.end = { date: body.endDate };
+  } else {
+    if (body.start) patch.start = { dateTime: body.start, timeZone: tz };
+    if (body.end) patch.end = { dateTime: body.end, timeZone: tz };
+  }
 
   try {
     const auth = await getOAuth2WithRefresh(getGoogleRedirectUri(request));

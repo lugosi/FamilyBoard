@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { CalendarRangePickerModal } from "@/components/calendar/CalendarRangePickerModal";
 import { CompactCalendarGrid } from "@/components/calendar/CompactCalendarGrid";
 import {
+  addDays,
+  dateKeyLocal,
   defaultCalendarRangeKeys,
   enumerateWeekStarts,
   parseLocalDateKey,
@@ -61,6 +63,13 @@ function initialNewEventRange() {
   return { start: toInputValue(s.toISOString()), end: toInputValue(e.toISOString()) };
 }
 
+/** Google Calendar all-day `end.date` is exclusive; form uses inclusive last day. */
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function inclusiveLastDayFromGoogleAllDayEnd(exclusiveEndDate: string): string {
+  return dateKeyLocal(addDays(parseLocalDateKey(exclusiveEndDate), -1));
+}
+
 function shortWeekdayFromForecastDate(dateStr: string): string {
   const d = new Date(`${dateStr}T12:00:00`);
   if (Number.isNaN(d.getTime())) return dateStr;
@@ -81,9 +90,14 @@ export function Board() {
   const [newEventOpen, setNewEventOpen] = useState(false);
 
   const [editOpen, setEditOpen] = useState<GEvent | null>(null);
+  const [editAllDay, setEditAllDay] = useState(false);
   const [editSummary, setEditSummary] = useState("");
   const [editStart, setEditStart] = useState("");
   const [editEnd, setEditEnd] = useState("");
+
+  useEffect(() => {
+    if (!editOpen) setEditAllDay(false);
+  }, [editOpen]);
 
   const [rangeKeys, setRangeKeys] = useState<CalendarRangeKeys>(() =>
     defaultCalendarRangeKeys(4),
@@ -286,13 +300,29 @@ export function Board() {
   }
 
   function openEdit(ev: CalendarEvent) {
-    const s = ev.start?.dateTime ?? ev.start?.date;
-    const e = ev.end?.dateTime ?? ev.end?.date;
-    if (!ev.id || !s || !e || ev.start?.date) {
-      setMessage("Editing all-day events is not supported in this UI yet.");
+    if (!ev.id) {
+      setMessage("Could not open this event.");
+      return;
+    }
+    if (ev.start?.date) {
+      const startKey = ev.start.date;
+      const exclusiveEnd =
+        ev.end?.date ?? dateKeyLocal(addDays(parseLocalDateKey(startKey), 1));
+      setEditOpen(ev);
+      setEditAllDay(true);
+      setEditSummary(ev.summary ?? "");
+      setEditStart(startKey);
+      setEditEnd(inclusiveLastDayFromGoogleAllDayEnd(exclusiveEnd));
+      return;
+    }
+    const s = ev.start?.dateTime;
+    const e = ev.end?.dateTime;
+    if (!s || !e) {
+      setMessage("Could not open this event.");
       return;
     }
     setEditOpen(ev);
+    setEditAllDay(false);
     setEditSummary(ev.summary ?? "");
     setEditStart(toInputValue(s));
     setEditEnd(toInputValue(e));
@@ -308,16 +338,44 @@ export function Board() {
     }
     setBusy("save");
     setMessage(null);
+
+    let patchBody: Record<string, unknown>;
+    if (editAllDay) {
+      const startKey = editStart.trim();
+      const lastInclusive = editEnd.trim();
+      if (!DATE_KEY_RE.test(startKey) || !DATE_KEY_RE.test(lastInclusive)) {
+        setBusy(null);
+        setMessage("Start and end must be valid dates.");
+        return;
+      }
+      const startD = parseLocalDateKey(startKey);
+      const lastD = parseLocalDateKey(lastInclusive);
+      if (lastD < startD) {
+        setBusy(null);
+        setMessage("End date must be on or after the start date.");
+        return;
+      }
+      const exclusiveEnd = dateKeyLocal(addDays(lastD, 1));
+      patchBody = {
+        summary: editSummary,
+        allDay: true,
+        startDate: startKey,
+        endDate: exclusiveEnd,
+      };
+    } else {
+      patchBody = {
+        summary: editSummary,
+        start: new Date(editStart).toISOString(),
+        end: new Date(editEnd).toISOString(),
+      };
+    }
+
     const res = await fetch(
       `/api/calendar/events/${encodeURIComponent(editOpen.id)}?calendarId=${encodeURIComponent(eventCalendarId)}`,
       {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        summary: editSummary,
-        start: new Date(editStart).toISOString(),
-        end: new Date(editEnd).toISOString(),
-      }),
+      body: JSON.stringify(patchBody),
       },
     );
     setBusy(null);
@@ -813,6 +871,9 @@ export function Board() {
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
           <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
             <h3 className="text-xl font-semibold text-white sm:text-2xl">Edit event</h3>
+            {editAllDay ? (
+              <p className="mt-1 text-sm text-slate-400 sm:text-base">All-day</p>
+            ) : null}
             <div className="mt-4 space-y-3">
               <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
                 Title
@@ -823,18 +884,18 @@ export function Board() {
                 />
               </label>
               <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
-                Start
+                {editAllDay ? "Start date" : "Start"}
                 <input
-                  type="datetime-local"
+                  type={editAllDay ? "date" : "datetime-local"}
                   className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
                   value={editStart}
                   onChange={(e) => setEditStart(e.target.value)}
                 />
               </label>
               <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
-                End
+                {editAllDay ? "End date (inclusive)" : "End"}
                 <input
-                  type="datetime-local"
+                  type={editAllDay ? "date" : "datetime-local"}
                   className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
                   value={editEnd}
                   onChange={(e) => setEditEnd(e.target.value)}
