@@ -7,6 +7,15 @@ export function getGoogleRedirectUri(request: Request): string {
   return `${u.origin}/api/auth/google/callback`;
 }
 
+export function getSpotifyRedirectUri(request: Request): string {
+  const base = process.env.PUBLIC_APP_URL?.replace(/\/$/, "");
+  if (base) {
+    return `${base}/api/auth/spotify/callback`;
+  }
+  const u = new URL(request.url);
+  return `${u.origin}/api/auth/spotify/callback`;
+}
+
 export function getAppOrigin(request: Request): string {
   const base = process.env.PUBLIC_APP_URL?.replace(/\/$/, "");
   if (base) return base;

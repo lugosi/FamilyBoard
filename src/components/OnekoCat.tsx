@@ -100,13 +100,10 @@ function setSprite(
 export function OnekoCat({ enabled }: { enabled: boolean }) {
   const elRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
-  const [allowMotion, setAllowMotion] = useState(false);
-
-  useEffect(() => {
-    setAllowMotion(
-      !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-    );
-  }, []);
+  const [allowMotion] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
 
   useEffect(() => {
     if (!enabled || !allowMotion) return;

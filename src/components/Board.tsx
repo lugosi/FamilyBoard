@@ -28,6 +28,8 @@ type HueArea = {
 type Status = {
   googleLinked: boolean;
   googleConfigured: boolean;
+  spotifyLinked: boolean;
+  spotifyConfigured: boolean;
   hueReady: boolean;
   hueBridgeIp: string | null;
   huePaired: boolean;
@@ -48,6 +50,35 @@ type CalendarEvent = GEvent & {
   sourceCalendarSummary?: string;
   sourceCalendarColor?: string | null;
 };
+
+type SpotifyDevice = {
+  id?: string;
+  is_active?: boolean;
+  is_restricted?: boolean;
+  name?: string;
+  type?: string;
+  volume_percent?: number;
+};
+
+type SpotifyPlayback = {
+  is_playing?: boolean;
+  progress_ms?: number;
+  item?: {
+    id?: string;
+    name?: string;
+    duration_ms?: number;
+    album?: { name?: string; images?: Array<{ url?: string }> };
+    artists?: Array<{ name?: string }>;
+  };
+  device?: SpotifyDevice;
+};
+
+function formatMsClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 function toInputValue(isoOrDate: string): string {
   const d = new Date(isoOrDate);
@@ -129,6 +160,11 @@ export function Board() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [areas, setAreas] = useState<HueArea[]>([]);
   const [weather, setWeather] = useState<Record<string, unknown> | null>(null);
+  const [spotifyPlayback, setSpotifyPlayback] = useState<SpotifyPlayback | null>(
+    null,
+  );
+  const [spotifyDevices, setSpotifyDevices] = useState<SpotifyDevice[]>([]);
+  const [spotifySeekDraft, setSpotifySeekDraft] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -142,10 +178,6 @@ export function Board() {
   const [editSummary, setEditSummary] = useState("");
   const [editStart, setEditStart] = useState("");
   const [editEnd, setEditEnd] = useState("");
-
-  useEffect(() => {
-    if (!editOpen) setEditAllDay(false);
-  }, [editOpen]);
 
   const [rangeKeys, setRangeKeys] = useState<CalendarRangeKeys>(() =>
     defaultCalendarRangeKeys(4),
@@ -209,6 +241,9 @@ export function Board() {
     const err = search.get("google_error");
     if (err) return `Google: ${err}`;
     if (search.get("google") === "linked") return "Google Calendar linked.";
+    const spotifyErr = search.get("spotify_error");
+    if (spotifyErr) return `Spotify: ${spotifyErr}`;
+    if (search.get("spotify") === "linked") return "Spotify linked.";
     return null;
   }, [search]);
 
@@ -300,6 +335,32 @@ export function Board() {
         }
       } else {
         setAreas([]);
+      }
+
+      if (s.spotifyConfigured && s.spotifyLinked) {
+        const pRes = await fetch("/api/spotify/now-playing", { signal });
+        if (signal?.aborted) return;
+        if (pRes.status === 401) {
+          setSpotifyPlayback(null);
+          setSpotifyDevices([]);
+        } else if (pRes.ok) {
+          const data = (await pRes.json()) as { playback?: SpotifyPlayback | null };
+          setSpotifyPlayback(data.playback ?? null);
+          setSpotifySeekDraft(null);
+        }
+
+        const dRes = await fetch("/api/spotify/devices", { signal });
+        if (signal?.aborted) return;
+        if (dRes.status === 401) {
+          setSpotifyDevices([]);
+        } else if (dRes.ok) {
+          const data = (await dRes.json()) as { devices?: SpotifyDevice[] };
+          setSpotifyDevices(data.devices ?? []);
+        }
+      } else {
+        setSpotifyPlayback(null);
+        setSpotifyDevices([]);
+        setSpotifySeekDraft(null);
       }
 
       if (s.weatherConfigured) {
@@ -516,6 +577,7 @@ export function Board() {
       return;
     }
     setEditOpen(null);
+    setEditAllDay(false);
     setMessage("Event updated.");
     await fetchBoard();
   }
@@ -543,6 +605,7 @@ export function Board() {
       return;
     }
     setEditOpen(null);
+    setEditAllDay(false);
     setMessage("Event deleted.");
     await fetchBoard();
   }
@@ -588,6 +651,56 @@ export function Board() {
     await fetchBoard();
   }
 
+  async function disconnectSpotify() {
+    setBusy("spotify-disconnect");
+    setMessage(null);
+    const res = await fetch("/api/auth/spotify/logout", { method: "POST" });
+    setBusy(null);
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      setMessage(j.error ?? "Could not disconnect Spotify");
+      return;
+    }
+    setMessage("Disconnected Spotify.");
+    await fetchBoard();
+  }
+
+  async function spotifyControl(
+    action:
+      | "play"
+      | "pause"
+      | "next"
+      | "previous"
+      | "set_volume"
+      | "set_device"
+      | "seek",
+    extra?: Record<string, unknown>,
+  ) {
+    setBusy(`spotify-${action}`);
+    setMessage(null);
+    const res = await fetch("/api/spotify/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...extra }),
+    });
+    setBusy(null);
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      setMessage(j.error ?? "Spotify action failed");
+      return;
+    }
+    setSpotifySeekDraft(null);
+    await fetchBoard();
+  }
+
+  async function commitSpotifySeek() {
+    if (spotifySeekDraft === null) return;
+    const duration = Number(spotifyTrack?.duration_ms ?? 0);
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    const clamped = Math.max(0, Math.min(duration, Math.round(spotifySeekDraft)));
+    await spotifyControl("seek", { positionMs: clamped });
+  }
+
   function openRangePicker() {
     setPickerDraft({ from: rangeKeys.fromKey, to: rangeKeys.toInclusiveKey });
     setRangePickerOpen(true);
@@ -617,6 +730,19 @@ export function Board() {
   const hourlyToday = weather?.hourlyToday as
     | Array<{ time?: string; temperatureF?: number; code?: number }>
     | undefined;
+  const spotifyTrack = spotifyPlayback?.item;
+  const spotifyArtist = spotifyTrack?.artists?.map((a) => a.name).filter(Boolean).join(", ");
+  const spotifyActiveDevice =
+    spotifyDevices.find((d) => d.is_active) ?? spotifyPlayback?.device ?? null;
+  const spotifyCover = spotifyTrack?.album?.images?.[0]?.url;
+  const spotifyDurationMs = Math.max(0, Number(spotifyTrack?.duration_ms ?? 0));
+  const spotifyProgressMs = Math.max(
+    0,
+    Math.min(
+      spotifyDurationMs || Number.MAX_SAFE_INTEGER,
+      Number(spotifySeekDraft ?? spotifyPlayback?.progress_ms ?? 0),
+    ),
+  );
   const clockDate = clockNow.toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",
@@ -943,6 +1069,184 @@ export function Board() {
                 </ul>
               )}
             </section>
+
+            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-xl font-medium text-white sm:text-2xl">Spotify</h2>
+                <button
+                  type="button"
+                  className="text-sm text-slate-400 hover:text-white sm:text-base"
+                  onClick={() => void fetchBoard()}
+                >
+                  Refresh
+                </button>
+              </div>
+              {!status?.spotifyConfigured ? (
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                  Set{" "}
+                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                    SPOTIFY_CLIENT_ID
+                  </code>{" "}
+                  and{" "}
+                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                    SPOTIFY_CLIENT_SECRET
+                  </code>
+                  .
+                </p>
+              ) : !status.spotifyLinked ? (
+                <div className="mt-3 space-y-3">
+                  <p className="text-base text-slate-300 sm:text-lg">
+                    Link Spotify to show now-playing and control playback.
+                  </p>
+                  <a
+                    className="inline-flex rounded-full bg-green-500 px-4 py-2 text-base font-medium text-slate-950 hover:bg-green-400 sm:text-lg"
+                    href="/api/auth/spotify"
+                  >
+                    Link Spotify
+                  </a>
+                </div>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {spotifyTrack ? (
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
+                      <div className="flex items-center gap-3">
+                        {spotifyCover ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={spotifyCover}
+                            alt=""
+                            className="h-14 w-14 shrink-0 rounded-md object-cover"
+                          />
+                        ) : (
+                          <div className="h-14 w-14 shrink-0 rounded-md border border-slate-700 bg-slate-900/70" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-base font-semibold text-white sm:text-lg">
+                            {spotifyTrack.name ?? "Unknown track"}
+                          </p>
+                          <p className="truncate text-sm text-slate-400 sm:text-base">
+                            {spotifyArtist || "Unknown artist"}
+                          </p>
+                          <p className="truncate text-xs uppercase tracking-wide text-slate-500 sm:text-sm">
+                            {spotifyTrack.album?.name ?? "Unknown album"}
+                          </p>
+                        </div>
+                      </div>
+                      {spotifyDurationMs > 0 ? (
+                        <div className="mt-3">
+                          <input
+                            type="range"
+                            min={0}
+                            max={spotifyDurationMs}
+                            step={1000}
+                            value={spotifyProgressMs}
+                            className="w-full accent-sky-500"
+                            onChange={(e) =>
+                              setSpotifySeekDraft(Number(e.currentTarget.value))
+                            }
+                            onMouseUp={() => void commitSpotifySeek()}
+                            onTouchEnd={() => void commitSpotifySeek()}
+                          />
+                          <div className="mt-1 flex items-center justify-between text-xs text-slate-400 sm:text-sm">
+                            <span>{formatMsClock(spotifyProgressMs)}</span>
+                            <span>{formatMsClock(spotifyDurationMs)}</span>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-base text-slate-400 sm:text-lg">
+                      Nothing is currently playing.
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={busy === "spotify-previous"}
+                      className="rounded-full border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
+                      onClick={() => void spotifyControl("previous")}
+                    >
+                      Prev
+                    </button>
+                    {spotifyPlayback?.is_playing ? (
+                      <button
+                        type="button"
+                        disabled={busy === "spotify-pause"}
+                        className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
+                        onClick={() => void spotifyControl("pause")}
+                      >
+                        Pause
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={busy === "spotify-play"}
+                        className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
+                        onClick={() => void spotifyControl("play")}
+                      >
+                        Play
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={busy === "spotify-next"}
+                      className="rounded-full border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
+                      onClick={() => void spotifyControl("next")}
+                    >
+                      Next
+                    </button>
+                  </div>
+
+                  <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
+                    Device
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
+                      value={spotifyActiveDevice?.id ?? ""}
+                      onChange={(e) =>
+                        void spotifyControl("set_device", { deviceId: e.target.value })
+                      }
+                    >
+                      {spotifyDevices.length === 0 ? (
+                        <option value="">No devices found</option>
+                      ) : (
+                        spotifyDevices.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name ?? "Unknown"} {d.is_active ? "• active" : ""}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </label>
+
+                  <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
+                    Volume {Math.round(spotifyActiveDevice?.volume_percent ?? 0)}%
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={Math.round(spotifyActiveDevice?.volume_percent ?? 0)}
+                      disabled={!spotifyActiveDevice}
+                      className="mt-2 w-full accent-sky-500 disabled:opacity-40"
+                      onChange={(e) =>
+                        void spotifyControl("set_volume", {
+                          volumePercent: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    disabled={busy === "spotify-disconnect"}
+                    className="rounded-full border border-rose-900/60 px-4 py-2 text-base text-rose-100 hover:border-rose-700 disabled:opacity-50 sm:text-lg"
+                    onClick={() => void disconnectSpotify()}
+                  >
+                    Disconnect Spotify
+                  </button>
+                </div>
+              )}
+            </section>
           </div>
         </div>
       </div>
@@ -1068,7 +1372,10 @@ export function Board() {
               <button
                 type="button"
                 className="rounded-full bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
-                onClick={() => setEditOpen(null)}
+                onClick={() => {
+                  setEditOpen(null);
+                  setEditAllDay(false);
+                }}
               >
                 Cancel
               </button>

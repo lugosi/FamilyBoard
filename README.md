@@ -1,21 +1,25 @@
 # Family board
 
-Next.js app for a home display: **Google Calendar** (compact month-style grid), **weather** (Open-Meteo), and **Philips Hue** lights. Intended to run in Docker on a home server (for example TrueNAS Community Edition).
+Next.js app for a home display: **Google Calendar** (compact month-style grid), **weather** (Open-Meteo), **Philips Hue** lights, and **Spotify** playback controls. Intended to run in Docker on a home server (for example TrueNAS Community Edition).
 
 ## Quick start
 
 ```bash
 npm install
 cp .env.example .env.local
-# Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PUBLIC_APP_URL, optional WEATHER_*, HUE_*
+# Set GOOGLE_*, SPOTIFY_*, PUBLIC_APP_URL, optional WEATHER_*, HUE_*
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), use **Link Google**, then authorize Calendar access.
+Open [http://localhost:3000](http://localhost:3000), then use **Link Google** and **Link Spotify** in the dashboard.
 
 ## Environment
 
 See `.env.example`. Use a writable `DATA_DIR` in production so OAuth tokens and Hue pairing survive restarts.
+
+Spotify OAuth redirect URI must be added in your Spotify app settings:
+
+- `${PUBLIC_APP_URL}/api/auth/spotify/callback`
 
 ### TrueNAS port configuration
 
@@ -25,6 +29,7 @@ You can change the app listen port at runtime with `APP_PORT` (default `3000`).
 - Update the app **container port mapping** to match the same internal port.
 - Update `PUBLIC_APP_URL` to include the external host/port users open in a browser.
 - Keep Google OAuth redirect URI synced: `${PUBLIC_APP_URL}/api/auth/google/callback`.
+- Keep Spotify OAuth redirect URI synced: `${PUBLIC_APP_URL}/api/auth/spotify/callback`.
 
 ## Publish with GitHub (recommended for TrueNAS)
 
