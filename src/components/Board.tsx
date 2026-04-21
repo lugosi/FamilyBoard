@@ -73,6 +73,8 @@ type SpotifyPlayback = {
   device?: SpotifyDevice;
 };
 
+type RightWidgetKey = "clock" | "weather" | "hue" | "spotify";
+
 function formatMsClock(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
   const m = Math.floor(total / 60);
@@ -199,6 +201,14 @@ export function Board() {
 
   const [burnInCat, setBurnInCat] = useState(true);
   const [clockNow, setClockNow] = useState(() => new Date());
+  const [collapsedWidgets, setCollapsedWidgets] = useState<
+    Record<RightWidgetKey, boolean>
+  >({
+    clock: false,
+    weather: false,
+    hue: false,
+    spotify: false,
+  });
 
   const [nightGreyscale, setNightGreyscale] = useState(false);
   useEffect(() => {
@@ -235,6 +245,10 @@ export function Board() {
     } catch {
       /* ignore */
     }
+  }
+
+  function toggleWidgetCollapse(key: RightWidgetKey) {
+    setCollapsedWidgets((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
   const urlBanner = useMemo(() => {
@@ -882,25 +896,48 @@ export function Board() {
 
           <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto sm:gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto">
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-400 sm:text-sm">
-                {clockDate}
-              </p>
-              <p className="mt-1 text-3xl font-semibold leading-tight text-white sm:text-4xl">
-                {clockTime}
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-xl font-medium text-white sm:text-2xl">Clock</h2>
+                <button
+                  type="button"
+                  className="text-sm text-slate-400 hover:text-white sm:text-base"
+                  onClick={() => toggleWidgetCollapse("clock")}
+                >
+                  {collapsedWidgets.clock ? "Expand" : "Collapse"}
+                </button>
+              </div>
+              {!collapsedWidgets.clock ? (
+                <>
+                  <p className="mt-3 text-xs uppercase tracking-wide text-slate-400 sm:text-sm">
+                    {clockDate}
+                  </p>
+                  <p className="mt-1 text-3xl font-semibold leading-tight text-white sm:text-4xl">
+                    {clockTime}
+                  </p>
+                </>
+              ) : null}
             </section>
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Weather</h2>
-                <button
-                  type="button"
-                  className="text-sm text-slate-400 hover:text-white sm:text-base"
-                  onClick={() => void fetchBoard()}
-                >
-                  Refresh
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="text-sm text-slate-400 hover:text-white sm:text-base"
+                    onClick={() => void fetchBoard()}
+                  >
+                    Refresh
+                  </button>
+                  <button
+                    type="button"
+                    className="text-sm text-slate-400 hover:text-white sm:text-base"
+                    onClick={() => toggleWidgetCollapse("weather")}
+                  >
+                    {collapsedWidgets.weather ? "Expand" : "Collapse"}
+                  </button>
+                </div>
               </div>
-              {!status?.weatherConfigured ? (
+              {collapsedWidgets.weather ? null : !status?.weatherConfigured ? (
                 <p className="mt-3 text-base text-slate-400 sm:text-lg">
                   Set{" "}
                   <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
@@ -1001,15 +1038,24 @@ export function Board() {
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Hue</h2>
-                <button
-                  type="button"
-                  className="text-sm text-slate-400 hover:text-white sm:text-base"
-                  onClick={() => void fetchBoard()}
-                >
-                  Refresh
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="text-sm text-slate-400 hover:text-white sm:text-base"
+                    onClick={() => void fetchBoard()}
+                  >
+                    Refresh
+                  </button>
+                  <button
+                    type="button"
+                    className="text-sm text-slate-400 hover:text-white sm:text-base"
+                    onClick={() => toggleWidgetCollapse("hue")}
+                  >
+                    {collapsedWidgets.hue ? "Expand" : "Collapse"}
+                  </button>
+                </div>
               </div>
-              {!status?.hueBridgeIp ? (
+              {collapsedWidgets.hue ? null : !status?.hueBridgeIp ? (
                 <p className="mt-3 text-base text-slate-400 sm:text-lg">
                   Set{" "}
                   <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
@@ -1073,15 +1119,24 @@ export function Board() {
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Spotify</h2>
-                <button
-                  type="button"
-                  className="text-sm text-slate-400 hover:text-white sm:text-base"
-                  onClick={() => void fetchBoard()}
-                >
-                  Refresh
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="text-sm text-slate-400 hover:text-white sm:text-base"
+                    onClick={() => void fetchBoard()}
+                  >
+                    Refresh
+                  </button>
+                  <button
+                    type="button"
+                    className="text-sm text-slate-400 hover:text-white sm:text-base"
+                    onClick={() => toggleWidgetCollapse("spotify")}
+                  >
+                    {collapsedWidgets.spotify ? "Expand" : "Collapse"}
+                  </button>
+                </div>
               </div>
-              {!status?.spotifyConfigured ? (
+              {collapsedWidgets.spotify ? null : !status?.spotifyConfigured ? (
                 <p className="mt-3 text-base text-slate-400 sm:text-lg">
                   Set{" "}
                   <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
