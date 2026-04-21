@@ -166,6 +166,7 @@ export function Board() {
   const [selectedCalendarId, setSelectedCalendarId] = useState("primary");
 
   const [burnInCat, setBurnInCat] = useState(true);
+  const [clockNow, setClockNow] = useState(() => new Date());
 
   const [nightGreyscale, setNightGreyscale] = useState(false);
   useEffect(() => {
@@ -176,6 +177,11 @@ export function Board() {
     tickNight();
     const nid = window.setInterval(tickNight, 60_000);
     return () => window.clearInterval(nid);
+  }, []);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setClockNow(new Date()), 1000);
+    return () => window.clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -611,6 +617,16 @@ export function Board() {
   const hourlyToday = weather?.hourlyToday as
     | Array<{ time?: string; temperatureF?: number; code?: number }>
     | undefined;
+  const clockDate = clockNow.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const clockTime = clockNow.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 
   return (
     <>
@@ -739,6 +755,14 @@ export function Board() {
           </section>
 
           <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto sm:gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto">
+            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-400 sm:text-sm">
+                {clockDate}
+              </p>
+              <p className="mt-1 text-3xl font-semibold leading-tight text-white sm:text-4xl">
+                {clockTime}
+              </p>
+            </section>
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Weather</h2>
