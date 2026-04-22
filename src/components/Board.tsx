@@ -199,7 +199,6 @@ export function Board() {
   const [calendars, setCalendars] = useState<CalendarOption[]>([]);
   const [selectedCalendarId, setSelectedCalendarId] = useState("primary");
 
-  const [burnInCat, setBurnInCat] = useState(true);
   const [clockNow, setClockNow] = useState(() => new Date());
   const [collapsedWidgets, setCollapsedWidgets] = useState<
     Record<RightWidgetKey, boolean>
@@ -225,27 +224,6 @@ export function Board() {
     const id = window.setInterval(() => setClockNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
-
-  useEffect(() => {
-    queueMicrotask(() => {
-      try {
-        const v = localStorage.getItem("familyboard_burnin_cat");
-        if (v === "0") setBurnInCat(false);
-        else if (v === "1") setBurnInCat(true);
-      } catch {
-        /* ignore */
-      }
-    });
-  }, []);
-
-  function setBurnInCatEnabled(next: boolean) {
-    setBurnInCat(next);
-    try {
-      localStorage.setItem("familyboard_burnin_cat", next ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  }
 
   function toggleWidgetCollapse(key: RightWidgetKey) {
     setCollapsedWidgets((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -950,25 +928,50 @@ export function Board() {
                   .
                 </p>
               ) : current ? (
-                <div className="mt-3 space-y-3">
-                  <div className="flex items-end justify-between gap-2">
-                    <p className="text-5xl font-semibold leading-none text-white sm:text-6xl">
-                      {Math.round(current.temperatureF ?? 0)}°
-                      <span className="text-xl text-slate-400 sm:text-2xl">F</span>
-                    </p>
-                    <WeatherIcon
-                      code={Number(current.code ?? 0)}
-                      className="h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem]"
-                    />
+                <div className="mt-2 space-y-2.5">
+                  <div className="grid grid-cols-[minmax(0,1fr)_8.25rem] gap-2">
+                    <div className="min-w-0">
+                      <p className="text-4xl font-semibold leading-none text-white sm:text-5xl">
+                        {Math.round(current.temperatureF ?? 0)}°
+                        <span className="text-base text-slate-400 sm:text-lg">F</span>
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500 sm:text-sm">
+                        Humidity {Math.round(current.humidity ?? 0)}% · Wind{" "}
+                        {Math.round(current.windMph ?? 0)} mph
+                      </p>
+                      <WeatherIcon
+                        code={Number(current.code ?? 0)}
+                        className="mt-2 h-10 w-10 sm:h-12 sm:w-12"
+                      />
+                    </div>
+                    {daily && daily.length > 0 ? (
+                      <div className="grid grid-cols-1 gap-1.5">
+                        {daily.slice(0, 3).map((d) => (
+                          <div
+                            key={d.date}
+                            className="flex min-w-0 items-center justify-between gap-1 rounded-lg border border-slate-800/90 bg-slate-950/50 px-2 py-1.5"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-400 sm:text-xs">
+                                {shortWeekdayFromForecastDate(d.date ?? "")}
+                              </p>
+                              <p className="text-[11px] font-medium text-white sm:text-xs">
+                                {Math.round(d.minF ?? 0)}–{Math.round(d.maxF ?? 0)}°
+                              </p>
+                            </div>
+                            <WeatherIcon
+                              code={Number(d.code ?? 0)}
+                              className="h-4 w-4 shrink-0 sm:h-5 sm:w-5"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
-                  <p className="text-sm text-slate-500 sm:text-base">
-                    Humidity {Math.round(current.humidity ?? 0)}% · Wind{" "}
-                    {Math.round(current.windMph ?? 0)} mph
-                  </p>
                   {hourlyToday && hourlyToday.length > 0 ? (
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/50 px-1 py-2 sm:px-2">
-                      <div className="flex w-full flex-nowrap items-stretch justify-between gap-0.5 sm:gap-1">
-                        {hourlyToday.map((h) => {
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/50 px-1 py-1.5 sm:px-2">
+                      <div className="flex w-full flex-nowrap items-stretch justify-between gap-0.5">
+                        {hourlyToday.slice(0, 8).map((h) => {
                           const d = new Date(h.time ?? "");
                           const label = Number.isNaN(d.getTime())
                             ? (h.time ?? "").slice(11, 16)
@@ -978,14 +981,14 @@ export function Board() {
                               key={h.time}
                               className="flex min-w-0 flex-1 flex-col items-center gap-0.5 text-center"
                             >
-                              <span className="w-full truncate text-[10px] leading-tight text-slate-400 sm:text-xs">
+                              <span className="w-full truncate text-[10px] leading-tight text-slate-400">
                                 {label}
                               </span>
                               <WeatherIcon
                                 code={Number(h.code ?? 0)}
-                                className="h-4 w-4 shrink-0 sm:h-5 sm:w-5"
+                                className="h-4 w-4 shrink-0"
                               />
-                              <span className="w-full truncate text-[10px] font-medium leading-tight text-slate-200 sm:text-xs">
+                              <span className="w-full truncate text-[10px] font-medium leading-tight text-slate-200">
                                 {Math.round(h.temperatureF ?? 0)}°
                               </span>
                             </div>
@@ -994,41 +997,6 @@ export function Board() {
                       </div>
                     </div>
                   ) : null}
-                  {daily && daily.length > 0 ? (
-                    <div className="mt-3 border-t border-slate-800 pt-3">
-                      <div className="flex flex-wrap items-stretch justify-between gap-2 sm:flex-nowrap">
-                        {daily.slice(0, 5).map((d) => (
-                          <div
-                            key={d.date}
-                            className="flex min-w-[4.5rem] flex-1 flex-col items-center gap-1.5 rounded-lg border border-slate-800/90 bg-slate-950/50 py-2.5 sm:min-w-0 sm:py-3"
-                          >
-                            <span className="text-sm font-semibold uppercase tracking-wide text-slate-400 sm:text-base">
-                              {shortWeekdayFromForecastDate(d.date ?? "")}
-                            </span>
-                            <WeatherIcon
-                              code={Number(d.code ?? 0)}
-                              className="h-9 w-9 sm:h-11 sm:w-11"
-                            />
-                            <span className="text-base font-medium text-white sm:text-lg">
-                              {Math.round(d.minF ?? 0)}–{Math.round(d.maxF ?? 0)}°F
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
-                    <span className="text-sm text-slate-400 sm:text-base">
-                      Neko (follows mouse, burn-in)
-                    </span>
-                    <input
-                      type="checkbox"
-                      className="h-5 w-5 shrink-0 rounded border-slate-600 bg-slate-900 accent-sky-500"
-                      checked={burnInCat}
-                      onChange={(e) => setBurnInCatEnabled(e.target.checked)}
-                      aria-label="Toggle classic Neko cat that follows the pointer"
-                    />
-                  </label>
                 </div>
               ) : (
                 <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading weather…</p>
@@ -1455,7 +1423,7 @@ export function Board() {
         </div>
       ) : null}
     </div>
-    <OnekoCat enabled={burnInCat} />
+    <OnekoCat enabled />
     </>
   );
 }
