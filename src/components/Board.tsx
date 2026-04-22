@@ -966,6 +966,9 @@ export function Board() {
   const spotifyArtist = spotifyTrack?.artists?.map((a) => a.name).filter(Boolean).join(", ");
   const spotifyActiveDevice =
     spotifyDevices.find((d) => d.is_active) ?? spotifyPlayback?.device ?? null;
+  const spotifySdkInDeviceList = Boolean(
+    spotifySdkDeviceId && spotifyDevices.some((d) => d.id === spotifySdkDeviceId),
+  );
   const spotifyCover = spotifyTrack?.album?.images?.[0]?.url;
   const spotifyDurationMs = Math.max(0, Number(spotifyTrack?.duration_ms ?? 0));
   const spotifyProgressMs = Math.max(
@@ -1475,6 +1478,11 @@ export function Board() {
                         void spotifyControl("set_device", { deviceId: e.target.value })
                       }
                     >
+                      {spotifySdkDeviceId && !spotifySdkInDeviceList ? (
+                        <option value={spotifySdkDeviceId}>
+                          FamilyBoard Web Player {spotifyActiveDevice?.id === spotifySdkDeviceId ? "• active" : ""}
+                        </option>
+                      ) : null}
                       {spotifyDevices.length === 0 ? (
                         <option value="">No devices found</option>
                       ) : (
@@ -1498,18 +1506,27 @@ export function Board() {
                       </span>
                     </p>
                     {spotifySdkDeviceId ? (
-                      <button
-                        type="button"
-                        className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400"
-                        onClick={() =>
-                          void spotifyControl("set_device", {
-                            deviceId: spotifySdkDeviceId,
-                            play: false,
-                          })
-                        }
-                      >
-                        Cast here
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400"
+                          onClick={() => void spotifyPlayerRef.current?.activateElement?.()}
+                        >
+                          Enable audio
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400"
+                          onClick={() =>
+                            void spotifyControl("set_device", {
+                              deviceId: spotifySdkDeviceId,
+                              play: false,
+                            })
+                          }
+                        >
+                          Cast to web
+                        </button>
+                      </div>
                     ) : null}
                   </div>
 
