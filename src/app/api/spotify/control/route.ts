@@ -13,11 +13,15 @@ type ControlBody = {
     | "previous"
     | "set_volume"
     | "set_device"
-    | "seek";
+    | "seek"
+    | "play_track"
+    | "play_context"
+    | "queue_track";
   volumePercent?: number;
   deviceId?: string;
   play?: boolean;
   positionMs?: number;
+  uri?: string;
 };
 
 export async function POST(request: Request) {
@@ -99,6 +103,35 @@ export async function POST(request: Request) {
       init.method = "PUT";
       break;
     }
+    case "play_track":
+      if (!body.uri) {
+        return NextResponse.json({ error: "uri is required" }, { status: 400 });
+      }
+      endpoint = `/me/player/play${
+        body.deviceId ? `?device_id=${encodeURIComponent(body.deviceId)}` : ""
+      }`;
+      init.method = "PUT";
+      init.body = JSON.stringify({ uris: [body.uri] });
+      break;
+    case "play_context":
+      if (!body.uri) {
+        return NextResponse.json({ error: "uri is required" }, { status: 400 });
+      }
+      endpoint = `/me/player/play${
+        body.deviceId ? `?device_id=${encodeURIComponent(body.deviceId)}` : ""
+      }`;
+      init.method = "PUT";
+      init.body = JSON.stringify({ context_uri: body.uri });
+      break;
+    case "queue_track":
+      if (!body.uri) {
+        return NextResponse.json({ error: "uri is required" }, { status: 400 });
+      }
+      endpoint = `/me/player/queue?uri=${encodeURIComponent(body.uri)}${
+        body.deviceId ? `&device_id=${encodeURIComponent(body.deviceId)}` : ""
+      }`;
+      init.method = "POST";
+      break;
     default:
       return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
   }
