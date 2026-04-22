@@ -1070,9 +1070,15 @@ export function Board() {
     extra?: Record<string, unknown>,
   ) {
     setSpotifyNotice(null);
+    const requestedDeviceId =
+      typeof extra?.deviceId === "string" && extra.deviceId.trim()
+        ? extra.deviceId
+        : null;
+    const intendedDeviceId = requestedDeviceId || spotifyEffectiveDeviceId || null;
     if (
       (action === "play" || action === "play_track" || action === "play_context") &&
-      spotifySdkReady
+      spotifySdkReady &&
+      intendedDeviceId === spotifySdkDeviceId
     ) {
       try {
         await spotifyPlayerRef.current?.activateElement?.();
