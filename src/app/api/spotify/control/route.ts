@@ -76,7 +76,13 @@ export async function POST(request: Request) {
 
   switch (body.action) {
     case "play":
-      endpoint = "/me/player/play";
+      expectedDeviceId = body.deviceId ?? null;
+      if (body.deviceId) {
+        preflightTransfer = { deviceId: body.deviceId, play: true };
+      }
+      endpoint = `/me/player/play${
+        body.deviceId ? `?device_id=${encodeURIComponent(body.deviceId)}` : ""
+      }`;
       init.method = "PUT";
       break;
     case "pause":
@@ -212,7 +218,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (expectedPlayUri) {
+    if (expectedPlayUri || (body.action === "play" && expectedDeviceId)) {
       // Spotify can accept play requests but not start playback immediately.
       // Verify and return a warning so UI can surface actionable guidance.
       let verified = false;

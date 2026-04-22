@@ -704,7 +704,7 @@ export function Board() {
             body: JSON.stringify({
               action: "set_device",
               deviceId: awakened.id,
-              play: false,
+              play: true,
             }),
           });
           if (!transferRes.ok) {
@@ -1702,7 +1702,11 @@ export function Board() {
                         type="button"
                         disabled={busy === "spotify-play"}
                         className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
-                        onClick={() => void spotifyControl("play")}
+                        onClick={() =>
+                          void spotifyControl("play", {
+                            deviceId: spotifyEffectiveDeviceId || undefined,
+                          })
+                        }
                       >
                         Play
                       </button>
