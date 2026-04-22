@@ -96,6 +96,12 @@ type SpotifySearchPlaylist = {
   images?: Array<{ url?: string }>;
   owner?: { display_name?: string };
 };
+type CastDevice = {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+};
 
 type RightWidgetKey = "clock" | "weather" | "hue" | "spotify";
 type SpotifyResultTab = "tracks" | "albums" | "playlists";
@@ -210,6 +216,7 @@ function pickDefaultCalendarId(options: CalendarOption[]): string {
 }
 
 const SESSION_EXPLICIT_CALENDAR = "familyboard_explicit_calendar";
+const SPOTIFY_KNOWN_DEVICES_KEY = "familyboard_spotify_known_devices";
 
 function markCalendarExplicitlyChosen() {
   try {
@@ -245,6 +252,17 @@ export function Board() {
     null,
   );
   const [spotifyDevices, setSpotifyDevices] = useState<SpotifyDevice[]>([]);
+  const [spotifyKnownDevices, setSpotifyKnownDevices] = useState<SpotifyDevice[]>(() => {
+    try {
+      if (typeof window === "undefined") return [];
+      const raw = localStorage.getItem(SPOTIFY_KNOWN_DEVICES_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as SpotifyDevice[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
   const [spotifySeekDraft, setSpotifySeekDraft] = useState<number | null>(null);
   const [spotifyQuery, setSpotifyQuery] = useState("");
   const [spotifySearching, setSpotifySearching] = useState(false);
@@ -262,7 +280,7 @@ export function Board() {
   const [castWakeBaselineIds, setCastWakeBaselineIds] = useState<string[] | null>(null);
   const [castTargetName, setCastTargetName] = useState<string | null>(null);
   const [castSupportHint, setCastSupportHint] = useState<string | null>(null);
-  const [castSpeakerCandidates, setCastSpeakerCandidates] = useState<SpotifyDevice[]>([]);
+  const [castSpeakerCandidates, setCastSpeakerCandidates] = useState<CastDevice[]>([]);
   const [castSpeakerLoading, setCastSpeakerLoading] = useState(false);
   const [castSpeakerChoice, setCastSpeakerChoice] = useState("");
   const [spotifyNotice, setSpotifyNotice] = useState<string | null>(null);
@@ -371,6 +389,16 @@ export function Board() {
       const data = (await dRes.json()) as { devices?: SpotifyDevice[] };
       const devices = data.devices ?? [];
       setSpotifyDevices(devices);
+      setSpotifyKnownDevices((prev) => {
+        const map = new Map<string, SpotifyDevice>();
+        for (const d of prev) {
+          if (d.id) map.set(d.id, d);
+        }
+        for (const d of devices) {
+          if (d.id) map.set(d.id, d);
+        }
+        return Array.from(map.values());
+      });
       return devices;
     },
     [],
@@ -810,6 +838,17 @@ export function Board() {
     });
   }, [spotifyDevices, spotifyPlayback?.device?.id, spotifySdkDeviceId, spotifySelectedDeviceId]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        SPOTIFY_KNOWN_DEVICES_KEY,
+        JSON.stringify(spotifyKnownDevices.slice(0, 64)),
+      );
+    } catch {
+      // ignore storage failures
+    }
+  }, [spotifyKnownDevices]);
+
   function openNewEventModal() {
     setNewAllDay(false);
     setNewTimes(initialNewEventRange());
@@ -1216,11 +1255,12 @@ export function Board() {
 
   async function refreshCastSpeakerCandidates(maxAttempts = 10) {
     setCastSpeakerLoading(true);
-    let latest: SpotifyDevice[] = [];
+    let latest: CastDevice[] = [];
     for (let i = 0; i < maxAttempts; i += 1) {
-      const devices = await fetchSpotifyDevices();
-      if (devices) {
-        latest = devices.filter((d) => d.id && d.id !== spotifySdkDeviceId);
+      const res = await fetch("/api/cast/devices");
+      if (res.ok) {
+        const data = (await res.json()) as { devices?: CastDevice[] };
+        latest = data.devices ?? [];
         setCastSpeakerCandidates(latest);
         if (!castSpeakerChoice && latest.length > 0) {
           setCastSpeakerChoice(latest[0]?.id ?? "");
@@ -1232,7 +1272,7 @@ export function Board() {
     setCastSpeakerLoading(false);
     if (latest.length === 0) {
       setSpotifyNotice(
-        "No Spotify speaker devices found yet. Keep speaker awake in Cast, then click Refresh speakers.",
+        "No Chromecasts discovered. Ensure FamilyBoard can see LAN Cast devices, then refresh.",
       );
     }
   }
@@ -1243,29 +1283,71 @@ export function Board() {
       setSpotifyNotice("Choose a speaker first.");
       return;
     }
-    setSpotifySelectedDeviceId(chosenId);
+    const chosen = castSpeakerCandidates.find((d) => d.id === chosenId);
+    if (!chosen) {
+      setSpotifyNotice("Selected speaker is no longer in the list. Refresh and try again.");
+      return;
+    }
     setBusy("spotify-cast-handoff");
     try {
+      const connectRes = await fetch("/api/cast/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host: chosen.host }),
+      });
+      if (!connectRes.ok) {
+        setSpotifyNotice("Could not launch Spotify receiver on selected Chromecast.");
+        return;
+      }
+
+      // Wait for Spotify to expose the receiver as a Connect device.
+      let matchedSpotifyDevice: SpotifyDevice | null = null;
+      for (let i = 0; i < 12; i += 1) {
+        const devices = await fetchSpotifyDevices();
+        if (devices) {
+          const target = normalizeName(chosen.name);
+          matchedSpotifyDevice =
+            devices.find((d) => {
+              const n = normalizeName(d.name);
+              return Boolean(n) && (n.includes(target) || target.includes(n));
+            }) ?? null;
+          if (matchedSpotifyDevice?.id) break;
+        }
+        await sleep(1500);
+      }
+      if (!matchedSpotifyDevice?.id) {
+        setSpotifyNotice(
+          `Chromecast "${chosen.name}" woke up, but Spotify has not exposed it yet. Keep Spotify open and retry Use selected speaker.`,
+        );
+        return;
+      }
+
+      setSpotifySelectedDeviceId(matchedSpotifyDevice.id);
       const transfer = await fetch("/api/spotify/control", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "set_device", deviceId: chosenId, play: false }),
+        body: JSON.stringify({
+          action: "set_device",
+          deviceId: matchedSpotifyDevice.id,
+          play: false,
+        }),
       });
       if (!transfer.ok) {
-        setSpotifyNotice("Could not transfer to selected speaker. Try refresh and pick again.");
+        setSpotifyNotice("Spotify saw the speaker but transfer failed.");
         return;
       }
+
       await sleep(400);
       const play = await fetch("/api/spotify/control", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "play", deviceId: chosenId }),
+        body: JSON.stringify({ action: "play", deviceId: matchedSpotifyDevice.id }),
       });
       if (!play.ok) {
         setSpotifyNotice("Transfer succeeded but play failed on selected speaker.");
         return;
       }
-      setSpotifyNotice("Speaker selected and playback transferred.");
+      setSpotifyNotice(`Playing on ${chosen.name}.`);
       await fetchBoard();
     } finally {
       setBusy(null);
@@ -1957,7 +2039,7 @@ export function Board() {
                         ) : (
                           castSpeakerCandidates.map((d) => (
                             <option key={`cast-${d.id}`} value={d.id}>
-                              {d.name ?? "Unknown"} {d.is_active ? "• active" : ""}
+                              {d.name ?? "Unknown"} ({d.host})
                             </option>
                           ))
                         )}
