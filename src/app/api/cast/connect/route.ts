@@ -16,9 +16,15 @@ export async function POST(request: Request) {
   if (!host) return NextResponse.json({ error: "host is required" }, { status: 400 });
 
   try {
+    console.info("[api/cast/connect] start", { host });
     await launchSpotifyReceiverOnCastHost(host);
+    console.info("[api/cast/connect] ok", { host });
     return NextResponse.json({ ok: true });
   } catch (e) {
+    console.error("[api/cast/connect] error", {
+      host,
+      error: e instanceof Error ? e.message : String(e),
+    });
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "cast_connect_failed" },
       { status: 502 },

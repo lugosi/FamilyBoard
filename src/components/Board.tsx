@@ -283,6 +283,23 @@ export function Board() {
   const [castSpeakerCandidates, setCastSpeakerCandidates] = useState<CastDevice[]>([]);
   const [castSpeakerLoading, setCastSpeakerLoading] = useState(false);
   const [castSpeakerChoice, setCastSpeakerChoice] = useState("");
+  const [castDiagnostics, setCastDiagnostics] = useState<{
+    selectedCastName: string | null;
+    selectedCastHost: string | null;
+    discoveredCount: number;
+    discoveredNames: string[];
+    lastConnectError: string | null;
+    lastMatchedSpotifyDevice: string | null;
+    lastStep: string | null;
+  }>({
+    selectedCastName: null,
+    selectedCastHost: null,
+    discoveredCount: 0,
+    discoveredNames: [],
+    lastConnectError: null,
+    lastMatchedSpotifyDevice: null,
+    lastStep: null,
+  });
   const [spotifyNotice, setSpotifyNotice] = useState<string | null>(null);
   const castWakePollingRef = useRef<number | null>(null);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
@@ -1255,6 +1272,7 @@ export function Board() {
 
   async function refreshCastSpeakerCandidates(maxAttempts = 10) {
     setCastSpeakerLoading(true);
+    setCastDiagnostics((d) => ({ ...d, lastStep: "discovering_chromecasts", lastConnectError: null }));
     let latest: CastDevice[] = [];
     for (let i = 0; i < maxAttempts; i += 1) {
       const res = await fetch("/api/cast/devices");
@@ -1262,6 +1280,12 @@ export function Board() {
         const data = (await res.json()) as { devices?: CastDevice[] };
         latest = data.devices ?? [];
         setCastSpeakerCandidates(latest);
+        setCastDiagnostics((d) => ({
+          ...d,
+          discoveredCount: latest.length,
+          discoveredNames: latest.map((x) => x.name).slice(0, 8),
+          lastStep: latest.length > 0 ? "chromecasts_discovered" : d.lastStep,
+        }));
         if (!castSpeakerChoice && latest.length > 0) {
           setCastSpeakerChoice(latest[0]?.id ?? "");
         }
@@ -1271,6 +1295,7 @@ export function Board() {
     }
     setCastSpeakerLoading(false);
     if (latest.length === 0) {
+      setCastDiagnostics((d) => ({ ...d, lastStep: "chromecast_discovery_empty" }));
       setSpotifyNotice(
         "No Chromecasts discovered. Ensure FamilyBoard can see LAN Cast devices, then refresh.",
       );
@@ -1289,6 +1314,14 @@ export function Board() {
       return;
     }
     setBusy("spotify-cast-handoff");
+    setCastDiagnostics((d) => ({
+      ...d,
+      selectedCastName: chosen.name,
+      selectedCastHost: chosen.host,
+      lastStep: "launching_spotify_receiver",
+      lastConnectError: null,
+      lastMatchedSpotifyDevice: null,
+    }));
     try {
       const connectRes = await fetch("/api/cast/connect", {
         method: "POST",
@@ -1296,9 +1329,16 @@ export function Board() {
         body: JSON.stringify({ host: chosen.host }),
       });
       if (!connectRes.ok) {
+        const e = (await connectRes.json().catch(() => ({}))) as { error?: string };
+        setCastDiagnostics((d) => ({
+          ...d,
+          lastStep: "cast_connect_failed",
+          lastConnectError: e.error ?? "cast_connect_failed",
+        }));
         setSpotifyNotice("Could not launch Spotify receiver on selected Chromecast.");
         return;
       }
+      setCastDiagnostics((d) => ({ ...d, lastStep: "waiting_for_spotify_device" }));
 
       // Wait for Spotify to expose the receiver as a Connect device.
       let matchedSpotifyDevice: SpotifyDevice | null = null;
@@ -1316,6 +1356,11 @@ export function Board() {
         await sleep(1500);
       }
       if (!matchedSpotifyDevice?.id) {
+        setCastDiagnostics((d) => ({
+          ...d,
+          lastStep: "spotify_device_not_exposed",
+          lastConnectError: "spotify_device_not_exposed",
+        }));
         setSpotifyNotice(
           `Chromecast "${chosen.name}" woke up, but Spotify has not exposed it yet. Keep Spotify open and retry Use selected speaker.`,
         );
@@ -1333,6 +1378,12 @@ export function Board() {
         }),
       });
       if (!transfer.ok) {
+        setCastDiagnostics((d) => ({
+          ...d,
+          lastStep: "spotify_transfer_failed",
+          lastMatchedSpotifyDevice: `${matchedSpotifyDevice.name ?? "Unknown"} (${matchedSpotifyDevice.id})`,
+          lastConnectError: "spotify_transfer_failed",
+        }));
         setSpotifyNotice("Spotify saw the speaker but transfer failed.");
         return;
       }
@@ -1344,9 +1395,21 @@ export function Board() {
         body: JSON.stringify({ action: "play", deviceId: matchedSpotifyDevice.id }),
       });
       if (!play.ok) {
+        setCastDiagnostics((d) => ({
+          ...d,
+          lastStep: "spotify_play_failed",
+          lastMatchedSpotifyDevice: `${matchedSpotifyDevice.name ?? "Unknown"} (${matchedSpotifyDevice.id})`,
+          lastConnectError: "spotify_play_failed",
+        }));
         setSpotifyNotice("Transfer succeeded but play failed on selected speaker.");
         return;
       }
+      setCastDiagnostics((d) => ({
+        ...d,
+        lastStep: "handoff_success",
+        lastConnectError: null,
+        lastMatchedSpotifyDevice: `${matchedSpotifyDevice.name ?? "Unknown"} (${matchedSpotifyDevice.id})`,
+      }));
       setSpotifyNotice(`Playing on ${chosen.name}.`);
       await fetchBoard();
     } finally {
@@ -1364,6 +1427,14 @@ export function Board() {
     setCastTargetName(null);
     setCastSpeakerCandidates([]);
     setCastSpeakerChoice("");
+    setCastDiagnostics((d) => ({
+      ...d,
+      selectedCastName: null,
+      selectedCastHost: null,
+      lastConnectError: null,
+      lastMatchedSpotifyDevice: null,
+      lastStep: "cast_flow_started",
+    }));
     setSpotifyNotice(
       "Select a speaker in the Cast dialog, then choose that speaker below for explicit handoff.",
     );
@@ -1388,6 +1459,7 @@ export function Board() {
         ?.friendlyName?.trim();
       if (castDeviceName) {
         setCastTargetName(castDeviceName);
+        setCastDiagnostics((d) => ({ ...d, selectedCastName: castDeviceName }));
         setSpotifyNotice(
           `Cast selected: ${castDeviceName}. Looking for Spotify speaker devices...`,
         );
@@ -2061,6 +2133,26 @@ export function Board() {
                         Use selected speaker
                       </button>
                     </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/20 p-2.5">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-400 sm:text-sm">
+                      Cast diagnostics
+                    </p>
+                    <p className="mt-1 text-xs text-slate-300 sm:text-sm">
+                      step: {castDiagnostics.lastStep ?? "idle"} | selected:{" "}
+                      {castDiagnostics.selectedCastName ?? "-"} | host:{" "}
+                      {castDiagnostics.selectedCastHost ?? "-"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-300 sm:text-sm">
+                      discovered: {castDiagnostics.discoveredCount} (
+                      {castDiagnostics.discoveredNames.join(", ") || "-"})
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-300 sm:text-sm">
+                      matched spotify: {castDiagnostics.lastMatchedSpotifyDevice ?? "-"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-amber-300 sm:text-sm">
+                      error: {castDiagnostics.lastConnectError ?? "-"}
+                    </p>
                   </div>
 
                   <div className="rounded-lg border border-slate-800 bg-slate-950/35 p-2.5">

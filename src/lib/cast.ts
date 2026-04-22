@@ -15,6 +15,7 @@ type MdnsAnswer = {
 };
 
 export async function discoverCastDevices(timeoutMs = 2500): Promise<CastDevice[]> {
+  console.info("[cast] discoverCastDevices:start", { timeoutMs });
   const mdnsClient = mdns();
   const hostsByService = new Map<string, { host?: string; port?: number; name?: string; id?: string }>();
   const ipsByHost = new Map<string, string>();
@@ -75,13 +76,19 @@ export async function discoverCastDevices(timeoutMs = 2500): Promise<CastDevice[
       port: value.port,
     });
   }
-  return out.sort((a, b) => a.name.localeCompare(b.name));
+  const sorted = out.sort((a, b) => a.name.localeCompare(b.name));
+  console.info("[cast] discoverCastDevices:done", {
+    count: sorted.length,
+    names: sorted.map((d) => d.name),
+  });
+  return sorted;
 }
 
 export async function launchSpotifyReceiverOnCastHost(
   host: string,
   timeoutMs = 7000,
 ): Promise<void> {
+  console.info("[cast] launchSpotifyReceiverOnCastHost:start", { host, timeoutMs });
   const { Client, Application } = await import("castv2-client");
   class SpotifyReceiver extends Application {
     static APP_ID = "CC32E753";
@@ -93,6 +100,7 @@ export async function launchSpotifyReceiverOnCastHost(
       else resolve(address);
     });
   });
+  console.info("[cast] launchSpotifyReceiverOnCastHost:resolved", { host, ip });
 
   await new Promise<void>((resolve, reject) => {
     const client = new Client();
@@ -107,6 +115,7 @@ export async function launchSpotifyReceiverOnCastHost(
 
     client.connect(ip, () => {
       client.launch(SpotifyReceiver, () => {
+        console.info("[cast] launchSpotifyReceiverOnCastHost:launched", { host, ip });
         clearTimeout(timer);
         try {
           client.close();
@@ -117,6 +126,11 @@ export async function launchSpotifyReceiverOnCastHost(
       });
     });
     client.on("error", (err) => {
+      console.error("[cast] launchSpotifyReceiverOnCastHost:error", {
+        host,
+        ip,
+        error: err instanceof Error ? err.message : String(err),
+      });
       clearTimeout(timer);
       try {
         client.close();
