@@ -217,6 +217,7 @@ export function Board() {
   const [spotifyResultTab, setSpotifyResultTab] = useState<SpotifyResultTab>("tracks");
   const [spotifySdkReady, setSpotifySdkReady] = useState(false);
   const [spotifySdkDeviceId, setSpotifySdkDeviceId] = useState<string | null>(null);
+  const [spotifyNotice, setSpotifyNotice] = useState<string | null>(null);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -816,16 +817,18 @@ export function Board() {
       | "queue_track",
     extra?: Record<string, unknown>,
   ) {
+    setSpotifyNotice(null);
     if (
       (action === "play_track" || action === "play_context" || action === "queue_track") &&
       !spotifyActiveDevice?.id &&
       !spotifySdkDeviceId &&
       !extra?.deviceId
     ) {
+      const msg =
+        "No Spotify device selected. Open Spotify on your phone/computer/speaker, then pick a device and try again.";
       setDismissedAlertSignature(null);
-      setMessage(
-        "No Spotify device selected. Open Spotify on your phone/computer/speaker, then pick a device and try again.",
-      );
+      setMessage(msg);
+      setSpotifyNotice(msg);
       return;
     }
     setBusy(`spotify-${action}`);
@@ -855,15 +858,31 @@ export function Board() {
           ? j.detail.error
           : j.detail?.error?.reason || j.detail?.error?.message;
       setDismissedAlertSignature(null);
-      setMessage([j.error, detail].filter(Boolean).join(" — ") || "Spotify action failed");
+      const msg = [j.error, detail].filter(Boolean).join(" — ") || "Spotify action failed";
+      setMessage(msg);
+      setSpotifyNotice(msg);
       return;
     }
     if (j.warning) {
       setDismissedAlertSignature(null);
       setMessage(j.warning);
+      setSpotifyNotice(j.warning);
     }
     setSpotifySeekDraft(null);
     await fetchBoard();
+    if (action === "play_track" || action === "play_context" || action === "play") {
+      const probe = await fetch("/api/spotify/now-playing");
+      if (probe.ok) {
+        const data = (await probe.json()) as { playback?: { is_playing?: boolean } | null };
+        if (!data.playback?.is_playing) {
+          const msg =
+            "Command sent, but Spotify is still not playing. Activate target device in Spotify app, then try again.";
+          setDismissedAlertSignature(null);
+          setMessage(msg);
+          setSpotifyNotice(msg);
+        }
+      }
+    }
   }
 
   async function commitSpotifySeek() {
@@ -1341,6 +1360,11 @@ export function Board() {
                 </div>
               ) : (
                 <div className="mt-3 space-y-3">
+                  {spotifyNotice ? (
+                    <p className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 sm:text-base">
+                      {spotifyNotice}
+                    </p>
+                  ) : null}
                   {spotifyTrack ? (
                     <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
                       <div className="flex items-center gap-3">
