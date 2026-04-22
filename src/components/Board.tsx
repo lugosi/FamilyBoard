@@ -103,6 +103,7 @@ type SpotifyResultTab = "tracks" | "albums" | "playlists";
 type CastContextLike = {
   setOptions: (opts: { receiverApplicationId: string; autoJoinPolicy: string }) => void;
   requestSession: () => Promise<void>;
+  getCurrentSession?: () => { getCastDevice?: () => { friendlyName?: string } | undefined } | null;
   addEventListener: (eventType: string, handler: (evt: { sessionState?: string }) => void) => void;
   removeEventListener: (
     eventType: string,
@@ -148,6 +149,10 @@ function formatMsClock(ms: number): string {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function normalizeName(value: string | undefined): string {
+  return (value ?? "").trim().toLowerCase();
 }
 
 function toInputValue(isoOrDate: string): string {
@@ -249,6 +254,7 @@ export function Board() {
   const [castReady, setCastReady] = useState(false);
   const [castSessionConnected, setCastSessionConnected] = useState(false);
   const [castWakeBaselineIds, setCastWakeBaselineIds] = useState<string[] | null>(null);
+  const [castTargetName, setCastTargetName] = useState<string | null>(null);
   const [castSupportHint, setCastSupportHint] = useState<string | null>(null);
   const [spotifyNotice, setSpotifyNotice] = useState<string | null>(null);
   const castWakePollingRef = useRef<number | null>(null);
@@ -588,6 +594,7 @@ export function Board() {
         setCastReady(false);
         setCastSessionConnected(false);
         setCastWakeBaselineIds(null);
+        setCastTargetName(null);
         setCastSupportHint(null);
       });
       if (castWakePollingRef.current !== null) {
@@ -626,6 +633,13 @@ export function Board() {
           state === framework.SessionState.SESSION_STARTED ||
           state === framework.SessionState.SESSION_RESUMED;
         setCastSessionConnected(connected);
+        if (connected) {
+          const sessionName = castContext
+            .getCurrentSession?.()
+            ?.getCastDevice?.()
+            ?.friendlyName?.trim();
+          if (sessionName) setCastTargetName(sessionName);
+        }
         if (!connected && castWakePollingRef.current !== null) {
           window.clearInterval(castWakePollingRef.current);
           castWakePollingRef.current = null;
@@ -683,13 +697,25 @@ export function Board() {
     }
 
     const baseline = new Set(castWakeBaselineIds);
+    const desiredCastName = normalizeName(castTargetName ?? undefined);
     let attempts = 0;
     castWakePollingRef.current = window.setInterval(() => {
       attempts += 1;
       void (async () => {
         const devices = await fetchSpotifyDevices();
         if (!devices) return;
-        const awakened = devices.find((d) => d.id && !baseline.has(d.id));
+        const newlyAppeared = devices.find((d) => d.id && !baseline.has(d.id));
+        const nameMatched =
+          desiredCastName.length > 0
+            ? devices.find((d) => {
+                const n = normalizeName(d.name);
+                return Boolean(n) && (n.includes(desiredCastName) || desiredCastName.includes(n));
+              })
+            : null;
+        const selectedMatched = spotifySelectedDeviceId
+          ? devices.find((d) => d.id === spotifySelectedDeviceId)
+          : null;
+        const awakened = newlyAppeared ?? nameMatched ?? selectedMatched;
         if (awakened?.id) {
           window.clearInterval(castWakePollingRef.current!);
           castWakePollingRef.current = null;
@@ -730,7 +756,14 @@ export function Board() {
         castWakePollingRef.current = null;
       }
     };
-  }, [castSessionConnected, castWakeBaselineIds, fetchSpotifyDevices, fetchBoard]);
+  }, [
+    castSessionConnected,
+    castWakeBaselineIds,
+    castTargetName,
+    spotifySelectedDeviceId,
+    fetchSpotifyDevices,
+    fetchBoard,
+  ]);
 
   useEffect(() => {
     const knownIds = new Set(
@@ -1159,6 +1192,7 @@ export function Board() {
       ),
     );
     setCastWakeBaselineIds(baselineIds);
+    setCastTargetName(null);
     setSpotifyNotice(
       "Select a speaker in the Cast dialog to wake Spotify on that device. We'll auto-handoff when it appears.",
     );
@@ -1174,6 +1208,16 @@ export function Board() {
     try {
       const castContext = framework.CastContext.getInstance();
       await castContext.requestSession();
+      const castDeviceName = castContext
+        .getCurrentSession?.()
+        ?.getCastDevice?.()
+        ?.friendlyName?.trim();
+      if (castDeviceName) {
+        setCastTargetName(castDeviceName);
+        setSpotifyNotice(
+          `Cast selected: ${castDeviceName}. Waiting for matching Spotify device and auto-handoff...`,
+        );
+      }
     } catch {
       setSpotifyNotice("Cast chooser did not open. Check browser cast support and try again.");
     }
