@@ -819,6 +819,16 @@ export function Board() {
   ) {
     setSpotifyNotice(null);
     if (
+      (action === "play" || action === "play_track" || action === "play_context") &&
+      spotifySdkReady
+    ) {
+      try {
+        await spotifyPlayerRef.current?.activateElement?.();
+      } catch {
+        // Ignore; we'll still attempt playback and surface downstream errors.
+      }
+    }
+    if (
       (action === "play_track" || action === "play_context" || action === "queue_track") &&
       !spotifyActiveDevice?.id &&
       !spotifySdkDeviceId &&
