@@ -691,7 +691,7 @@ export function Board() {
   }, [status?.spotifyConfigured, status?.spotifyLinked]);
 
   useEffect(() => {
-    if (!castSessionConnected || !castWakeBaselineIds) return;
+    if (!castWakeBaselineIds) return;
     if (castWakePollingRef.current !== null) {
       window.clearInterval(castWakePollingRef.current);
     }
@@ -771,7 +771,6 @@ export function Board() {
       }
     };
   }, [
-    castSessionConnected,
     castWakeBaselineIds,
     castTargetName,
     spotifySdkDeviceId,
@@ -1229,6 +1228,7 @@ export function Board() {
     try {
       const castContext = framework.CastContext.getInstance();
       await castContext.requestSession();
+      setCastSessionConnected(true);
       const castDeviceName = castContext
         .getCurrentSession?.()
         ?.getCastDevice?.()
