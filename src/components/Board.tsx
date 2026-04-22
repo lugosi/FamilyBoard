@@ -290,6 +290,7 @@ export function Board() {
     discoveredNames: string[];
     lastConnectError: string | null;
     lastMatchedSpotifyDevice: string | null;
+    lastVisibleSpotifyDevices: string[];
     lastStep: string | null;
   }>({
     selectedCastName: null,
@@ -298,6 +299,7 @@ export function Board() {
     discoveredNames: [],
     lastConnectError: null,
     lastMatchedSpotifyDevice: null,
+    lastVisibleSpotifyDevices: [],
     lastStep: null,
   });
   const [spotifyNotice, setSpotifyNotice] = useState<string | null>(null);
@@ -1321,6 +1323,7 @@ export function Board() {
       lastStep: "launching_spotify_receiver",
       lastConnectError: null,
       lastMatchedSpotifyDevice: null,
+      lastVisibleSpotifyDevices: [],
     }));
     try {
       const ac = new AbortController();
@@ -1347,15 +1350,33 @@ export function Board() {
 
       // Wait for Spotify to expose the receiver as a Connect device.
       let matchedSpotifyDevice: SpotifyDevice | null = null;
-      for (let i = 0; i < 12; i += 1) {
+      const baselineIds = new Set(
+        spotifyDevices
+          .filter((d) => d.id && d.id !== spotifySdkDeviceId)
+          .map((d) => d.id as string),
+      );
+      for (let i = 0; i < 30; i += 1) {
         const devices = await fetchSpotifyDevices();
         if (devices) {
-          const target = normalizeName(chosen.name);
+          const nonWeb = devices.filter((d) => d.id && d.id !== spotifySdkDeviceId);
+          const target = normalizeName(chosen.name || castTargetName || "");
+          const byName = nonWeb.find((d) => {
+            const n = normalizeName(d.name);
+            return Boolean(n) && (n.includes(target) || target.includes(n));
+          });
+          const newlyAppeared = nonWeb.find((d) => d.id && !baselineIds.has(d.id));
+          const active = nonWeb.find((d) => d.is_active);
           matchedSpotifyDevice =
-            devices.find((d) => {
-              const n = normalizeName(d.name);
-              return Boolean(n) && (n.includes(target) || target.includes(n));
-            }) ?? null;
+            byName ??
+            newlyAppeared ??
+            active ??
+            null;
+          setCastDiagnostics((d) => ({
+            ...d,
+            lastVisibleSpotifyDevices: nonWeb
+              .map((x) => x.name ?? x.id ?? "unknown")
+              .slice(0, 8),
+          }));
           if (matchedSpotifyDevice?.id) break;
         }
         await sleep(1500);
@@ -2167,6 +2188,10 @@ export function Board() {
                     </p>
                     <p className="mt-0.5 text-xs text-slate-300 sm:text-sm">
                       matched spotify: {castDiagnostics.lastMatchedSpotifyDevice ?? "-"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-300 sm:text-sm">
+                      visible spotify devices:{" "}
+                      {castDiagnostics.lastVisibleSpotifyDevices.join(", ") || "-"}
                     </p>
                     <p className="mt-0.5 text-xs text-amber-300 sm:text-sm">
                       error: {castDiagnostics.lastConnectError ?? "-"}
