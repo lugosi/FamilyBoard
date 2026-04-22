@@ -71,6 +71,7 @@ export async function POST(request: Request) {
   let endpoint = "";
   const init: RequestInit = { method: "PUT" };
   let preflightTransfer: { deviceId: string; play: boolean } | null = null;
+  let expectedPlayUri: string | null = null;
 
   switch (body.action) {
     case "play":
@@ -128,11 +129,14 @@ export async function POST(request: Request) {
       if (!body.uri) {
         return NextResponse.json({ error: "uri is required" }, { status: 400 });
       }
+      expectedPlayUri = body.uri;
       if (body.deviceId) {
         // Make target device active first; many Connect devices ignore direct play until transferred.
         preflightTransfer = { deviceId: body.deviceId, play: true };
       }
-      endpoint = "/me/player/play";
+      endpoint = `/me/player/play${
+        body.deviceId ? `?device_id=${encodeURIComponent(body.deviceId)}` : ""
+      }`;
       init.method = "PUT";
       init.body = JSON.stringify({ uris: [body.uri] });
       break;
@@ -140,10 +144,13 @@ export async function POST(request: Request) {
       if (!body.uri) {
         return NextResponse.json({ error: "uri is required" }, { status: 400 });
       }
+      expectedPlayUri = body.uri;
       if (body.deviceId) {
         preflightTransfer = { deviceId: body.deviceId, play: true };
       }
-      endpoint = "/me/player/play";
+      endpoint = `/me/player/play${
+        body.deviceId ? `?device_id=${encodeURIComponent(body.deviceId)}` : ""
+      }`;
       init.method = "PUT";
       init.body = JSON.stringify({ context_uri: body.uri });
       break;
@@ -200,6 +207,39 @@ export async function POST(request: Request) {
         },
         { status: 502 },
       );
+    }
+
+    if (expectedPlayUri) {
+      // Spotify can accept play requests but not start playback immediately.
+      // Verify and return a warning so UI can surface actionable guidance.
+      let verified = false;
+      for (let i = 0; i < 3; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const probe = await spotifyApiFetch<{
+          is_playing?: boolean;
+          item?: { uri?: string };
+          context?: { uri?: string };
+          device?: { id?: string };
+        }>("/me/player");
+        if (probe.status >= 400 || !probe.data) continue;
+        const itemUri = probe.data.item?.uri ?? "";
+        const contextUri = probe.data.context?.uri ?? "";
+        if (
+          probe.data.is_playing ||
+          itemUri === expectedPlayUri ||
+          contextUri === expectedPlayUri
+        ) {
+          verified = true;
+          break;
+        }
+      }
+      if (!verified) {
+        return NextResponse.json({
+          ok: true,
+          warning:
+            "Play command was accepted, but playback did not start yet. Open Spotify on the target device first, then try again.",
+        });
+      }
     }
     return NextResponse.json({ ok: true });
   } catch (e) {

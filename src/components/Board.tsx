@@ -832,11 +832,12 @@ export function Board() {
       body: JSON.stringify(payload),
     });
     setBusy(null);
+    const j = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      warning?: string;
+      detail?: { error?: { message?: string; reason?: string } | string };
+    };
     if (!res.ok) {
-      const j = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        detail?: { error?: { message?: string; reason?: string } | string };
-      };
       const detail =
         typeof j.detail?.error === "string"
           ? j.detail.error
@@ -844,6 +845,7 @@ export function Board() {
       setMessage([j.error, detail].filter(Boolean).join(" — ") || "Spotify action failed");
       return;
     }
+    if (j.warning) setMessage(j.warning);
     setSpotifySeekDraft(null);
     await fetchBoard();
   }
