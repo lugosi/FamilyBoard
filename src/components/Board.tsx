@@ -102,6 +102,7 @@ type SpotifyResultTab = "tracks" | "albums" | "playlists";
 
 type CastContextLike = {
   setOptions: (opts: { receiverApplicationId: string; autoJoinPolicy: string }) => void;
+  requestSession: () => Promise<void>;
   addEventListener: (eventType: string, handler: (evt: { sessionState?: string }) => void) => void;
   removeEventListener: (
     eventType: string,
@@ -247,6 +248,7 @@ export function Board() {
   const [castReady, setCastReady] = useState(false);
   const [castSessionConnected, setCastSessionConnected] = useState(false);
   const [castWakeBaselineIds, setCastWakeBaselineIds] = useState<string[] | null>(null);
+  const [castSupportHint, setCastSupportHint] = useState<string | null>(null);
   const [spotifyNotice, setSpotifyNotice] = useState<string | null>(null);
   const castWakePollingRef = useRef<number | null>(null);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
@@ -584,6 +586,7 @@ export function Board() {
         setCastReady(false);
         setCastSessionConnected(false);
         setCastWakeBaselineIds(null);
+        setCastSupportHint(null);
       });
       if (castWakePollingRef.current !== null) {
         window.clearInterval(castWakePollingRef.current);
@@ -599,7 +602,12 @@ export function Board() {
       if (cancelled) return;
       const framework = window.cast?.framework;
       const chromeCast = window.chrome?.cast;
-      if (!framework || !chromeCast) return;
+      if (!framework || !chromeCast) {
+        setCastSupportHint(
+          "Cast SDK loaded but browser Cast APIs are unavailable. Use Chrome or a Cast-enabled Chromium build.",
+        );
+        return;
+      }
 
       const castContext = framework.CastContext.getInstance();
       castContext.setOptions({
@@ -607,6 +615,7 @@ export function Board() {
         autoJoinPolicy: chromeCast.AutoJoinPolicy.ORIGIN_SCOPED,
       });
       setCastReady(true);
+      setCastSupportHint(null);
 
       const handler = (evt: { sessionState?: string }) => {
         if (cancelled) return;
@@ -633,7 +642,13 @@ export function Board() {
     };
 
     window.__onGCastApiAvailable = (isAvailable: boolean) => {
-      if (isAvailable) initCast();
+      if (isAvailable) {
+        initCast();
+      } else {
+        setCastSupportHint(
+          "Cast framework is unavailable in this browser/profile. Try Google Chrome.",
+        );
+      }
     };
 
     const existing = document.querySelector(
@@ -1122,6 +1137,21 @@ export function Board() {
     setSpotifyNotice(
       "Select a speaker in the Cast dialog to wake Spotify on that device. We'll auto-handoff when it appears.",
     );
+  }
+
+  async function openCastDeviceChooser() {
+    beginCastWakeFlow();
+    const framework = window.cast?.framework;
+    if (!framework) {
+      setSpotifyNotice("Cast framework is not available in this browser.");
+      return;
+    }
+    try {
+      const castContext = framework.CastContext.getInstance();
+      await castContext.requestSession();
+    } catch {
+      setSpotifyNotice("Cast chooser did not open. Check browser cast support and try again.");
+    }
   }
 
   function openRangePicker() {
@@ -1718,13 +1748,27 @@ export function Board() {
                         {castReady ? (castSessionConnected ? "connected" : "ready") : "unavailable"}
                       </span>
                     </p>
-                    {createElement("google-cast-launcher", {
-                      className:
-                        "cursor-pointer rounded-full border border-slate-600 p-1.5 text-slate-100 hover:border-slate-400",
-                      title: "Wake Chromecast for Spotify",
-                      onClick: beginCastWakeFlow,
-                    })}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400"
+                        onClick={() => void openCastDeviceChooser()}
+                      >
+                        Choose speaker
+                      </button>
+                      {createElement("google-cast-launcher", {
+                        className:
+                          "cursor-pointer rounded-full border border-slate-600 p-1.5 text-slate-100 hover:border-slate-400",
+                        title: "Wake Chromecast for Spotify",
+                        onClick: beginCastWakeFlow,
+                      })}
+                    </div>
                   </div>
+                  {castSupportHint ? (
+                    <p className="text-xs normal-case tracking-normal text-amber-300 sm:text-sm">
+                      {castSupportHint}
+                    </p>
+                  ) : null}
 
                   <div className="rounded-lg border border-slate-800 bg-slate-950/35 p-2.5">
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-400 sm:text-sm">
