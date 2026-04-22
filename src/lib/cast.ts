@@ -1,4 +1,5 @@
 import dns from "node:dns";
+import net from "node:net";
 import mdns from "multicast-dns";
 
 export type CastDevice = {
@@ -113,9 +114,10 @@ export async function discoverCastDevices(timeoutMs = 2500): Promise<CastDevice[
 
 export async function launchSpotifyReceiverOnCastHost(
   host: string,
+  port = 8009,
   timeoutMs = 7000,
 ): Promise<void> {
-  console.info("[cast] launchSpotifyReceiverOnCastHost:start", { host, timeoutMs });
+  console.info("[cast] launchSpotifyReceiverOnCastHost:start", { host, port, timeoutMs });
   const { Client, Application } = await import("castv2-client");
   class SpotifyReceiver extends Application {
     static APP_ID = "CC32E753";
@@ -127,7 +129,25 @@ export async function launchSpotifyReceiverOnCastHost(
       else resolve(address);
     });
   });
-  console.info("[cast] launchSpotifyReceiverOnCastHost:resolved", { host, ip });
+  console.info("[cast] launchSpotifyReceiverOnCastHost:resolved", { host, ip, port });
+
+  await new Promise<void>((resolve, reject) => {
+    const socket = net.createConnection({ host: ip, port });
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error(`cast_tcp_probe_timeout:${ip}:${port}`));
+    }, 2000);
+    socket.once("connect", () => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve();
+    });
+    socket.once("error", (err) => {
+      clearTimeout(timer);
+      socket.destroy();
+      reject(new Error(`cast_tcp_probe_failed:${ip}:${port}:${(err as Error).message}`));
+    });
+  });
 
   await new Promise<void>((resolve, reject) => {
     const client = new Client();
@@ -140,9 +160,9 @@ export async function launchSpotifyReceiverOnCastHost(
       reject(new Error("cast_connect_timeout"));
     }, timeoutMs);
 
-    client.connect(ip, () => {
+    client.connect({ host: ip, port }, () => {
       client.launch(SpotifyReceiver, () => {
-        console.info("[cast] launchSpotifyReceiverOnCastHost:launched", { host, ip });
+        console.info("[cast] launchSpotifyReceiverOnCastHost:launched", { host, ip, port });
         clearTimeout(timer);
         try {
           client.close();
@@ -156,6 +176,7 @@ export async function launchSpotifyReceiverOnCastHost(
       console.error("[cast] launchSpotifyReceiverOnCastHost:error", {
         host,
         ip,
+        port,
         error: err instanceof Error ? err.message : String(err),
       });
       clearTimeout(timer);

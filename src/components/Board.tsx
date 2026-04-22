@@ -1326,7 +1326,7 @@ export function Board() {
       const connectRes = await fetch("/api/cast/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ host: chosen.host }),
+        body: JSON.stringify({ host: chosen.host, port: chosen.port }),
       });
       if (!connectRes.ok) {
         const e = (await connectRes.json().catch(() => ({}))) as { error?: string };

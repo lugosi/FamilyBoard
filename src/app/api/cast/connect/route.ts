@@ -3,7 +3,7 @@ import { launchSpotifyReceiverOnCastHost } from "@/lib/cast";
 
 export const runtime = "nodejs";
 
-type Body = { host?: string };
+type Body = { host?: string; port?: number };
 
 export async function POST(request: Request) {
   let body: Body;
@@ -14,15 +14,17 @@ export async function POST(request: Request) {
   }
   const host = body.host?.trim();
   if (!host) return NextResponse.json({ error: "host is required" }, { status: 400 });
+  const port = Number.isFinite(Number(body.port)) ? Number(body.port) : 8009;
 
   try {
-    console.info("[api/cast/connect] start", { host });
-    await launchSpotifyReceiverOnCastHost(host);
-    console.info("[api/cast/connect] ok", { host });
+    console.info("[api/cast/connect] start", { host, port });
+    await launchSpotifyReceiverOnCastHost(host, port);
+    console.info("[api/cast/connect] ok", { host, port });
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[api/cast/connect] error", {
       host,
+      port,
       error: e instanceof Error ? e.message : String(e),
     });
     return NextResponse.json(

@@ -4,7 +4,7 @@ declare module "castv2-client" {
   }
 
   export class Client {
-    connect(host: string, callback: () => void): void;
+    connect(options: { host: string; port?: number }, callback: () => void): void;
     launch(receiver: typeof Application, callback: (err?: unknown) => void): void;
     close(): void;
     on(event: "error", callback: (err: unknown) => void): void;
