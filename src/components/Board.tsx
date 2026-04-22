@@ -245,6 +245,7 @@ export function Board() {
   const [spotifyResultTab, setSpotifyResultTab] = useState<SpotifyResultTab>("tracks");
   const [spotifySdkReady, setSpotifySdkReady] = useState(false);
   const [spotifySdkDeviceId, setSpotifySdkDeviceId] = useState<string | null>(null);
+  const [spotifySelectedDeviceId, setSpotifySelectedDeviceId] = useState<string>("");
   const [castReady, setCastReady] = useState(false);
   const [castSessionConnected, setCastSessionConnected] = useState(false);
   const [castWakeBaselineIds, setCastWakeBaselineIds] = useState<string[] | null>(null);
@@ -450,6 +451,7 @@ export function Board() {
         setSpotifySeekDraft(null);
         setSpotifySdkReady(false);
         setSpotifySdkDeviceId(null);
+        setSpotifySelectedDeviceId("");
         setCastReady(false);
         setCastSessionConnected(false);
       }
@@ -692,6 +694,7 @@ export function Board() {
           window.clearInterval(castWakePollingRef.current!);
           castWakePollingRef.current = null;
           setCastWakeBaselineIds(null);
+          setSpotifySelectedDeviceId(awakened.id);
           setSpotifyNotice(
             `Cast device awakened: ${awakened.name ?? "device"}. Transferring playback...`,
           );
@@ -728,6 +731,26 @@ export function Board() {
       }
     };
   }, [castSessionConnected, castWakeBaselineIds, fetchSpotifyDevices, fetchBoard]);
+
+  useEffect(() => {
+    const knownIds = new Set(
+      spotifyDevices.map((d) => d.id).filter((id): id is string => Boolean(id)),
+    );
+    if (spotifySdkDeviceId) knownIds.add(spotifySdkDeviceId);
+    if (knownIds.size === 0) {
+      if (spotifySelectedDeviceId) {
+        queueMicrotask(() => {
+          setSpotifySelectedDeviceId("");
+        });
+      }
+      return;
+    }
+    if (spotifySelectedDeviceId && knownIds.has(spotifySelectedDeviceId)) return;
+    const preferred = spotifyActiveDevice?.id ?? spotifySdkDeviceId ?? "";
+    queueMicrotask(() => {
+      setSpotifySelectedDeviceId(preferred);
+    });
+  }, [spotifyDevices, spotifyActiveDevice?.id, spotifySdkDeviceId, spotifySelectedDeviceId]);
 
   function openNewEventModal() {
     setNewAllDay(false);
@@ -1024,7 +1047,7 @@ export function Board() {
     }
     if (
       (action === "play_track" || action === "play_context" || action === "queue_track") &&
-      !spotifyActiveDevice?.id &&
+      !spotifyEffectiveDeviceId &&
       !spotifySdkDeviceId &&
       !extra?.deviceId
     ) {
@@ -1042,7 +1065,7 @@ export function Board() {
       (action === "play_track" || action === "play_context" || action === "queue_track") &&
       !payload.deviceId
     ) {
-      const fallbackDevice = spotifyActiveDevice?.id ?? spotifySdkDeviceId;
+      const fallbackDevice = spotifyEffectiveDeviceId || spotifySdkDeviceId;
       if (fallbackDevice) payload.deviceId = fallbackDevice;
     }
     const res = await fetch("/api/spotify/control", {
@@ -1187,6 +1210,8 @@ export function Board() {
   const spotifyArtist = spotifyTrack?.artists?.map((a) => a.name).filter(Boolean).join(", ");
   const spotifyActiveDevice =
     spotifyDevices.find((d) => d.is_active) ?? spotifyPlayback?.device ?? null;
+  const spotifyEffectiveDeviceId =
+    spotifySelectedDeviceId || spotifyActiveDevice?.id || spotifySdkDeviceId || "";
   const spotifySdkInDeviceList = Boolean(
     spotifySdkDeviceId && spotifyDevices.some((d) => d.id === spotifySdkDeviceId),
   );
@@ -1694,10 +1719,11 @@ export function Board() {
                     Device
                     <select
                       className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
-                      value={spotifyActiveDevice?.id ?? ""}
-                      onChange={(e) =>
-                        void spotifyControl("set_device", { deviceId: e.target.value })
-                      }
+                      value={spotifyEffectiveDeviceId}
+                      onChange={(e) => {
+                        setSpotifySelectedDeviceId(e.target.value);
+                        void spotifyControl("set_device", { deviceId: e.target.value });
+                      }}
                     >
                       {spotifySdkDeviceId && !spotifySdkInDeviceList ? (
                         <option value={spotifySdkDeviceId}>
@@ -1731,10 +1757,14 @@ export function Board() {
                         type="button"
                         className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400"
                         onClick={() =>
-                          void spotifyControl("set_device", {
-                            deviceId: spotifySdkDeviceId,
-                            play: false,
-                          })
+                          {
+                            if (!spotifySdkDeviceId) return;
+                            setSpotifySelectedDeviceId(spotifySdkDeviceId);
+                            void spotifyControl("set_device", {
+                              deviceId: spotifySdkDeviceId,
+                              play: false,
+                            });
+                          }
                         }
                       >
                         Play here
@@ -1850,7 +1880,7 @@ export function Board() {
                                       onClick={() =>
                                         void spotifyControl("play_track", {
                                           uri: t.uri,
-                                          deviceId: spotifyActiveDevice?.id,
+                                          deviceId: spotifyEffectiveDeviceId || undefined,
                                         })
                                       }
                                     >
@@ -1862,7 +1892,7 @@ export function Board() {
                                       onClick={() =>
                                         void spotifyControl("queue_track", {
                                           uri: t.uri,
-                                          deviceId: spotifyActiveDevice?.id,
+                                          deviceId: spotifyEffectiveDeviceId || undefined,
                                         })
                                       }
                                     >
@@ -1907,7 +1937,7 @@ export function Board() {
                                     onClick={() =>
                                       void spotifyControl("play_context", {
                                         uri: a.uri,
-                                        deviceId: spotifyActiveDevice?.id,
+                                        deviceId: spotifyEffectiveDeviceId || undefined,
                                       })
                                     }
                                   >
@@ -1948,7 +1978,7 @@ export function Board() {
                                     onClick={() =>
                                       void spotifyControl("play_context", {
                                         uri: p.uri,
-                                        deviceId: spotifyActiveDevice?.id,
+                                        deviceId: spotifyEffectiveDeviceId || undefined,
                                       })
                                     }
                                   >
