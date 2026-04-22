@@ -155,6 +155,12 @@ function normalizeName(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 function toInputValue(isoOrDate: string): string {
   const d = new Date(isoOrDate);
   if (Number.isNaN(d.getTime())) return "";
@@ -256,6 +262,9 @@ export function Board() {
   const [castWakeBaselineIds, setCastWakeBaselineIds] = useState<string[] | null>(null);
   const [castTargetName, setCastTargetName] = useState<string | null>(null);
   const [castSupportHint, setCastSupportHint] = useState<string | null>(null);
+  const [castSpeakerCandidates, setCastSpeakerCandidates] = useState<SpotifyDevice[]>([]);
+  const [castSpeakerLoading, setCastSpeakerLoading] = useState(false);
+  const [castSpeakerChoice, setCastSpeakerChoice] = useState("");
   const [spotifyNotice, setSpotifyNotice] = useState<string | null>(null);
   const castWakePollingRef = useRef<number | null>(null);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
@@ -1205,6 +1214,64 @@ export function Board() {
     else if (next.playlists.length > 0) setSpotifyResultTab("playlists");
   }
 
+  async function refreshCastSpeakerCandidates(maxAttempts = 10) {
+    setCastSpeakerLoading(true);
+    let latest: SpotifyDevice[] = [];
+    for (let i = 0; i < maxAttempts; i += 1) {
+      const devices = await fetchSpotifyDevices();
+      if (devices) {
+        latest = devices.filter((d) => d.id && d.id !== spotifySdkDeviceId);
+        setCastSpeakerCandidates(latest);
+        if (!castSpeakerChoice && latest.length > 0) {
+          setCastSpeakerChoice(latest[0]?.id ?? "");
+        }
+        if (latest.length > 0) break;
+      }
+      if (i < maxAttempts - 1) await sleep(2_000);
+    }
+    setCastSpeakerLoading(false);
+    if (latest.length === 0) {
+      setSpotifyNotice(
+        "No Spotify speaker devices found yet. Keep speaker awake in Cast, then click Refresh speakers.",
+      );
+    }
+  }
+
+  async function confirmCastSpeakerHandoff() {
+    const chosenId = castSpeakerChoice.trim();
+    if (!chosenId) {
+      setSpotifyNotice("Choose a speaker first.");
+      return;
+    }
+    setSpotifySelectedDeviceId(chosenId);
+    setBusy("spotify-cast-handoff");
+    try {
+      const transfer = await fetch("/api/spotify/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set_device", deviceId: chosenId, play: false }),
+      });
+      if (!transfer.ok) {
+        setSpotifyNotice("Could not transfer to selected speaker. Try refresh and pick again.");
+        return;
+      }
+      await sleep(400);
+      const play = await fetch("/api/spotify/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "play", deviceId: chosenId }),
+      });
+      if (!play.ok) {
+        setSpotifyNotice("Transfer succeeded but play failed on selected speaker.");
+        return;
+      }
+      setSpotifyNotice("Speaker selected and playback transferred.");
+      await fetchBoard();
+    } finally {
+      setBusy(null);
+    }
+  }
+
   function beginCastWakeFlow() {
     const baselineIds = Array.from(
       new Set(
@@ -1213,8 +1280,10 @@ export function Board() {
     );
     setCastWakeBaselineIds(baselineIds);
     setCastTargetName(null);
+    setCastSpeakerCandidates([]);
+    setCastSpeakerChoice("");
     setSpotifyNotice(
-      "Select a speaker in the Cast dialog to wake Spotify on that device. We'll auto-handoff when it appears.",
+      "Select a speaker in the Cast dialog, then choose that speaker below for explicit handoff.",
     );
   }
 
@@ -1229,6 +1298,8 @@ export function Board() {
       const castContext = framework.CastContext.getInstance();
       await castContext.requestSession();
       setCastSessionConnected(true);
+      // We now use explicit speaker confirmation instead of automatic handoff.
+      setCastWakeBaselineIds(null);
       const castDeviceName = castContext
         .getCurrentSession?.()
         ?.getCastDevice?.()
@@ -1236,9 +1307,10 @@ export function Board() {
       if (castDeviceName) {
         setCastTargetName(castDeviceName);
         setSpotifyNotice(
-          `Cast selected: ${castDeviceName}. Waiting for matching Spotify device and auto-handoff...`,
+          `Cast selected: ${castDeviceName}. Looking for Spotify speaker devices...`,
         );
       }
+      await refreshCastSpeakerCandidates();
     } catch {
       setSpotifyNotice("Cast chooser did not open. Check browser cast support and try again.");
     }
@@ -1870,6 +1942,44 @@ export function Board() {
                       {castSupportHint}
                     </p>
                   ) : null}
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-2.5">
+                    <p className="text-xs text-slate-400 sm:text-sm">
+                      Wake & choose speaker
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <select
+                        className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500 sm:text-base"
+                        value={castSpeakerChoice}
+                        onChange={(e) => setCastSpeakerChoice(e.target.value)}
+                      >
+                        {castSpeakerCandidates.length === 0 ? (
+                          <option value="">No speaker devices yet</option>
+                        ) : (
+                          castSpeakerCandidates.map((d) => (
+                            <option key={`cast-${d.id}`} value={d.id}>
+                              {d.name ?? "Unknown"} {d.is_active ? "• active" : ""}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400 disabled:opacity-50"
+                        disabled={castSpeakerLoading}
+                        onClick={() => void refreshCastSpeakerCandidates(4)}
+                      >
+                        {castSpeakerLoading ? "..." : "Refresh speakers"}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                        disabled={!castSpeakerChoice || busy === "spotify-cast-handoff"}
+                        onClick={() => void confirmCastSpeakerHandoff()}
+                      >
+                        Use selected speaker
+                      </button>
+                    </div>
+                  </div>
 
                   <div className="rounded-lg border border-slate-800 bg-slate-950/35 p-2.5">
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-400 sm:text-sm">
