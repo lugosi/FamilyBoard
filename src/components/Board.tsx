@@ -713,8 +713,15 @@ export function Board() {
     });
     setBusy(null);
     if (!res.ok) {
-      const j = (await res.json().catch(() => ({}))) as { error?: string };
-      setMessage(j.error ?? "Spotify action failed");
+      const j = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        detail?: { error?: { message?: string; reason?: string } | string };
+      };
+      const detail =
+        typeof j.detail?.error === "string"
+          ? j.detail.error
+          : j.detail?.error?.reason || j.detail?.error?.message;
+      setMessage([j.error, detail].filter(Boolean).join(" — ") || "Spotify action failed");
       return;
     }
     setSpotifySeekDraft(null);

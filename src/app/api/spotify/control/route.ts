@@ -5,6 +5,26 @@ import {
   spotifyApiFetch,
 } from "@/lib/spotify";
 
+function spotifyDetailMessage(detail: unknown): string | null {
+  if (!detail || typeof detail !== "object") return null;
+  const root = detail as {
+    error?: { message?: string; reason?: string; status?: number } | string;
+    message?: string;
+    reason?: string;
+  };
+  if (typeof root.error === "string") return root.error;
+  if (root.error?.reason && root.error?.message) {
+    return `${root.error.message} (${root.error.reason})`;
+  }
+  return (
+    root.error?.message ??
+    root.error?.reason ??
+    root.message ??
+    root.reason ??
+    null
+  );
+}
+
 type ControlBody = {
   action?:
     | "play"
@@ -142,8 +162,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Spotify link expired" }, { status: 401 });
     }
     if (out.status >= 400) {
+      const detailMsg = spotifyDetailMessage(out.data);
       return NextResponse.json(
-        { error: "Spotify control failed", detail: out.data },
+        {
+          error: detailMsg
+            ? `Spotify control failed: ${detailMsg}`
+            : "Spotify control failed",
+          detail: out.data,
+        },
         { status: 502 },
       );
     }
