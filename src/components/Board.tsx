@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CalendarRangePickerModal } from "@/components/calendar/CalendarRangePickerModal";
 import { CompactCalendarGrid } from "@/components/calendar/CompactCalendarGrid";
@@ -100,20 +100,30 @@ type SpotifySearchPlaylist = {
 type RightWidgetKey = "clock" | "weather" | "hue" | "spotify";
 type SpotifyResultTab = "tracks" | "albums" | "playlists";
 
-type SpotifyWebPlaybackPlayer = {
-  addListener: (event: string, cb: (arg: unknown) => void) => boolean;
-  connect: () => Promise<boolean>;
-  disconnect: () => void;
-  activateElement?: () => Promise<void>;
+type CastContextLike = {
+  setOptions: (opts: { receiverApplicationId: string; autoJoinPolicy: string }) => void;
+  addEventListener: (eventType: string, handler: (evt: { sessionState?: string }) => void) => void;
+  removeEventListener: (
+    eventType: string,
+    handler: (evt: { sessionState?: string }) => void,
+  ) => void;
 };
 
-type SpotifyWebPlaybackSDK = {
-  Player: new (config: {
-    name: string;
-    getOAuthToken: (cb: (token: string) => void) => void;
-    volume?: number;
-  }) => SpotifyWebPlaybackPlayer;
+type CastFrameworkLike = {
+  CastContext: { getInstance: () => CastContextLike };
+  SessionState: { SESSION_STARTED: string; SESSION_RESUMED: string };
+  CastContextEventType: { SESSION_STATE_CHANGED: string };
 };
+
+type ChromeCastLike = { AutoJoinPolicy: { ORIGIN_SCOPED: string } };
+
+declare global {
+  interface Window {
+    __onGCastApiAvailable?: (isAvailable: boolean) => void;
+    cast?: { framework?: CastFrameworkLike };
+    chrome?: { cast?: ChromeCastLike };
+  }
+}
 
 function formatMsClock(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -215,10 +225,11 @@ export function Board() {
     playlists: SpotifySearchPlaylist[];
   }>({ tracks: [], albums: [], playlists: [] });
   const [spotifyResultTab, setSpotifyResultTab] = useState<SpotifyResultTab>("tracks");
-  const [spotifySdkReady, setSpotifySdkReady] = useState(false);
-  const [spotifySdkDeviceId, setSpotifySdkDeviceId] = useState<string | null>(null);
+  const [castReady, setCastReady] = useState(false);
+  const [castSessionConnected, setCastSessionConnected] = useState(false);
+  const [castWakeBaselineIds, setCastWakeBaselineIds] = useState<string[] | null>(null);
   const [spotifyNotice, setSpotifyNotice] = useState<string | null>(null);
-  const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
+  const castWakePollingRef = useRef<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -310,6 +321,23 @@ export function Board() {
     if (alertText) setDismissedAlertSignature(alertText);
   }
 
+  const fetchSpotifyDevices = useCallback(
+    async (signal?: AbortSignal): Promise<SpotifyDevice[] | null> => {
+      const dRes = await fetch("/api/spotify/devices", { signal });
+      if (signal?.aborted) return null;
+      if (dRes.status === 401) {
+        setSpotifyDevices([]);
+        return [];
+      }
+      if (!dRes.ok) return null;
+      const data = (await dRes.json()) as { devices?: SpotifyDevice[] };
+      const devices = data.devices ?? [];
+      setSpotifyDevices(devices);
+      return devices;
+    },
+    [],
+  );
+
   const fetchBoard = useCallback(
     async (signal?: AbortSignal) => {
       const sRes = await fetch("/api/auth/status", { signal });
@@ -393,20 +421,13 @@ export function Board() {
           setSpotifySeekDraft(null);
         }
 
-        const dRes = await fetch("/api/spotify/devices", { signal });
-        if (signal?.aborted) return;
-        if (dRes.status === 401) {
-          setSpotifyDevices([]);
-        } else if (dRes.ok) {
-          const data = (await dRes.json()) as { devices?: SpotifyDevice[] };
-          setSpotifyDevices(data.devices ?? []);
-        }
+        await fetchSpotifyDevices(signal);
       } else {
         setSpotifyPlayback(null);
         setSpotifyDevices([]);
         setSpotifySeekDraft(null);
-        setSpotifySdkReady(false);
-        setSpotifySdkDeviceId(null);
+        setCastReady(false);
+        setCastSessionConnected(false);
       }
 
       if (s.weatherConfigured) {
@@ -421,7 +442,7 @@ export function Board() {
         setWeather(null);
       }
     },
-    [fetchIso.from, fetchIso.to, selectedCalendarId],
+    [fetchIso.from, fetchIso.to, selectedCalendarId, fetchSpotifyDevices],
   );
 
   useEffect(() => {
@@ -445,95 +466,139 @@ export function Board() {
 
   useEffect(() => {
     if (!status?.spotifyConfigured || !status.spotifyLinked) {
-      spotifyPlayerRef.current?.disconnect();
-      spotifyPlayerRef.current = null;
+      queueMicrotask(() => {
+        setCastReady(false);
+        setCastSessionConnected(false);
+        setCastWakeBaselineIds(null);
+      });
+      if (castWakePollingRef.current !== null) {
+        window.clearInterval(castWakePollingRef.current);
+        castWakePollingRef.current = null;
+      }
       return;
     }
 
     let cancelled = false;
+    let cleanupSessionListener: (() => void) | null = null;
 
-    const setup = () => {
+    const initCast = () => {
       if (cancelled) return;
-      const sdk = (window as unknown as { Spotify?: SpotifyWebPlaybackSDK }).Spotify;
-      if (!sdk?.Player) return;
-      if (spotifyPlayerRef.current) return;
+      const framework = window.cast?.framework;
+      const chromeCast = window.chrome?.cast;
+      if (!framework || !chromeCast) return;
 
-      const player = new sdk.Player({
-        name: "FamilyBoard Player",
-        getOAuthToken: (cb) => {
-          void fetch("/api/spotify/sdk-token")
-            .then((r) => r.json())
-            .then((j: { accessToken?: string }) => cb(j.accessToken ?? ""))
-            .catch(() => cb(""));
-        },
-        volume: 0.7,
+      const castContext = framework.CastContext.getInstance();
+      castContext.setOptions({
+        receiverApplicationId: "CC32E753",
+        autoJoinPolicy: chromeCast.AutoJoinPolicy.ORIGIN_SCOPED,
       });
+      setCastReady(true);
 
-      player.addListener("ready", (arg) => {
+      const handler = (evt: { sessionState?: string }) => {
         if (cancelled) return;
-        const x = arg as { device_id?: string };
-        if (x.device_id) setSpotifySdkDeviceId(x.device_id);
-        setSpotifySdkReady(true);
-        void fetchBoard();
-      });
-      player.addListener("not_ready", () => {
-        if (cancelled) return;
-        setSpotifySdkReady(false);
-      });
-      player.addListener("authentication_error", (arg) => {
-        if (cancelled) return;
-        const x = arg as { message?: string };
-        setMessage(`Spotify SDK auth error${x.message ? `: ${x.message}` : ""}`);
-      });
-      player.addListener("account_error", (arg) => {
-        if (cancelled) return;
-        const x = arg as { message?: string };
-        setMessage(`Spotify SDK account error${x.message ? `: ${x.message}` : ""}`);
-      });
-      player.addListener("playback_error", (arg) => {
-        if (cancelled) return;
-        const x = arg as { message?: string };
-        setMessage(`Spotify SDK playback error${x.message ? `: ${x.message}` : ""}`);
-      });
+        const state = evt.sessionState;
+        const connected =
+          state === framework.SessionState.SESSION_STARTED ||
+          state === framework.SessionState.SESSION_RESUMED;
+        setCastSessionConnected(connected);
+        if (!connected && castWakePollingRef.current !== null) {
+          window.clearInterval(castWakePollingRef.current);
+          castWakePollingRef.current = null;
+        }
+      };
+      castContext.addEventListener(
+        framework.CastContextEventType.SESSION_STATE_CHANGED,
+        handler,
+      );
+      cleanupSessionListener = () => {
+        castContext.removeEventListener(
+          framework.CastContextEventType.SESSION_STATE_CHANGED,
+          handler,
+        );
+      };
+    };
 
-      void player.connect().then((ok) => {
-        if (cancelled) return;
-        setSpotifySdkReady(ok);
-      });
-      spotifyPlayerRef.current = player;
+    window.__onGCastApiAvailable = (isAvailable: boolean) => {
+      if (isAvailable) initCast();
     };
 
     const existing = document.querySelector(
-      'script[src="https://sdk.scdn.co/spotify-player.js"]',
+      'script[src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"]',
     ) as HTMLScriptElement | null;
-    if ((window as unknown as { Spotify?: SpotifyWebPlaybackSDK }).Spotify?.Player) {
-      setup();
-    } else if (existing) {
-      const prev = (window as unknown as { onSpotifyWebPlaybackSDKReady?: () => void })
-        .onSpotifyWebPlaybackSDKReady;
-      (window as unknown as { onSpotifyWebPlaybackSDKReady?: () => void })
-        .onSpotifyWebPlaybackSDKReady = () => {
-        prev?.();
-        setup();
-      };
+    if (existing) {
+      if (window.cast?.framework) initCast();
     } else {
       const script = document.createElement("script");
-      script.src = "https://sdk.scdn.co/spotify-player.js";
+      script.src =
+        "https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1";
       script.async = true;
       document.body.appendChild(script);
-      const prev = (window as unknown as { onSpotifyWebPlaybackSDKReady?: () => void })
-        .onSpotifyWebPlaybackSDKReady;
-      (window as unknown as { onSpotifyWebPlaybackSDKReady?: () => void })
-        .onSpotifyWebPlaybackSDKReady = () => {
-        prev?.();
-        setup();
-      };
     }
 
     return () => {
       cancelled = true;
+      cleanupSessionListener?.();
+      if (castWakePollingRef.current !== null) {
+        window.clearInterval(castWakePollingRef.current);
+        castWakePollingRef.current = null;
+      }
     };
-  }, [status?.spotifyConfigured, status?.spotifyLinked, fetchBoard]);
+  }, [status?.spotifyConfigured, status?.spotifyLinked]);
+
+  useEffect(() => {
+    if (!castSessionConnected || !castWakeBaselineIds) return;
+    if (castWakePollingRef.current !== null) {
+      window.clearInterval(castWakePollingRef.current);
+    }
+
+    const baseline = new Set(castWakeBaselineIds);
+    let attempts = 0;
+    castWakePollingRef.current = window.setInterval(() => {
+      attempts += 1;
+      void (async () => {
+        const devices = await fetchSpotifyDevices();
+        if (!devices) return;
+        const awakened = devices.find((d) => d.id && !baseline.has(d.id));
+        if (awakened?.id) {
+          window.clearInterval(castWakePollingRef.current!);
+          castWakePollingRef.current = null;
+          setCastWakeBaselineIds(null);
+          setSpotifyNotice(
+            `Cast device awakened: ${awakened.name ?? "device"}. Transferring playback...`,
+          );
+          const transferRes = await fetch("/api/spotify/control", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "set_device",
+              deviceId: awakened.id,
+              play: false,
+            }),
+          });
+          if (!transferRes.ok) {
+            setSpotifyNotice("Awakened cast device found, but transfer failed. Try selecting it manually.");
+          } else {
+            setSpotifyNotice(`Awakened ${awakened.name ?? "cast device"} and transferred playback.`);
+            await fetchBoard();
+          }
+        } else if (attempts >= 30) {
+          window.clearInterval(castWakePollingRef.current!);
+          castWakePollingRef.current = null;
+          setCastWakeBaselineIds(null);
+          setSpotifyNotice(
+            "Cast connected, but no new Spotify device appeared yet. Start Spotify on the speaker, then refresh.",
+          );
+        }
+      })();
+    }, 2_000);
+
+    return () => {
+      if (castWakePollingRef.current !== null) {
+        window.clearInterval(castWakePollingRef.current);
+        castWakePollingRef.current = null;
+      }
+    };
+  }, [castSessionConnected, castWakeBaselineIds, fetchSpotifyDevices, fetchBoard]);
 
   function openNewEventModal() {
     setNewAllDay(false);
@@ -819,19 +884,8 @@ export function Board() {
   ) {
     setSpotifyNotice(null);
     if (
-      (action === "play" || action === "play_track" || action === "play_context") &&
-      spotifySdkReady
-    ) {
-      try {
-        await spotifyPlayerRef.current?.activateElement?.();
-      } catch {
-        // Ignore; we'll still attempt playback and surface downstream errors.
-      }
-    }
-    if (
       (action === "play_track" || action === "play_context" || action === "queue_track") &&
       !spotifyActiveDevice?.id &&
-      !spotifySdkDeviceId &&
       !extra?.deviceId
     ) {
       const msg =
@@ -848,7 +902,7 @@ export function Board() {
       (action === "play_track" || action === "play_context" || action === "queue_track") &&
       !payload.deviceId
     ) {
-      const fallbackDevice = spotifyActiveDevice?.id ?? spotifySdkDeviceId;
+      const fallbackDevice = spotifyActiveDevice?.id;
       if (fallbackDevice) payload.deviceId = fallbackDevice;
     }
     const res = await fetch("/api/spotify/control", {
@@ -933,6 +987,18 @@ export function Board() {
     else if (next.playlists.length > 0) setSpotifyResultTab("playlists");
   }
 
+  function beginCastWakeFlow() {
+    const baselineIds = Array.from(
+      new Set(
+      spotifyDevices.map((d) => d.id).filter((id): id is string => Boolean(id)),
+      ),
+    );
+    setCastWakeBaselineIds(baselineIds);
+    setSpotifyNotice(
+      "Select a speaker in the Cast dialog to wake Spotify on that device. We'll auto-handoff when it appears.",
+    );
+  }
+
   function openRangePicker() {
     setPickerDraft({ from: rangeKeys.fromKey, to: rangeKeys.toInclusiveKey });
     setRangePickerOpen(true);
@@ -966,9 +1032,6 @@ export function Board() {
   const spotifyArtist = spotifyTrack?.artists?.map((a) => a.name).filter(Boolean).join(", ");
   const spotifyActiveDevice =
     spotifyDevices.find((d) => d.is_active) ?? spotifyPlayback?.device ?? null;
-  const spotifySdkInDeviceList = Boolean(
-    spotifySdkDeviceId && spotifyDevices.some((d) => d.id === spotifySdkDeviceId),
-  );
   const spotifyCover = spotifyTrack?.album?.images?.[0]?.url;
   const spotifyDurationMs = Math.max(0, Number(spotifyTrack?.duration_ms ?? 0));
   const spotifyProgressMs = Math.max(
@@ -1478,11 +1541,6 @@ export function Board() {
                         void spotifyControl("set_device", { deviceId: e.target.value })
                       }
                     >
-                      {spotifySdkDeviceId && !spotifySdkInDeviceList ? (
-                        <option value={spotifySdkDeviceId}>
-                          FamilyBoard Web Player {spotifyActiveDevice?.id === spotifySdkDeviceId ? "• active" : ""}
-                        </option>
-                      ) : null}
                       {spotifyDevices.length === 0 ? (
                         <option value="">No devices found</option>
                       ) : (
@@ -1495,39 +1553,22 @@ export function Board() {
                     </select>
                     <p className="mt-1 text-xs normal-case tracking-normal text-slate-500 sm:text-sm">
                       Only Spotify Connect devices appear here. If a speaker is missing,
-                      wake it in Spotify first, then refresh.
+                      use Cast wake-up below, then wait for auto-handoff.
                     </p>
                   </label>
                   <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/30 px-3 py-2">
                     <p className="text-xs text-slate-400 sm:text-sm">
-                      Web player:{" "}
-                      <span className={spotifySdkReady ? "text-emerald-300" : "text-slate-500"}>
-                        {spotifySdkReady ? "ready" : "not ready"}
+                      Cast bridge:{" "}
+                      <span className={castReady ? "text-emerald-300" : "text-slate-500"}>
+                        {castReady ? (castSessionConnected ? "connected" : "ready") : "unavailable"}
                       </span>
                     </p>
-                    {spotifySdkDeviceId ? (
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400"
-                          onClick={() => void spotifyPlayerRef.current?.activateElement?.()}
-                        >
-                          Enable audio
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400"
-                          onClick={() =>
-                            void spotifyControl("set_device", {
-                              deviceId: spotifySdkDeviceId,
-                              play: false,
-                            })
-                          }
-                        >
-                          Cast to web
-                        </button>
-                      </div>
-                    ) : null}
+                    {createElement("google-cast-launcher", {
+                      className:
+                        "cursor-pointer rounded-full border border-slate-600 p-1.5 text-slate-100 hover:border-slate-400",
+                      title: "Wake Chromecast for Spotify",
+                      onClick: beginCastWakeFlow,
+                    })}
                   </div>
 
                   <div className="rounded-lg border border-slate-800 bg-slate-950/35 p-2.5">
