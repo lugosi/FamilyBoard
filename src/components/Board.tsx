@@ -736,6 +736,8 @@ export function Board() {
     const knownIds = new Set(
       spotifyDevices.map((d) => d.id).filter((id): id is string => Boolean(id)),
     );
+    const activeDeviceId =
+      spotifyDevices.find((d) => d.is_active)?.id ?? spotifyPlayback?.device?.id ?? "";
     if (spotifySdkDeviceId) knownIds.add(spotifySdkDeviceId);
     if (knownIds.size === 0) {
       if (spotifySelectedDeviceId) {
@@ -746,11 +748,11 @@ export function Board() {
       return;
     }
     if (spotifySelectedDeviceId && knownIds.has(spotifySelectedDeviceId)) return;
-    const preferred = spotifyActiveDevice?.id ?? spotifySdkDeviceId ?? "";
+    const preferred = activeDeviceId || spotifySdkDeviceId || "";
     queueMicrotask(() => {
       setSpotifySelectedDeviceId(preferred);
     });
-  }, [spotifyDevices, spotifyActiveDevice?.id, spotifySdkDeviceId, spotifySelectedDeviceId]);
+  }, [spotifyDevices, spotifyPlayback?.device?.id, spotifySdkDeviceId, spotifySelectedDeviceId]);
 
   function openNewEventModal() {
     setNewAllDay(false);
