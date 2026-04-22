@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CalendarRangePickerModal } from "@/components/calendar/CalendarRangePickerModal";
 import { CompactCalendarGrid } from "@/components/calendar/CompactCalendarGrid";
@@ -99,6 +99,21 @@ type SpotifySearchPlaylist = {
 
 type RightWidgetKey = "clock" | "weather" | "hue" | "spotify";
 type SpotifyResultTab = "tracks" | "albums" | "playlists";
+
+type SpotifyWebPlaybackPlayer = {
+  addListener: (event: string, cb: (arg: unknown) => void) => boolean;
+  connect: () => Promise<boolean>;
+  disconnect: () => void;
+  activateElement?: () => Promise<void>;
+};
+
+type SpotifyWebPlaybackSDK = {
+  Player: new (config: {
+    name: string;
+    getOAuthToken: (cb: (token: string) => void) => void;
+    volume?: number;
+  }) => SpotifyWebPlaybackPlayer;
+};
 
 function formatMsClock(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -200,6 +215,9 @@ export function Board() {
     playlists: SpotifySearchPlaylist[];
   }>({ tracks: [], albums: [], playlists: [] });
   const [spotifyResultTab, setSpotifyResultTab] = useState<SpotifyResultTab>("tracks");
+  const [spotifySdkReady, setSpotifySdkReady] = useState(false);
+  const [spotifySdkDeviceId, setSpotifySdkDeviceId] = useState<string | null>(null);
+  const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -386,6 +404,8 @@ export function Board() {
         setSpotifyPlayback(null);
         setSpotifyDevices([]);
         setSpotifySeekDraft(null);
+        setSpotifySdkReady(false);
+        setSpotifySdkDeviceId(null);
       }
 
       if (s.weatherConfigured) {
@@ -421,6 +441,98 @@ export function Board() {
     }, 60_000);
     return () => window.clearInterval(id);
   }, [fetchBoard]);
+
+  useEffect(() => {
+    if (!status?.spotifyConfigured || !status.spotifyLinked) {
+      spotifyPlayerRef.current?.disconnect();
+      spotifyPlayerRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+
+    const setup = () => {
+      if (cancelled) return;
+      const sdk = (window as unknown as { Spotify?: SpotifyWebPlaybackSDK }).Spotify;
+      if (!sdk?.Player) return;
+      if (spotifyPlayerRef.current) return;
+
+      const player = new sdk.Player({
+        name: "FamilyBoard Player",
+        getOAuthToken: (cb) => {
+          void fetch("/api/spotify/sdk-token")
+            .then((r) => r.json())
+            .then((j: { accessToken?: string }) => cb(j.accessToken ?? ""))
+            .catch(() => cb(""));
+        },
+        volume: 0.7,
+      });
+
+      player.addListener("ready", (arg) => {
+        if (cancelled) return;
+        const x = arg as { device_id?: string };
+        if (x.device_id) setSpotifySdkDeviceId(x.device_id);
+        setSpotifySdkReady(true);
+        void fetchBoard();
+      });
+      player.addListener("not_ready", () => {
+        if (cancelled) return;
+        setSpotifySdkReady(false);
+      });
+      player.addListener("authentication_error", (arg) => {
+        if (cancelled) return;
+        const x = arg as { message?: string };
+        setMessage(`Spotify SDK auth error${x.message ? `: ${x.message}` : ""}`);
+      });
+      player.addListener("account_error", (arg) => {
+        if (cancelled) return;
+        const x = arg as { message?: string };
+        setMessage(`Spotify SDK account error${x.message ? `: ${x.message}` : ""}`);
+      });
+      player.addListener("playback_error", (arg) => {
+        if (cancelled) return;
+        const x = arg as { message?: string };
+        setMessage(`Spotify SDK playback error${x.message ? `: ${x.message}` : ""}`);
+      });
+
+      void player.connect().then((ok) => {
+        if (cancelled) return;
+        setSpotifySdkReady(ok);
+      });
+      spotifyPlayerRef.current = player;
+    };
+
+    const existing = document.querySelector(
+      'script[src="https://sdk.scdn.co/spotify-player.js"]',
+    ) as HTMLScriptElement | null;
+    if ((window as unknown as { Spotify?: SpotifyWebPlaybackSDK }).Spotify?.Player) {
+      setup();
+    } else if (existing) {
+      const prev = (window as unknown as { onSpotifyWebPlaybackSDKReady?: () => void })
+        .onSpotifyWebPlaybackSDKReady;
+      (window as unknown as { onSpotifyWebPlaybackSDKReady?: () => void })
+        .onSpotifyWebPlaybackSDKReady = () => {
+        prev?.();
+        setup();
+      };
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://sdk.scdn.co/spotify-player.js";
+      script.async = true;
+      document.body.appendChild(script);
+      const prev = (window as unknown as { onSpotifyWebPlaybackSDKReady?: () => void })
+        .onSpotifyWebPlaybackSDKReady;
+      (window as unknown as { onSpotifyWebPlaybackSDKReady?: () => void })
+        .onSpotifyWebPlaybackSDKReady = () => {
+        prev?.();
+        setup();
+      };
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status?.spotifyConfigured, status?.spotifyLinked, fetchBoard]);
 
   function openNewEventModal() {
     setNewAllDay(false);
@@ -706,10 +818,18 @@ export function Board() {
   ) {
     setBusy(`spotify-${action}`);
     setMessage(null);
+    const payload: Record<string, unknown> = { action, ...(extra ?? {}) };
+    if (
+      (action === "play_track" || action === "play_context" || action === "queue_track") &&
+      !payload.deviceId
+    ) {
+      const fallbackDevice = spotifyActiveDevice?.id ?? spotifySdkDeviceId;
+      if (fallbackDevice) payload.deviceId = fallbackDevice;
+    }
     const res = await fetch("/api/spotify/control", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, ...extra }),
+      body: JSON.stringify(payload),
     });
     setBusy(null);
     if (!res.ok) {
@@ -1314,6 +1434,28 @@ export function Board() {
                       )}
                     </select>
                   </label>
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/30 px-3 py-2">
+                    <p className="text-xs text-slate-400 sm:text-sm">
+                      Web player:{" "}
+                      <span className={spotifySdkReady ? "text-emerald-300" : "text-slate-500"}>
+                        {spotifySdkReady ? "ready" : "not ready"}
+                      </span>
+                    </p>
+                    {spotifySdkDeviceId ? (
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400"
+                        onClick={() =>
+                          void spotifyControl("set_device", {
+                            deviceId: spotifySdkDeviceId,
+                            play: false,
+                          })
+                        }
+                      >
+                        Cast here
+                      </button>
+                    ) : null}
+                  </div>
 
                   <div className="rounded-lg border border-slate-800 bg-slate-950/35 p-2.5">
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-400 sm:text-sm">

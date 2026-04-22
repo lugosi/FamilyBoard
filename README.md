@@ -21,6 +21,11 @@ Spotify OAuth redirect URI must be added in your Spotify app settings:
 
 - `${PUBLIC_APP_URL}/api/auth/spotify/callback`
 
+Spotify Web Playback SDK is enabled for the in-browser player. Your Spotify app must include
+the scopes used by this project (`streaming`, `user-read-email`, `user-read-private`,
+`user-read-playback-state`, `user-read-currently-playing`, `user-modify-playback-state`).
+If you linked Spotify before these scopes were added, disconnect and link again.
+
 ### TrueNAS port configuration
 
 You can change the app listen port at runtime with `APP_PORT` (default `3000`).
