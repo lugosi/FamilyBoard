@@ -24,6 +24,11 @@ RUN addgroup --system --gid 1001 nodejs \
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# castv2 in bundled Next runtime can try to read an absolute /ROOT path for cast_channel.proto.
+# Provide that compatibility path in the container filesystem.
+RUN mkdir -p /ROOT/node_modules/castv2/lib
+COPY --from=builder /app/node_modules/castv2/lib/cast_channel.proto /ROOT/node_modules/castv2/lib/cast_channel.proto
+RUN chown -R nextjs:nodejs /ROOT
 
 USER nextjs
 EXPOSE 3000
