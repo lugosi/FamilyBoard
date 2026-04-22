@@ -716,9 +716,11 @@ export function Board() {
         const selectedMatched = spotifySelectedDeviceId
           ? nonWebDevices.find((d) => d.id === spotifySelectedDeviceId)
           : null;
+        const activeNonWeb = nonWebDevices.find((d) => d.is_active);
         const awakened =
           nameMatched ??
           selectedMatched ??
+          activeNonWeb ??
           newlyAppeared ??
           // last resort: never pick the web player while handling cast handoff
           null;
@@ -749,8 +751,14 @@ export function Board() {
           window.clearInterval(castWakePollingRef.current!);
           castWakePollingRef.current = null;
           setCastWakeBaselineIds(null);
+          const visible = nonWebDevices
+            .map((d) => d.name)
+            .filter((n): n is string => Boolean(n))
+            .slice(0, 5);
           setSpotifyNotice(
-            "Cast connected, but no new Spotify device appeared yet. Start Spotify on the speaker, then refresh.",
+            visible.length > 0
+              ? `Cast connected, but speaker did not match yet. Visible Spotify devices: ${visible.join(", ")}.`
+              : "Cast connected, but no Spotify speaker device appeared yet. Start Spotify on the speaker, then refresh.",
           );
         }
       })();
