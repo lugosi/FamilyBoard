@@ -72,6 +72,7 @@ export async function POST(request: Request) {
   const init: RequestInit = { method: "PUT" };
   let preflightTransfer: { deviceId: string; play: boolean } | null = null;
   let expectedPlayUri: string | null = null;
+  let expectedDeviceId: string | null = null;
 
   switch (body.action) {
     case "play":
@@ -130,6 +131,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "uri is required" }, { status: 400 });
       }
       expectedPlayUri = body.uri;
+      expectedDeviceId = body.deviceId ?? null;
       if (body.deviceId) {
         // Make target device active first; many Connect devices ignore direct play until transferred.
         preflightTransfer = { deviceId: body.deviceId, play: true };
@@ -145,6 +147,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "uri is required" }, { status: 400 });
       }
       expectedPlayUri = body.uri;
+      expectedDeviceId = body.deviceId ?? null;
       if (body.deviceId) {
         preflightTransfer = { deviceId: body.deviceId, play: true };
       }
@@ -222,23 +225,22 @@ export async function POST(request: Request) {
           device?: { id?: string };
         }>("/me/player");
         if (probe.status >= 400 || !probe.data) continue;
-        const itemUri = probe.data.item?.uri ?? "";
-        const contextUri = probe.data.context?.uri ?? "";
-        if (
-          probe.data.is_playing ||
-          itemUri === expectedPlayUri ||
-          contextUri === expectedPlayUri
-        ) {
+        const onExpectedDevice = expectedDeviceId
+          ? probe.data.device?.id === expectedDeviceId
+          : true;
+        if (probe.data.is_playing && onExpectedDevice) {
           verified = true;
           break;
         }
       }
       if (!verified) {
-        return NextResponse.json({
-          ok: true,
-          warning:
-            "Play command was accepted, but playback did not start yet. Open Spotify on the target device first, then try again.",
-        });
+        return NextResponse.json(
+          {
+            error:
+              "Playback did not start. Open Spotify on the target device first, ensure it's active, then try again.",
+          },
+          { status: 409 },
+        );
       }
     }
     return NextResponse.json({ ok: true });
