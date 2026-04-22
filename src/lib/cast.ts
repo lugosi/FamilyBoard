@@ -14,6 +14,33 @@ type MdnsAnswer = {
   data?: unknown;
 };
 
+export function getConfiguredCastDevices(): CastDevice[] {
+  const raw = process.env.CAST_STATIC_DEVICES?.trim();
+  if (!raw) return [];
+  const parts = raw
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const out: CastDevice[] = [];
+  for (const part of parts) {
+    const [namePart, hostPortPart] = part.includes("=") ? part.split("=") : [part, part];
+    const name = (namePart || hostPortPart).trim();
+    const hostPort = (hostPortPart || "").trim();
+    if (!hostPort) continue;
+    const [hostRaw, portRaw] = hostPort.split(":");
+    const host = (hostRaw || "").trim();
+    if (!host) continue;
+    const port = Number.parseInt((portRaw || "8009").trim(), 10);
+    out.push({
+      id: `${host}:${Number.isFinite(port) ? port : 8009}`,
+      name,
+      host,
+      port: Number.isFinite(port) ? port : 8009,
+    });
+  }
+  return out;
+}
+
 export async function discoverCastDevices(timeoutMs = 2500): Promise<CastDevice[]> {
   console.info("[cast] discoverCastDevices:start", { timeoutMs });
   const mdnsClient = mdns();
