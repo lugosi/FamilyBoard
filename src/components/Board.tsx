@@ -816,6 +816,17 @@ export function Board() {
       | "queue_track",
     extra?: Record<string, unknown>,
   ) {
+    if (
+      (action === "play_track" || action === "play_context" || action === "queue_track") &&
+      !spotifyActiveDevice?.id &&
+      !spotifySdkDeviceId &&
+      !extra?.deviceId
+    ) {
+      setMessage(
+        "No Spotify device selected. Open Spotify on your phone/computer/speaker, then pick a device and try again.",
+      );
+      return;
+    }
     setBusy(`spotify-${action}`);
     setMessage(null);
     const payload: Record<string, unknown> = { action, ...(extra ?? {}) };
