@@ -1,5 +1,7 @@
 import dns from "node:dns";
+import fs from "node:fs/promises";
 import net from "node:net";
+import path from "node:path";
 import mdns from "multicast-dns";
 
 export type CastDevice = {
@@ -118,6 +120,7 @@ export async function launchSpotifyReceiverOnCastHost(
   timeoutMs = 7000,
 ): Promise<void> {
   console.info("[cast] launchSpotifyReceiverOnCastHost:start", { host, port, timeoutMs });
+  await ensureCastProtoCompatPath();
   const { Client, Application } = await import("castv2-client");
   class SpotifyReceiver extends Application {
     static APP_ID = "CC32E753";
@@ -188,4 +191,35 @@ export async function launchSpotifyReceiverOnCastHost(
       reject(err);
     });
   });
+}
+
+async function ensureCastProtoCompatPath(): Promise<void> {
+  // Next.js server bundling can make castv2 try loading proto from /ROOT/node_modules.
+  // Ensure that compatibility path exists by copying from the real module location.
+  const compatPath = "/ROOT/node_modules/castv2/lib/cast_channel.proto";
+  try {
+    await fs.access(compatPath);
+    return;
+  } catch {
+    // continue and create fallback
+  }
+
+  try {
+    const realProtoPath = path.join(
+      /* turbopackIgnore: true */ process.cwd(),
+      "node_modules",
+      "castv2",
+      "lib",
+      "cast_channel.proto",
+    );
+    const targetDir = path.dirname(compatPath);
+    await fs.mkdir(targetDir, { recursive: true });
+    await fs.copyFile(realProtoPath, compatPath);
+    console.info("[cast] proto_compat_installed", { compatPath, realProtoPath });
+  } catch (e) {
+    console.warn("[cast] proto_compat_failed", {
+      compatPath,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
 }

@@ -1323,10 +1323,15 @@ export function Board() {
       lastMatchedSpotifyDevice: null,
     }));
     try {
+      const ac = new AbortController();
+      const timeout = window.setTimeout(() => ac.abort(), 17_000);
       const connectRes = await fetch("/api/cast/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ host: chosen.host, port: chosen.port }),
+        signal: ac.signal,
+      }).finally(() => {
+        window.clearTimeout(timeout);
       });
       if (!connectRes.ok) {
         const e = (await connectRes.json().catch(() => ({}))) as { error?: string };
@@ -1412,6 +1417,19 @@ export function Board() {
       }));
       setSpotifyNotice(`Playing on ${chosen.name}.`);
       await fetchBoard();
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.name === "AbortError"
+          ? "cast_connect_client_timeout"
+          : e instanceof Error
+            ? e.message
+            : "cast_connect_client_error";
+      setCastDiagnostics((d) => ({
+        ...d,
+        lastStep: "cast_connect_failed",
+        lastConnectError: msg,
+      }));
+      setSpotifyNotice("Cast connect request timed out before receiver launch completed.");
     } finally {
       setBusy(null);
     }

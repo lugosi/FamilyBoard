@@ -18,7 +18,12 @@ export async function POST(request: Request) {
 
   try {
     console.info("[api/cast/connect] start", { host, port });
-    await launchSpotifyReceiverOnCastHost(host, port);
+    await Promise.race([
+      launchSpotifyReceiverOnCastHost(host, port),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("cast_connect_route_timeout")), 15_000);
+      }),
+    ]);
     console.info("[api/cast/connect] ok", { host, port });
     return NextResponse.json({ ok: true });
   } catch (e) {
