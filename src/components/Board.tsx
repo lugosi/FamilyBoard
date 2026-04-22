@@ -1433,6 +1433,10 @@ export function Board() {
                         ))
                       )}
                     </select>
+                    <p className="mt-1 text-xs normal-case tracking-normal text-slate-500 sm:text-sm">
+                      Only Spotify Connect devices appear here. If a speaker is missing,
+                      wake it in Spotify first, then refresh.
+                    </p>
                   </label>
                   <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/30 px-3 py-2">
                     <p className="text-xs text-slate-400 sm:text-sm">

@@ -70,6 +70,7 @@ export async function POST(request: Request) {
 
   let endpoint = "";
   const init: RequestInit = { method: "PUT" };
+  let preflightTransfer: { deviceId: string; play: boolean } | null = null;
 
   switch (body.action) {
     case "play":
@@ -127,9 +128,11 @@ export async function POST(request: Request) {
       if (!body.uri) {
         return NextResponse.json({ error: "uri is required" }, { status: 400 });
       }
-      endpoint = `/me/player/play${
-        body.deviceId ? `?device_id=${encodeURIComponent(body.deviceId)}` : ""
-      }`;
+      if (body.deviceId) {
+        // Make target device active first; many Connect devices ignore direct play until transferred.
+        preflightTransfer = { deviceId: body.deviceId, play: true };
+      }
+      endpoint = "/me/player/play";
       init.method = "PUT";
       init.body = JSON.stringify({ uris: [body.uri] });
       break;
@@ -137,9 +140,10 @@ export async function POST(request: Request) {
       if (!body.uri) {
         return NextResponse.json({ error: "uri is required" }, { status: 400 });
       }
-      endpoint = `/me/player/play${
-        body.deviceId ? `?device_id=${encodeURIComponent(body.deviceId)}` : ""
-      }`;
+      if (body.deviceId) {
+        preflightTransfer = { deviceId: body.deviceId, play: true };
+      }
+      endpoint = "/me/player/play";
       init.method = "PUT";
       init.body = JSON.stringify({ context_uri: body.uri });
       break;
@@ -157,6 +161,30 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (preflightTransfer) {
+      const transferOut = await spotifyApiFetch("/me/player", {
+        method: "PUT",
+        body: JSON.stringify({
+          device_ids: [preflightTransfer.deviceId],
+          play: preflightTransfer.play,
+        }),
+      });
+      if (transferOut.status >= 400) {
+        const detailMsg = spotifyDetailMessage(transferOut.data);
+        return NextResponse.json(
+          {
+            error: detailMsg
+              ? `Spotify transfer failed: ${detailMsg}`
+              : "Spotify transfer failed",
+            detail: transferOut.data,
+          },
+          { status: transferOut.status === 401 ? 401 : 502 },
+        );
+      }
+      // Give Connect a brief moment to switch active device.
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
     const out = await spotifyApiFetch(endpoint, init);
     if (out.status === 401) {
       return NextResponse.json({ error: "Spotify link expired" }, { status: 401 });
