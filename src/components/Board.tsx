@@ -822,6 +822,7 @@ export function Board() {
       !spotifySdkDeviceId &&
       !extra?.deviceId
     ) {
+      setDismissedAlertSignature(null);
       setMessage(
         "No Spotify device selected. Open Spotify on your phone/computer/speaker, then pick a device and try again.",
       );
@@ -853,10 +854,14 @@ export function Board() {
         typeof j.detail?.error === "string"
           ? j.detail.error
           : j.detail?.error?.reason || j.detail?.error?.message;
+      setDismissedAlertSignature(null);
       setMessage([j.error, detail].filter(Boolean).join(" — ") || "Spotify action failed");
       return;
     }
-    if (j.warning) setMessage(j.warning);
+    if (j.warning) {
+      setDismissedAlertSignature(null);
+      setMessage(j.warning);
+    }
     setSpotifySeekDraft(null);
     await fetchBoard();
   }
