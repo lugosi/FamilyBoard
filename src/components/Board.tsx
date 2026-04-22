@@ -704,18 +704,24 @@ export function Board() {
       void (async () => {
         const devices = await fetchSpotifyDevices();
         if (!devices) return;
-        const newlyAppeared = devices.find((d) => d.id && !baseline.has(d.id));
+        const nonWebDevices = devices.filter((d) => d.id && d.id !== spotifySdkDeviceId);
+        const newlyAppeared = nonWebDevices.find((d) => d.id && !baseline.has(d.id));
         const nameMatched =
           desiredCastName.length > 0
-            ? devices.find((d) => {
+            ? nonWebDevices.find((d) => {
                 const n = normalizeName(d.name);
                 return Boolean(n) && (n.includes(desiredCastName) || desiredCastName.includes(n));
               })
             : null;
         const selectedMatched = spotifySelectedDeviceId
-          ? devices.find((d) => d.id === spotifySelectedDeviceId)
+          ? nonWebDevices.find((d) => d.id === spotifySelectedDeviceId)
           : null;
-        const awakened = newlyAppeared ?? nameMatched ?? selectedMatched;
+        const awakened =
+          nameMatched ??
+          selectedMatched ??
+          newlyAppeared ??
+          // last resort: never pick the web player while handling cast handoff
+          null;
         if (awakened?.id) {
           window.clearInterval(castWakePollingRef.current!);
           castWakePollingRef.current = null;
@@ -760,6 +766,7 @@ export function Board() {
     castSessionConnected,
     castWakeBaselineIds,
     castTargetName,
+    spotifySdkDeviceId,
     spotifySelectedDeviceId,
     fetchSpotifyDevices,
     fetchBoard,
