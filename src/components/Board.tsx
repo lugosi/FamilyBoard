@@ -96,6 +96,15 @@ type SpotifySearchPlaylist = {
   images?: Array<{ url?: string }>;
   owner?: { display_name?: string };
 };
+type HueThemeKey = "bright" | "relax" | "focus" | "nightlight";
+
+const HUE_PINNED_ORDER = ["tv", "living room", "caro", "office"] as const;
+const HUE_THEME_OPTIONS: Array<{ key: HueThemeKey; label: string }> = [
+  { key: "bright", label: "Bright" },
+  { key: "relax", label: "Relax" },
+  { key: "focus", label: "Focus" },
+  { key: "nightlight", label: "Nightlight" },
+];
 
 type RightWidgetKey = "clock" | "weather" | "hue" | "spotify";
 type SpotifyResultTab = "tracks" | "albums" | "playlists";
@@ -292,6 +301,8 @@ export function Board() {
   const [selectedCalendarId, setSelectedCalendarId] = useState("primary");
 
   const [clockNow, setClockNow] = useState(() => new Date());
+  const [showOtherHueAreas, setShowOtherHueAreas] = useState(false);
+  const [hueThemeByArea, setHueThemeByArea] = useState<Record<string, HueThemeKey>>({});
   const [collapsedWidgets, setCollapsedWidgets] = useState<
     Record<RightWidgetKey, boolean>
   >({
@@ -858,6 +869,22 @@ export function Board() {
     await fetchBoard();
   }
 
+  async function applyHueTheme(id: string, theme: HueThemeKey) {
+    setBusy(`hue-theme-${id}`);
+    const res = await fetch(`/api/hue/areas/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme }),
+    });
+    setBusy(null);
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      setMessage(j.error ?? "Hue request failed");
+      return;
+    }
+    await fetchBoard();
+  }
+
   async function pairHue() {
     setBusy("pair");
     setMessage(null);
@@ -1098,6 +1125,23 @@ export function Board() {
     spotifySdkDeviceId && spotifyDevices.some((d) => d.id === spotifySdkDeviceId),
   );
   const spotifyCover = spotifyTrack?.album?.images?.[0]?.url;
+  const pinnedHueAreas = useMemo(() => {
+    const byName = new Map(
+      areas.map((a) => [a.name.trim().toLowerCase(), a] as const),
+    );
+    const ordered = HUE_PINNED_ORDER.map((name) => byName.get(name)).filter(
+      (x): x is HueArea => Boolean(x),
+    );
+    return ordered;
+  }, [areas]);
+  const pinnedHueIds = useMemo(() => new Set(pinnedHueAreas.map((a) => a.id)), [pinnedHueAreas]);
+  const otherHueAreas = useMemo(
+    () =>
+      areas
+        .filter((a) => !pinnedHueIds.has(a.id))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [areas, pinnedHueIds],
+  );
   const spotifyDurationMs = Math.max(0, Number(spotifyTrack?.duration_ms ?? 0));
   const spotifyProgressMs = Math.max(
     0,
@@ -1423,35 +1467,147 @@ export function Board() {
                   No rooms or zones found.
                 </p>
               ) : (
-                <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {areas.map((area) => (
-                    <li
-                      key={area.id}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-2"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-base font-medium text-white sm:text-lg">
-                          {area.name}
-                        </p>
-                        <p className="text-xs uppercase tracking-wide text-slate-500 sm:text-sm">
-                          {area.type}
-                        </p>
-                      </div>
+                <div className="mt-3 space-y-3">
+                  <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {pinnedHueAreas.map((area) => (
+                      <li
+                        key={area.id}
+                        className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-base font-medium text-white sm:text-lg">
+                              {area.name}
+                            </p>
+                            <p className="text-xs uppercase tracking-wide text-slate-500 sm:text-sm">
+                              {area.type}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={busy === `hue-${area.id}`}
+                            onClick={() => void toggleArea(area.id, !area.on)}
+                            className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
+                              area.on
+                                ? "bg-amber-300 text-slate-900"
+                                : "bg-slate-800 text-slate-200"
+                            } disabled:opacity-40`}
+                          >
+                            {area.on ? "On" : "Off"}
+                          </button>
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <select
+                            className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
+                            value={hueThemeByArea[area.id] ?? "relax"}
+                            onChange={(e) =>
+                              setHueThemeByArea((prev) => ({
+                                ...prev,
+                                [area.id]: e.target.value as HueThemeKey,
+                              }))
+                            }
+                          >
+                            {HUE_THEME_OPTIONS.map((opt) => (
+                              <option key={opt.key} value={opt.key}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            disabled={busy === `hue-theme-${area.id}`}
+                            className="shrink-0 rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400 disabled:opacity-50"
+                            onClick={() =>
+                              void applyHueTheme(area.id, hueThemeByArea[area.id] ?? "relax")
+                            }
+                          >
+                            {busy === `hue-theme-${area.id}` ? "Applying..." : "Apply theme"}
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  {otherHueAreas.length > 0 ? (
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/20">
                       <button
                         type="button"
-                        disabled={busy === `hue-${area.id}`}
-                        onClick={() => void toggleArea(area.id, !area.on)}
-                        className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
-                          area.on
-                            ? "bg-amber-300 text-slate-900"
-                            : "bg-slate-800 text-slate-200"
-                        } disabled:opacity-40`}
+                        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-slate-300 hover:text-white sm:text-base"
+                        onClick={() => setShowOtherHueAreas((v) => !v)}
                       >
-                        {area.on ? "On" : "Off"}
+                        <span>Other rooms and zones ({otherHueAreas.length})</span>
+                        <span className="text-xs text-slate-500">
+                          {showOtherHueAreas ? "Hide" : "Show"}
+                        </span>
                       </button>
-                    </li>
-                  ))}
-                </ul>
+                      {showOtherHueAreas ? (
+                        <ul className="grid grid-cols-1 gap-2 border-t border-slate-800 p-2 sm:grid-cols-2">
+                          {otherHueAreas.map((area) => (
+                            <li
+                              key={area.id}
+                              className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-2"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="truncate text-base font-medium text-white sm:text-lg">
+                                    {area.name}
+                                  </p>
+                                  <p className="text-xs uppercase tracking-wide text-slate-500 sm:text-sm">
+                                    {area.type}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={busy === `hue-${area.id}`}
+                                  onClick={() => void toggleArea(area.id, !area.on)}
+                                  className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
+                                    area.on
+                                      ? "bg-amber-300 text-slate-900"
+                                      : "bg-slate-800 text-slate-200"
+                                  } disabled:opacity-40`}
+                                >
+                                  {area.on ? "On" : "Off"}
+                                </button>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
+                                <select
+                                  className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
+                                  value={hueThemeByArea[area.id] ?? "relax"}
+                                  onChange={(e) =>
+                                    setHueThemeByArea((prev) => ({
+                                      ...prev,
+                                      [area.id]: e.target.value as HueThemeKey,
+                                    }))
+                                  }
+                                >
+                                  {HUE_THEME_OPTIONS.map((opt) => (
+                                    <option key={opt.key} value={opt.key}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  disabled={busy === `hue-theme-${area.id}`}
+                                  className="shrink-0 rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400 disabled:opacity-50"
+                                  onClick={() =>
+                                    void applyHueTheme(area.id, hueThemeByArea[area.id] ?? "relax")
+                                  }
+                                >
+                                  {busy === `hue-theme-${area.id}` ? "Applying..." : "Apply theme"}
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {pinnedHueAreas.length === 0 ? (
+                    <p className="text-xs text-slate-500 sm:text-sm">
+                      Pinned rooms (TV, Living Room, Caro, Office) are not available on this bridge.
+                    </p>
+                  ) : null}
+                </div>
               )}
             </section>
 
@@ -1602,55 +1758,63 @@ export function Board() {
                   </div>
 
                   <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
+                    Volume {Math.round(spotifyActiveDevice?.volume_percent ?? 0)}%
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={Math.round(spotifyActiveDevice?.volume_percent ?? 0)}
+                      disabled={!spotifyActiveDevice}
+                      className="mt-2 w-full accent-sky-500 disabled:opacity-40"
+                      onChange={(e) =>
+                        void spotifyControl("set_volume", {
+                          volumePercent: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </label>
+
+                  <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
                     Device
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
-                      value={spotifyEffectiveDeviceId}
-                      onChange={(e) => {
-                        setSpotifySelectedDeviceId(e.target.value);
-                        void spotifyControl("set_device", { deviceId: e.target.value });
-                      }}
-                    >
-                      {spotifySdkDeviceId && !spotifySdkInDeviceList ? (
-                        <option value={spotifySdkDeviceId}>
-                          FamilyBoard Web Player {spotifyActiveDevice?.id === spotifySdkDeviceId ? "• active" : ""}
-                        </option>
-                      ) : null}
-                      {spotifyDevices.length === 0 ? (
-                        <option value="">No devices found</option>
-                      ) : (
-                        spotifyDevices.map((d) => (
-                          <option key={d.id} value={d.id}>
-                            {d.name ?? "Unknown"} {d.is_active ? "• active" : ""}
+                    <div className="mt-1 flex items-center gap-2">
+                      <select
+                        className="w-full min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
+                        value={spotifyEffectiveDeviceId}
+                        onChange={(e) => {
+                          setSpotifySelectedDeviceId(e.target.value);
+                          void spotifyControl("set_device", { deviceId: e.target.value });
+                        }}
+                      >
+                        {spotifySdkDeviceId && !spotifySdkInDeviceList ? (
+                          <option value={spotifySdkDeviceId}>
+                            FamilyBoard Web Player {spotifyActiveDevice?.id === spotifySdkDeviceId ? "• active" : ""}
                           </option>
-                        ))
-                      )}
-                    </select>
-                    <p className="mt-1 text-xs normal-case tracking-normal text-slate-500 sm:text-sm">
-                      Only Spotify Connect devices appear here. If one is missing, activate it in Spotify once and refresh.
-                    </p>
-                    <div className="mt-2 flex items-center gap-2">
+                        ) : null}
+                        {spotifyDevices.length === 0 ? (
+                          <option value="">No devices found</option>
+                        ) : (
+                          spotifyDevices.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name ?? "Unknown"} {d.is_active ? "• active" : ""}
+                            </option>
+                          ))
+                        )}
+                      </select>
                       <button
                         type="button"
                         disabled={busy === "spotify-refresh-devices"}
-                        className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400 disabled:opacity-50"
+                        className="shrink-0 rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400 disabled:opacity-50"
                         onClick={() => void refreshSpotifyDevices()}
                       >
                         {busy === "spotify-refresh-devices" ? "Refreshing..." : "Refresh devices"}
                       </button>
-                      <p className="text-xs normal-case tracking-normal text-slate-500 sm:text-sm">
-                        If empty: open Spotify on phone, select the target device, then refresh here.
-                      </p>
                     </div>
-                  </label>
-                  <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/30 px-3 py-2">
-                    <p className="text-xs text-slate-400 sm:text-sm">
-                      FamilyBoard player:{" "}
-                      <span className={spotifySdkReady ? "text-emerald-300" : "text-slate-500"}>
-                        {spotifySdkReady ? "ready" : "not ready"}
-                      </span>
+                    <p className="mt-2 text-xs normal-case tracking-normal text-slate-500 sm:text-sm">
+                      If empty: open Spotify on phone, select the target device, then refresh here.
                     </p>
-                    {spotifySdkDeviceId ? (
+                  </label>
+                  {spotifySdkDeviceId ? (
+                    <div className="flex justify-end">
                       <button
                         type="button"
                         className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400"
@@ -1667,8 +1831,8 @@ export function Board() {
                       >
                         Play here
                       </button>
-                    ) : null}
-                  </div>
+                    </div>
+                  ) : null}
 
                   <div className="rounded-lg border border-slate-800 bg-slate-950/35 p-2.5">
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-400 sm:text-sm">
@@ -1861,23 +2025,6 @@ export function Board() {
                       </>
                     ) : null}
                   </div>
-
-                  <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
-                    Volume {Math.round(spotifyActiveDevice?.volume_percent ?? 0)}%
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={Math.round(spotifyActiveDevice?.volume_percent ?? 0)}
-                      disabled={!spotifyActiveDevice}
-                      className="mt-2 w-full accent-sky-500 disabled:opacity-40"
-                      onChange={(e) =>
-                        void spotifyControl("set_volume", {
-                          volumePercent: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
 
                   <button
                     type="button"
