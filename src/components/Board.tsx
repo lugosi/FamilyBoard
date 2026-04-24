@@ -1099,6 +1099,10 @@ export function Board() {
         body: JSON.stringify({
           deviceNameHint: chosen.name,
           excludeDeviceId: spotifySdkDeviceId,
+          excludeDeviceIds: [spotifySdkDeviceId, spotifyActiveDevice?.id].filter(Boolean),
+          baselineDeviceIds: spotifyDevices
+            .filter((d) => d.id && d.id !== spotifySdkDeviceId)
+            .map((d) => d.id),
           timeoutMs: 60000,
           startPlayback: true,
         }),

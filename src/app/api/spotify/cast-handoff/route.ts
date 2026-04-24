@@ -14,6 +14,8 @@ type Device = {
 type Body = {
   deviceNameHint?: string;
   excludeDeviceId?: string;
+  excludeDeviceIds?: string[];
+  baselineDeviceIds?: string[];
   timeoutMs?: number;
   startPlayback?: boolean;
 };
@@ -25,10 +27,11 @@ function normalizeName(value: string | undefined): string {
 function pickDevice(
   devices: Device[],
   nameHint: string,
-  excludeDeviceId: string | null,
+  excludeDeviceIds: Set<string>,
+  baselineDeviceIds: Set<string>,
 ): Device | null {
   const candidates = devices.filter(
-    (d) => d.id && !d.is_restricted && (!excludeDeviceId || d.id !== excludeDeviceId),
+    (d) => d.id && !d.is_restricted && !excludeDeviceIds.has(d.id),
   );
   if (candidates.length === 0) return null;
 
@@ -41,7 +44,10 @@ function pickDevice(
     if (byName) return byName;
   }
 
-  return candidates.find((d) => d.is_active) ?? candidates[0] ?? null;
+  const newlyAppeared = candidates.find((d) => d.id && !baselineDeviceIds.has(d.id));
+  if (newlyAppeared) return newlyAppeared;
+
+  return null;
 }
 
 export async function POST(request: Request) {
@@ -69,7 +75,15 @@ export async function POST(request: Request) {
   const pollMs = 2000;
   const iterations = Math.max(1, Math.floor(timeoutMs / pollMs));
   const nameHint = (body.deviceNameHint ?? "").trim();
-  const excludeDeviceId = body.excludeDeviceId?.trim() || null;
+  const excludeDeviceIds = new Set<string>();
+  if (body.excludeDeviceId?.trim()) excludeDeviceIds.add(body.excludeDeviceId.trim());
+  for (const id of body.excludeDeviceIds ?? []) {
+    if (typeof id === "string" && id.trim()) excludeDeviceIds.add(id.trim());
+  }
+  const baselineDeviceIds = new Set<string>();
+  for (const id of body.baselineDeviceIds ?? []) {
+    if (typeof id === "string" && id.trim()) baselineDeviceIds.add(id.trim());
+  }
   const startPlayback = Boolean(body.startPlayback ?? true);
 
   let visibleNames: string[] = [];
@@ -91,7 +105,7 @@ export async function POST(request: Request) {
       .filter((d) => d.id)
       .map((d) => d.name || d.id || "unknown")
       .slice(0, 10);
-    picked = pickDevice(devices, nameHint, excludeDeviceId);
+    picked = pickDevice(devices, nameHint, excludeDeviceIds, baselineDeviceIds);
     if (picked?.id) break;
     await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
