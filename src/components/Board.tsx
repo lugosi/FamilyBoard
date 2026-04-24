@@ -248,6 +248,7 @@ export function Board() {
   const [spotifyResultTab, setSpotifyResultTab] = useState<SpotifyResultTab>("tracks");
   const [spotifySdkReady, setSpotifySdkReady] = useState(false);
   const [spotifySdkDeviceId, setSpotifySdkDeviceId] = useState<string | null>(null);
+  const [suspendWebPlayerForHandoff, setSuspendWebPlayerForHandoff] = useState(false);
   const [spotifySelectedDeviceId, setSpotifySelectedDeviceId] = useState<string>("");
   const [castSpeakerCandidates, setCastSpeakerCandidates] = useState<CastDevice[]>([]);
   const [castSpeakerLoading, setCastSpeakerLoading] = useState(false);
@@ -505,6 +506,15 @@ export function Board() {
       spotifyPlayerRef.current = null;
       return;
     }
+    if (suspendWebPlayerForHandoff) {
+      spotifyPlayerRef.current?.disconnect();
+      spotifyPlayerRef.current = null;
+      queueMicrotask(() => {
+        setSpotifySdkReady(false);
+        setSpotifySdkDeviceId(null);
+      });
+      return;
+    }
 
     let cancelled = false;
 
@@ -589,7 +599,7 @@ export function Board() {
     return () => {
       cancelled = true;
     };
-  }, [status?.spotifyConfigured, status?.spotifyLinked, fetchBoard]);
+  }, [status?.spotifyConfigured, status?.spotifyLinked, fetchBoard, suspendWebPlayerForHandoff]);
 
   useEffect(() => {
     const knownIds = new Set(
@@ -1070,6 +1080,7 @@ export function Board() {
       return;
     }
     setBusy("spotify-cast-handoff");
+    setSuspendWebPlayerForHandoff(true);
     setSpotifyNotice(`Waking ${chosen.name} and waiting for Spotify Connect...`);
     try {
       const ac = new AbortController();
@@ -1138,6 +1149,9 @@ export function Board() {
       setSpotifyNotice(`Cast connect failed: ${msg}`);
     } finally {
       setBusy(null);
+      window.setTimeout(() => {
+        setSuspendWebPlayerForHandoff(false);
+      }, 65_000);
     }
   }
 
@@ -1716,8 +1730,12 @@ export function Board() {
                   <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/30 px-3 py-2">
                     <p className="text-xs text-slate-400 sm:text-sm">
                       FamilyBoard player:{" "}
-                      <span className={spotifySdkReady ? "text-emerald-300" : "text-slate-500"}>
-                        {spotifySdkReady ? "ready" : "not ready"}
+                      <span className={suspendWebPlayerForHandoff ? "text-amber-300" : spotifySdkReady ? "text-emerald-300" : "text-slate-500"}>
+                        {suspendWebPlayerForHandoff
+                          ? "paused for cast handoff"
+                          : spotifySdkReady
+                            ? "ready"
+                            : "not ready"}
                       </span>
                     </p>
                     {spotifySdkDeviceId ? (
