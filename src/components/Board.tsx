@@ -1344,44 +1344,50 @@ export function Board() {
                 </p>
               ) : current ? (
                 <div className="mt-2 space-y-2.5">
-                  <div className="grid grid-cols-[minmax(0,1fr)_8.25rem] gap-2">
-                    <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                    <div className="flex min-w-0 items-center gap-3">
                       <p className="text-4xl font-semibold leading-none text-white sm:text-5xl">
                         {Math.round(current.temperatureF ?? 0)}°
                         <span className="text-base text-slate-400 sm:text-lg">F</span>
                       </p>
-                      <p className="mt-1 text-xs text-slate-500 sm:text-sm">
-                        Humidity {Math.round(current.humidity ?? 0)}% · Wind{" "}
-                        {Math.round(current.windMph ?? 0)} mph
-                      </p>
                       <WeatherIcon
                         code={Number(current.code ?? 0)}
-                        className="mt-2 h-10 w-10 sm:h-12 sm:w-12"
+                        className="h-9 w-9 shrink-0 sm:h-10 sm:w-10"
                       />
                     </div>
-                    {daily && daily.length > 0 ? (
-                      <div className="grid grid-cols-1 gap-1.5">
-                        {daily.slice(0, 3).map((d) => (
-                          <div
-                            key={d.date}
-                            className="flex min-w-0 items-center justify-between gap-1 rounded-lg border border-slate-800/90 bg-slate-950/50 px-2 py-1.5"
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-400 sm:text-xs">
-                                {shortWeekdayFromForecastDate(d.date ?? "")}
-                              </p>
-                              <p className="text-[11px] font-medium text-white sm:text-xs">
-                                {Math.round(d.minF ?? 0)}–{Math.round(d.maxF ?? 0)}°
-                              </p>
-                            </div>
-                            <WeatherIcon
-                              code={Number(d.code ?? 0)}
-                              className="h-4 w-4 shrink-0 sm:h-5 sm:w-5"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
+                    <div className="flex items-center gap-3 text-sm text-slate-300 sm:text-base">
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4 text-sky-300"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M12 3C12 3 6 10 6 14a6 6 0 0 0 12 0c0-4-6-11-6-11z" />
+                        </svg>
+                        {Math.round(current.humidity ?? 0)}%
+                      </span>
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4 text-slate-300"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M3 9h10a3 3 0 1 0-3-3" />
+                          <path d="M3 15h14a3 3 0 1 1-3 3" />
+                        </svg>
+                        {Math.round(current.windMph ?? 0)} mph
+                      </span>
+                    </div>
                   </div>
                   {hourlyToday && hourlyToday.length > 0 ? (
                     <div className="rounded-lg border border-slate-800 bg-slate-950/50 px-1 py-1.5 sm:px-2">
@@ -1409,6 +1415,29 @@ export function Board() {
                             </div>
                           );
                         })}
+                      </div>
+                    </div>
+                  ) : null}
+                  {daily && daily.length > 0 ? (
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/50 px-1 py-1.5 sm:px-2">
+                      <div className="flex w-full flex-nowrap items-stretch justify-between gap-0.5">
+                        {daily.slice(0, 7).map((d) => (
+                          <div
+                            key={d.date}
+                            className="flex min-w-0 flex-1 flex-col items-center gap-0.5 text-center"
+                          >
+                            <span className="w-full truncate text-[10px] font-semibold uppercase leading-tight text-slate-400">
+                              {shortWeekdayFromForecastDate(d.date ?? "")}
+                            </span>
+                            <WeatherIcon
+                              code={Number(d.code ?? 0)}
+                              className="h-4 w-4 shrink-0"
+                            />
+                            <span className="w-full truncate text-[10px] font-medium leading-tight text-slate-200">
+                              {Math.round(d.minF ?? 0)}-{Math.round(d.maxF ?? 0)}°
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   ) : null}
