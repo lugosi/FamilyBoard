@@ -928,13 +928,16 @@ export function Board() {
       }
     }
     if (
-      (action === "play_track" || action === "play_context" || action === "queue_track") &&
+      (action === "play" ||
+        action === "play_track" ||
+        action === "play_context" ||
+        action === "queue_track") &&
       !spotifyEffectiveDeviceId &&
       !spotifySdkDeviceId &&
       !extra?.deviceId
     ) {
       const msg =
-        "No Spotify device selected. Open Spotify on your phone/computer/speaker, then pick a device and try again.";
+        "No active Spotify device. Use 'Use selected speaker' in Chromecast handoff or click 'Play here' for the FamilyBoard player, then try again.";
       setDismissedAlertSignature(null);
       setMessage(msg);
       setSpotifyNotice(msg);
@@ -967,7 +970,10 @@ export function Board() {
           ? j.detail.error
           : j.detail?.error?.reason || j.detail?.error?.message;
       setDismissedAlertSignature(null);
-      const msg = [j.error, detail].filter(Boolean).join(" — ") || "Spotify action failed";
+      const combined = [j.error, detail].filter(Boolean).join(" — ");
+      const msg = combined.includes("NO_ACTIVE_DEVICE")
+        ? "Spotify has no active device yet. Use 'Use selected speaker' (Chromecast section) or 'Play here', then retry."
+        : combined || "Spotify action failed";
       setMessage(msg);
       setSpotifyNotice(msg);
       return;
@@ -1758,8 +1764,8 @@ export function Board() {
                       Chromecast speaker handoff
                     </p>
                     <p className="mt-1 text-xs normal-case tracking-normal text-slate-500 sm:text-sm">
-                      Pick a Chromecast, click Use selected speaker, then if needed open Spotify app
-                      once and select the same speaker to activate Spotify Connect.
+                      Pick a Chromecast and click Use selected speaker. If Spotify still cannot find it,
+                      open Spotify app once and choose the same speaker, then retry.
                     </p>
                     <div className="mt-2 flex items-center gap-2">
                       <select
