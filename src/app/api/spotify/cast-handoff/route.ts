@@ -85,6 +85,13 @@ export async function POST(request: Request) {
     if (typeof id === "string" && id.trim()) baselineDeviceIds.add(id.trim());
   }
   const startPlayback = Boolean(body.startPlayback ?? true);
+  console.info("[api/spotify/cast-handoff] start", {
+    timeoutMs,
+    nameHint,
+    excludeCount: excludeDeviceIds.size,
+    baselineCount: baselineDeviceIds.size,
+    startPlayback,
+  });
 
   let visibleNames: string[] = [];
   let picked: Device | null = null;
@@ -105,12 +112,27 @@ export async function POST(request: Request) {
       .filter((d) => d.id)
       .map((d) => d.name || d.id || "unknown")
       .slice(0, 10);
+    if (i % 3 === 0 || i === iterations - 1) {
+      console.info("[api/spotify/cast-handoff] poll", {
+        attempt: i + 1,
+        iterations,
+        visible: visibleNames,
+      });
+    }
     picked = pickDevice(devices, nameHint, excludeDeviceIds, baselineDeviceIds);
-    if (picked?.id) break;
+    if (picked?.id) {
+      console.info("[api/spotify/cast-handoff] picked", {
+        id: picked.id,
+        name: picked.name,
+        isActive: Boolean(picked.is_active),
+      });
+      break;
+    }
     await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
 
   if (!picked?.id) {
+    console.warn("[api/spotify/cast-handoff] not_exposed", { visible: visibleNames });
     return NextResponse.json(
       {
         ok: false,
@@ -129,6 +151,11 @@ export async function POST(request: Request) {
     }),
   });
   if (transfer.status >= 400) {
+    console.error("[api/spotify/cast-handoff] transfer_failed", {
+      id: picked.id,
+      name: picked.name,
+      detail: transfer.data,
+    });
     return NextResponse.json(
       {
         ok: false,
@@ -146,6 +173,11 @@ export async function POST(request: Request) {
       { method: "PUT" },
     );
     if (play.status >= 400) {
+      console.error("[api/spotify/cast-handoff] play_failed", {
+        id: picked.id,
+        name: picked.name,
+        detail: play.data,
+      });
       return NextResponse.json(
         {
           ok: false,
@@ -158,6 +190,11 @@ export async function POST(request: Request) {
     }
   }
 
+  console.info("[api/spotify/cast-handoff] success", {
+    id: picked.id,
+    name: picked.name,
+    visible: visibleNames,
+  });
   return NextResponse.json({
     ok: true,
     status: "handoff_success",
