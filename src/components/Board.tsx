@@ -135,10 +135,6 @@ function formatMsClock(ms: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function normalizeName(value: string | undefined): string {
-  return (value ?? "").trim().toLowerCase();
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
@@ -1097,55 +1093,35 @@ export function Board() {
         `Chromecast "${chosen.name}" is awake. If it does not appear shortly, open Spotify app once and select it there, then press Refresh.`,
       );
 
-      // Wait for Spotify to expose the receiver as a Connect device.
-      let matchedSpotifyDevice: SpotifyDevice | null = null;
-      for (let i = 0; i < 30; i += 1) {
-        const devices = await fetchSpotifyDevices();
-        if (devices) {
-          const nonWeb = devices.filter((d) => d.id && d.id !== spotifySdkDeviceId);
-          const target = normalizeName(chosen.name);
-          const byName = nonWeb.find((d) => {
-            const n = normalizeName(d.name);
-            return Boolean(n) && (n.includes(target) || target.includes(n));
-          });
-          const active = nonWeb.find((d) => d.is_active);
-          matchedSpotifyDevice = byName ?? active ?? null;
-          if (matchedSpotifyDevice?.id) break;
-        }
-        await sleep(1500);
-      }
-      if (!matchedSpotifyDevice?.id) {
-        setSpotifyNotice(
-          `Chromecast "${chosen.name}" woke up, but Spotify has not exposed it yet. Open Spotify app once, select that speaker, then press Refresh and Use selected speaker.`,
-        );
-        return;
-      }
-
-      setSpotifySelectedDeviceId(matchedSpotifyDevice.id);
-      const transfer = await fetch("/api/spotify/control", {
+      const handoff = await fetch("/api/spotify/cast-handoff", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "set_device",
-          deviceId: matchedSpotifyDevice.id,
-          play: false,
+          deviceNameHint: chosen.name,
+          excludeDeviceId: spotifySdkDeviceId,
+          timeoutMs: 60000,
+          startPlayback: true,
         }),
       });
-      if (!transfer.ok) {
-        setSpotifyNotice("Spotify saw the speaker but transfer failed.");
+      const handoffJson = (await handoff.json().catch(() => ({}))) as {
+        status?: string;
+        device?: { id?: string; name?: string };
+        visibleDevices?: string[];
+      };
+      if (!handoff.ok || !handoffJson.device?.id) {
+        if (handoffJson.status === "cast_launched_spotify_not_exposed") {
+          const visible = handoffJson.visibleDevices?.length
+            ? ` Visible: ${handoffJson.visibleDevices.join(", ")}.`
+            : "";
+          setSpotifyNotice(
+            `Chromecast "${chosen.name}" woke up, but Spotify did not expose a playable Connect device yet.${visible} Open Spotify app once, select that speaker, then retry.`,
+          );
+        } else {
+          setSpotifyNotice("Chromecast woke, but Spotify handoff failed. Try again.");
+        }
         return;
       }
-
-      await sleep(400);
-      const play = await fetch("/api/spotify/control", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "play", deviceId: matchedSpotifyDevice.id }),
-      });
-      if (!play.ok) {
-        setSpotifyNotice("Transfer succeeded but play failed on selected speaker.");
-        return;
-      }
+      setSpotifySelectedDeviceId(handoffJson.device.id);
       setSpotifyNotice(`Playing on ${chosen.name}.`);
       await fetchBoard();
     } catch (e) {
