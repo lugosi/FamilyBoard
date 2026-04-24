@@ -1,14 +1,14 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 import {
   addDays,
+  allDayEventsForCompactDay,
   dateKeyLocal,
   displayInstantForTimedOnDay,
-  eventBarClass,
   eventColorDotClass,
   formatCompactTime,
-  layoutAllDayBarsForWeek,
+  eventBarClass,
   timedEventsForCompactDay,
   type GEvent,
 } from "@/lib/calendar-layout";
@@ -37,6 +37,26 @@ export function CompactCalendarGrid({
   comfortable = false,
   onSelectEvent,
 }: Props) {
+  const [visibleAllDayLimit, setVisibleAllDayLimit] = useState(2);
+
+  useEffect(() => {
+    function updateLimit() {
+      const w = window.innerWidth;
+      if (w < 640) {
+        setVisibleAllDayLimit(1);
+        return;
+      }
+      if (w < 1024) {
+        setVisibleAllDayLimit(2);
+        return;
+      }
+      setVisibleAllDayLimit(3);
+    }
+    updateLimit();
+    window.addEventListener("resize", updateLimit);
+    return () => window.removeEventListener("resize", updateLimit);
+  }, []);
+
   const rootText = comfortable
     ? "text-[15px] leading-snug text-slate-200 sm:text-[16px]"
     : "text-[14px] leading-snug text-slate-200 sm:text-[15px]";
@@ -64,6 +84,7 @@ export function CompactCalendarGrid({
             <CompactWeekBlock
               weekStartMonday={ws}
               events={events}
+              visibleAllDayLimit={visibleAllDayLimit}
               showCalendarSource={showCalendarSource}
               comfortable={comfortable}
               onSelectEvent={onSelectEvent}
@@ -78,72 +99,28 @@ export function CompactCalendarGrid({
 function CompactWeekBlock({
   weekStartMonday,
   events,
+  visibleAllDayLimit,
   showCalendarSource,
   comfortable,
   onSelectEvent,
 }: {
   weekStartMonday: Date;
   events: GEvent[];
+  visibleAllDayLimit: number;
   showCalendarSource: boolean;
   comfortable: boolean;
   onSelectEvent: (ev: GEvent) => void;
 }) {
-  const bars = useMemo(
-    () => layoutAllDayBarsForWeek(events, weekStartMonday),
-    [events, weekStartMonday],
-  );
-
-  const maxLane = bars.reduce((m, b) => Math.max(m, b.lane), -1);
-  const laneCount = maxLane + 1;
-
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col border-b border-slate-800 last:border-b-0">
-      {laneCount > 0 ? (
-        <div className="shrink-0 space-y-px bg-slate-950/80 px-px pt-px">
-          {Array.from({ length: laneCount }, (_, laneIndex) => {
-            const inLane = bars.filter((b) => b.lane === laneIndex);
-            return (
-              <div
-                key={laneIndex}
-                className={`grid grid-cols-7 border-b border-slate-900 bg-black/50 ${
-                  comfortable ? "min-h-[22px]" : "min-h-[19px]"
-                }`}
-              >
-                {inLane.map((bar) => {
-                  const span = bar.endCol - bar.startCol + 1;
-                  return (
-                    <button
-                      key={`${bar.event.id ?? bar.event.summary}-${laneIndex}-${bar.startCol}`}
-                      type="button"
-                      onClick={() => onSelectEvent(bar.event)}
-                      className={`mx-px truncate rounded px-0.5 py-px text-left font-medium shadow-sm ${
-                        comfortable ? "text-[14px]" : "text-[13px]"
-                      } ${eventBarClass(bar.event.summary)}`}
-                      // For "All calendars", use source calendar color for easier scanning.
-                      style={{
-                        gridColumnStart: bar.startCol + 1,
-                        gridColumnEnd: `span ${span}`,
-                        ...(showCalendarSource
-                          ? sourceCalendarBarStyle(bar.event as SourceEvent)
-                          : {}),
-                      }}
-                      title={bar.event.summary ?? ""}
-                    >
-                      {bar.event.summary || "(No title)"}
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-7 grid-rows-[minmax(0,1fr)] divide-x divide-slate-800/90">
         {Array.from({ length: 7 }, (_, dayIndex) => {
           const d = addDays(weekStartMonday, dayIndex);
           const key = dateKeyLocal(d);
           const today = key === dateKeyLocal(new Date());
+          const allDayList = allDayEventsForCompactDay(events, d);
+          const visibleAllDay = allDayList.slice(0, visibleAllDayLimit);
+          const allDayMore = allDayList.length - visibleAllDay.length;
           const list = timedEventsForCompactDay(events, d);
           const visible = list.slice(0, VISIBLE_TIMED);
           const more = list.length - visible.length;
@@ -188,6 +165,34 @@ function CompactWeekBlock({
                 )}
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-px">
+                {visibleAllDay.map((ev) => (
+                  <button
+                    key={ev.id ?? `${key}-all-${ev.summary ?? "untitled"}`}
+                    type="button"
+                    onClick={() => onSelectEvent(ev)}
+                    className={`truncate rounded px-1 py-px text-left font-medium ${
+                      comfortable ? "text-[13px]" : "text-[12px]"
+                    } ${eventBarClass(ev.summary)}`}
+                    style={
+                      showCalendarSource
+                        ? sourceCalendarBarStyle(ev as SourceEvent)
+                        : undefined
+                    }
+                    title={ev.summary ?? ""}
+                  >
+                    {showCalendarSource ? `${shortCalendarLabel(ev as SourceEvent)} ` : ""}
+                    {ev.summary || "(No title)"}
+                  </button>
+                ))}
+                {allDayMore > 0 ? (
+                  <span
+                    className={`pl-2 text-slate-500 ${
+                      comfortable ? "text-[13px]" : "text-[12px]"
+                    }`}
+                  >
+                    {allDayMore} more all-day
+                  </span>
+                ) : null}
                 {visible.map((ev) => {
                   const t = displayInstantForTimedOnDay(ev, d);
                   return (
@@ -254,9 +259,10 @@ function sourceCalendarDotStyle(ev: SourceEvent): { backgroundColor: string } {
   return { backgroundColor: ev.sourceCalendarColor ?? "#6b7280" };
 }
 
-function sourceCalendarBarStyle(
-  ev: SourceEvent,
-): { backgroundColor?: string; borderColor?: string } {
+function sourceCalendarBarStyle(ev: SourceEvent): {
+  backgroundColor?: string;
+  borderColor?: string;
+} {
   if (!ev.sourceCalendarColor) return {};
   return {
     backgroundColor: ev.sourceCalendarColor,

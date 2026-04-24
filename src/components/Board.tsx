@@ -9,6 +9,7 @@ import {
   dateKeyLocal,
   defaultCalendarRangeKeys,
   enumerateWeekStarts,
+  getEventBounds,
   parseLocalDateKey,
   rangeKeysToIso,
   startOfDay,
@@ -255,6 +256,11 @@ export function Board() {
     }
   });
   const [spotifySeekDraft, setSpotifySeekDraft] = useState<number | null>(null);
+  const [spotifyProgressAnchorMs, setSpotifyProgressAnchorMs] = useState(0);
+  const [spotifyProgressAnchorAtMs, setSpotifyProgressAnchorAtMs] = useState(
+    () => Date.now(),
+  );
+  const [spotifyProgressNowMs, setSpotifyProgressNowMs] = useState(() => Date.now());
   const [spotifyQuery, setSpotifyQuery] = useState("");
   const [spotifySearching, setSpotifySearching] = useState(false);
   const [spotifySearchResults, setSpotifySearchResults] = useState<{
@@ -639,6 +645,25 @@ export function Board() {
       // ignore storage failures
     }
   }, [spotifyKnownDevices]);
+
+  useEffect(() => {
+    if (spotifySeekDraft !== null) return;
+    const anchorMs = Math.max(0, Number(spotifyPlayback?.progress_ms ?? 0));
+    const now = Date.now();
+    queueMicrotask(() => {
+      setSpotifyProgressAnchorMs(anchorMs);
+      setSpotifyProgressAnchorAtMs(now);
+      setSpotifyProgressNowMs(now);
+    });
+  }, [spotifyPlayback?.progress_ms, spotifyPlayback?.is_playing, spotifyPlayback?.item?.id, spotifySeekDraft]);
+
+  useEffect(() => {
+    if (!spotifyPlayback?.is_playing || spotifySeekDraft !== null) return;
+    const id = window.setInterval(() => {
+      setSpotifyProgressNowMs(Date.now());
+    }, 500);
+    return () => window.clearInterval(id);
+  }, [spotifyPlayback?.is_playing, spotifySeekDraft, spotifyProgressAnchorAtMs]);
 
   function openNewEventModal() {
     setNewAllDay(false);
@@ -1143,12 +1168,15 @@ export function Board() {
     [areas, pinnedHueIds],
   );
   const spotifyDurationMs = Math.max(0, Number(spotifyTrack?.duration_ms ?? 0));
+  const spotifyProgressBaseMs =
+    spotifySeekDraft !== null
+      ? Number(spotifySeekDraft)
+      : spotifyPlayback?.is_playing
+        ? spotifyProgressAnchorMs + (spotifyProgressNowMs - spotifyProgressAnchorAtMs)
+        : Number(spotifyPlayback?.progress_ms ?? spotifyProgressAnchorMs);
   const spotifyProgressMs = Math.max(
     0,
-    Math.min(
-      spotifyDurationMs || Number.MAX_SAFE_INTEGER,
-      Number(spotifySeekDraft ?? spotifyPlayback?.progress_ms ?? 0),
-    ),
+    Math.min(spotifyDurationMs || Number.MAX_SAFE_INTEGER, Number(spotifyProgressBaseMs)),
   );
   const clockDate = clockNow.toLocaleDateString(undefined, {
     weekday: "short",
@@ -1160,6 +1188,31 @@ export function Board() {
     hour: "numeric",
     minute: "2-digit",
   });
+  const todayScheduleItems = useMemo(() => {
+    const now = new Date();
+    const dayStart = new Date(now);
+    dayStart.setHours(8, 0, 0, 0);
+    const dayEnd = new Date(now);
+    dayEnd.setHours(20, 0, 0, 0);
+    const fmt = (d: Date) =>
+      d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return events
+      .map((ev) => {
+        const b = getEventBounds(ev);
+        if (!b || b.kind !== "timed") return null;
+        if (b.start >= dayEnd || b.end <= dayStart) return null;
+        const start = new Date(Math.max(b.start.getTime(), dayStart.getTime()));
+        const end = new Date(Math.min(b.end.getTime(), dayEnd.getTime()));
+        return {
+          key: ev.id ?? `${ev.summary ?? "event"}-${b.start.toISOString()}`,
+          startMs: start.getTime(),
+          label: `${fmt(start)}-${fmt(end)} ${ev.summary || "(No title)"}`,
+        };
+      })
+      .filter((x): x is { key: string; startMs: number; label: string } => Boolean(x))
+      .sort((a, b) => a.startMs - b.startMs)
+      .slice(0, 20);
+  }, [events]);
 
   return (
     <>
@@ -1184,6 +1237,24 @@ export function Board() {
             </button>
           </div>
         ) : null}
+        <div className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 sm:text-base">
+          <span className="shrink-0 font-medium text-slate-200">Today 8am-8pm</span>
+          <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap">
+            {todayScheduleItems.length > 0 ? (
+              todayScheduleItems.map((item) => (
+                <span
+                  key={item.key}
+                  className="mr-2 inline-flex max-w-full items-center rounded-full border border-slate-700 bg-slate-950/50 px-2 py-0.5 text-xs text-slate-200 sm:text-sm"
+                  title={item.label}
+                >
+                  {item.label}
+                </span>
+              ))
+            ) : (
+              <span className="text-slate-500">No events in this window.</span>
+            )}
+          </div>
+        </div>
 
         <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overflow-x-hidden sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
           <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
@@ -1293,10 +1364,27 @@ export function Board() {
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Clock</h2>
                 <button
                   type="button"
-                  className="text-sm text-slate-400 hover:text-white sm:text-base"
+                  className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
                   onClick={() => toggleWidgetCollapse("clock")}
+                  aria-label={collapsedWidgets.clock ? "Expand clock" : "Collapse clock"}
+                  title={collapsedWidgets.clock ? "Expand clock" : "Collapse clock"}
                 >
-                  {collapsedWidgets.clock ? "Expand" : "Collapse"}
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    {collapsedWidgets.clock ? (
+                      <path d="M6 15l6-6 6 6" />
+                    ) : (
+                      <path d="M6 9l6 6 6-6" />
+                    )}
+                  </svg>
                 </button>
               </div>
               {!collapsedWidgets.clock ? (
@@ -1316,17 +1404,48 @@ export function Board() {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    className="text-sm text-slate-400 hover:text-white sm:text-base"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
                     onClick={() => void fetchBoard()}
+                    aria-label="Refresh weather"
+                    title="Refresh weather"
                   >
-                    Refresh
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                      <path d="M21 3v6h-6" />
+                    </svg>
                   </button>
                   <button
                     type="button"
-                    className="text-sm text-slate-400 hover:text-white sm:text-base"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
                     onClick={() => toggleWidgetCollapse("weather")}
+                    aria-label={collapsedWidgets.weather ? "Expand weather" : "Collapse weather"}
+                    title={collapsedWidgets.weather ? "Expand weather" : "Collapse weather"}
                   >
-                    {collapsedWidgets.weather ? "Expand" : "Collapse"}
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      {collapsedWidgets.weather ? (
+                        <path d="M6 15l6-6 6 6" />
+                      ) : (
+                        <path d="M6 9l6 6 6-6" />
+                      )}
+                    </svg>
                   </button>
                 </div>
               </div>
@@ -1453,17 +1572,48 @@ export function Board() {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    className="text-sm text-slate-400 hover:text-white sm:text-base"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
                     onClick={() => void fetchBoard()}
+                    aria-label="Refresh hue"
+                    title="Refresh hue"
                   >
-                    Refresh
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                      <path d="M21 3v6h-6" />
+                    </svg>
                   </button>
                   <button
                     type="button"
-                    className="text-sm text-slate-400 hover:text-white sm:text-base"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
                     onClick={() => toggleWidgetCollapse("hue")}
+                    aria-label={collapsedWidgets.hue ? "Expand hue" : "Collapse hue"}
+                    title={collapsedWidgets.hue ? "Expand hue" : "Collapse hue"}
                   >
-                    {collapsedWidgets.hue ? "Expand" : "Collapse"}
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      {collapsedWidgets.hue ? (
+                        <path d="M6 15l6-6 6 6" />
+                      ) : (
+                        <path d="M6 9l6 6 6-6" />
+                      )}
+                    </svg>
                   </button>
                 </div>
               </div>
@@ -1646,17 +1796,48 @@ export function Board() {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    className="text-sm text-slate-400 hover:text-white sm:text-base"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
                     onClick={() => void fetchBoard()}
+                    aria-label="Refresh spotify"
+                    title="Refresh spotify"
                   >
-                    Refresh
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                      <path d="M21 3v6h-6" />
+                    </svg>
                   </button>
                   <button
                     type="button"
-                    className="text-sm text-slate-400 hover:text-white sm:text-base"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
                     onClick={() => toggleWidgetCollapse("spotify")}
+                    aria-label={collapsedWidgets.spotify ? "Expand spotify" : "Collapse spotify"}
+                    title={collapsedWidgets.spotify ? "Expand spotify" : "Collapse spotify"}
                   >
-                    {collapsedWidgets.spotify ? "Expand" : "Collapse"}
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      {collapsedWidgets.spotify ? (
+                        <path d="M6 15l6-6 6 6" />
+                      ) : (
+                        <path d="M6 9l6 6 6-6" />
+                      )}
+                    </svg>
                   </button>
                 </div>
               </div>

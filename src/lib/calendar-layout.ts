@@ -122,6 +122,26 @@ export function timedEventsForCompactDay(events: GEvent[], day: Date): GEvent[] 
   return out;
 }
 
+/** All-day events on this calendar day, sorted by start date then title. */
+export function allDayEventsForCompactDay(events: GEvent[], day: Date): GEvent[] {
+  const out: Array<{ ev: GEvent; startKey: string; summary: string }> = [];
+  for (const ev of events) {
+    const b = getEventBounds(ev);
+    if (!b || b.kind !== "allday") continue;
+    if (!eventOverlapsLocalDay(ev, day)) continue;
+    out.push({
+      ev,
+      startKey: b.startKey,
+      summary: (ev.summary ?? "").toLowerCase(),
+    });
+  }
+  out.sort((a, b) => {
+    if (a.startKey !== b.startKey) return a.startKey.localeCompare(b.startKey);
+    return a.summary.localeCompare(b.summary);
+  });
+  return out.map((x) => x.ev);
+}
+
 export type AllDayBarInWeek = {
   event: GEvent;
   startCol: number;
