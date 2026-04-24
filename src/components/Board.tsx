@@ -180,6 +180,26 @@ function pickDefaultCalendarId(options: CalendarOption[]): string {
 const SESSION_EXPLICIT_CALENDAR = "familyboard_explicit_calendar";
 const SPOTIFY_KNOWN_DEVICES_KEY = "familyboard_spotify_known_devices";
 
+function mergeSpotifyDevices(
+  primary: SpotifyDevice[],
+  secondary: SpotifyDevice[],
+): SpotifyDevice[] {
+  const byId = new Map<string, SpotifyDevice>();
+  const byName = new Map<string, SpotifyDevice>();
+  for (const d of [...primary, ...secondary]) {
+    const id = (d.id ?? "").trim();
+    const name = (d.name ?? "").trim().toLowerCase();
+    if (id && !byId.has(id)) {
+      byId.set(id, d);
+      continue;
+    }
+    if (!id && name && !byName.has(name)) {
+      byName.set(name, d);
+    }
+  }
+  return [...byId.values(), ...byName.values()];
+}
+
 function markCalendarExplicitlyChosen() {
   try {
     sessionStorage.setItem(SESSION_EXPLICIT_CALENDAR, "1");
