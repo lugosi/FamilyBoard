@@ -17,11 +17,6 @@ Open [http://localhost:3000](http://localhost:3000), then use **Link Google** an
 
 See `.env.example`. Use a writable `DATA_DIR` in production so OAuth tokens and Hue pairing survive restarts.
 
-If Chromecast discovery returns zero devices in Docker/TrueNAS (common when mDNS is blocked),
-set `CAST_STATIC_DEVICES` with known speaker host/IP values:
-
-- `CAST_STATIC_DEVICES="Kitchen speaker=192.168.1.120:8009,Living room=192.168.1.121:8009"`
-
 Spotify OAuth redirect URI must be added in your Spotify app settings:
 
 - `${PUBLIC_APP_URL}/api/auth/spotify/callback`

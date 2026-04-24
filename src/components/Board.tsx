@@ -96,12 +96,6 @@ type SpotifySearchPlaylist = {
   images?: Array<{ url?: string }>;
   owner?: { display_name?: string };
 };
-type CastDevice = {
-  id: string;
-  name: string;
-  host: string;
-  port: number;
-};
 
 type RightWidgetKey = "clock" | "weather" | "hue" | "spotify";
 type SpotifyResultTab = "tracks" | "albums" | "playlists";
@@ -133,12 +127,6 @@ function formatMsClock(ms: number): string {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
 }
 
 function toInputValue(isoOrDate: string): string {
@@ -248,11 +236,7 @@ export function Board() {
   const [spotifyResultTab, setSpotifyResultTab] = useState<SpotifyResultTab>("tracks");
   const [spotifySdkReady, setSpotifySdkReady] = useState(false);
   const [spotifySdkDeviceId, setSpotifySdkDeviceId] = useState<string | null>(null);
-  const [suspendWebPlayerForHandoff, setSuspendWebPlayerForHandoff] = useState(false);
   const [spotifySelectedDeviceId, setSpotifySelectedDeviceId] = useState<string>("");
-  const [castSpeakerCandidates, setCastSpeakerCandidates] = useState<CastDevice[]>([]);
-  const [castSpeakerLoading, setCastSpeakerLoading] = useState(false);
-  const [castSpeakerChoice, setCastSpeakerChoice] = useState("");
   const [spotifyNotice, setSpotifyNotice] = useState<string | null>(null);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -506,15 +490,6 @@ export function Board() {
       spotifyPlayerRef.current = null;
       return;
     }
-    if (suspendWebPlayerForHandoff) {
-      spotifyPlayerRef.current?.disconnect();
-      spotifyPlayerRef.current = null;
-      queueMicrotask(() => {
-        setSpotifySdkReady(false);
-        setSpotifySdkDeviceId(null);
-      });
-      return;
-    }
 
     let cancelled = false;
 
@@ -599,7 +574,7 @@ export function Board() {
     return () => {
       cancelled = true;
     };
-  }, [status?.spotifyConfigured, status?.spotifyLinked, fetchBoard, suspendWebPlayerForHandoff]);
+  }, [status?.spotifyConfigured, status?.spotifyLinked, fetchBoard]);
 
   useEffect(() => {
     const knownIds = new Set(
@@ -943,7 +918,7 @@ export function Board() {
       !extra?.deviceId
     ) {
       const msg =
-        "No active Spotify device. Use 'Use selected speaker' in Chromecast handoff or click 'Play here' for the FamilyBoard player, then try again.";
+        "No active Spotify device. Select a Spotify Connect device or click 'Play here' for FamilyBoard, then try again.";
       setDismissedAlertSignature(null);
       setMessage(msg);
       setSpotifyNotice(msg);
@@ -978,7 +953,7 @@ export function Board() {
       setDismissedAlertSignature(null);
       const combined = [j.error, detail].filter(Boolean).join(" — ");
       const msg = combined.includes("NO_ACTIVE_DEVICE")
-        ? "Spotify has no active device yet. Use 'Use selected speaker' (Chromecast section) or 'Play here', then retry."
+        ? "Spotify has no active device yet. Select a Spotify Connect device or click 'Play here', then retry."
         : combined || "Spotify action failed";
       setMessage(msg);
       setSpotifyNotice(msg);
@@ -1044,115 +1019,24 @@ export function Board() {
     else if (next.playlists.length > 0) setSpotifyResultTab("playlists");
   }
 
-  async function refreshCastSpeakerCandidates(maxAttempts = 10) {
-    setCastSpeakerLoading(true);
-    let latest: CastDevice[] = [];
-    for (let i = 0; i < maxAttempts; i += 1) {
-      const res = await fetch("/api/cast/devices");
-      if (res.ok) {
-        const data = (await res.json()) as { devices?: CastDevice[] };
-        latest = data.devices ?? [];
-        setCastSpeakerCandidates(latest);
-        if (!castSpeakerChoice && latest.length > 0) {
-          setCastSpeakerChoice(latest[0]?.id ?? "");
-        }
-        if (latest.length > 0) break;
-      }
-      if (i < maxAttempts - 1) await sleep(2_000);
-    }
-    setCastSpeakerLoading(false);
-    if (latest.length === 0) {
-      setSpotifyNotice(
-        "No Chromecasts discovered. Ensure FamilyBoard can see LAN Cast devices, then refresh.",
-      );
-    }
-  }
-
-  async function confirmCastSpeakerHandoff() {
-    const chosenId = castSpeakerChoice.trim();
-    if (!chosenId) {
-      setSpotifyNotice("Choose a speaker first.");
-      return;
-    }
-    const chosen = castSpeakerCandidates.find((d) => d.id === chosenId);
-    if (!chosen) {
-      setSpotifyNotice("Selected speaker is no longer in the list. Refresh and try again.");
-      return;
-    }
-    setBusy("spotify-cast-handoff");
-    setSuspendWebPlayerForHandoff(true);
-    setSpotifyNotice(`Waking ${chosen.name} and waiting for Spotify Connect...`);
-    try {
-      const ac = new AbortController();
-      const timeout = window.setTimeout(() => ac.abort(), 17_000);
-      const connectRes = await fetch("/api/cast/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ host: chosen.host, port: chosen.port }),
-        signal: ac.signal,
-      }).finally(() => {
-        window.clearTimeout(timeout);
-      });
-      if (!connectRes.ok) {
-        const e = (await connectRes.json().catch(() => ({}))) as { error?: string };
+  async function refreshSpotifyDevices() {
+    setBusy("spotify-refresh-devices");
+    setSpotifyNotice(null);
+    const res = await fetch("/api/spotify/devices");
+    if (res.ok) {
+      const data = (await res.json()) as { devices?: SpotifyDevice[] };
+      const latest = data.devices ?? [];
+      setSpotifyDevices(latest);
+      setSpotifyKnownDevices((prev) => mergeSpotifyDevices(latest, prev));
+      if (latest.length === 0) {
         setSpotifyNotice(
-          `Could not launch Spotify receiver on selected Chromecast${e.error ? `: ${e.error}` : ""}.`,
+          "No Spotify device yet. Open Spotify on your phone, choose a speaker/device there, then tap Refresh devices again.",
         );
-        return;
       }
-      setSpotifyNotice(
-        `Chromecast "${chosen.name}" is awake. If it does not appear shortly, open Spotify app once and select it there, then press Refresh.`,
-      );
-
-      const handoff = await fetch("/api/spotify/cast-handoff", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          deviceNameHint: chosen.name,
-          excludeDeviceId: spotifySdkDeviceId,
-          excludeDeviceIds: [spotifySdkDeviceId, spotifyActiveDevice?.id].filter(Boolean),
-          baselineDeviceIds: spotifyDevices
-            .filter((d) => d.id && d.id !== spotifySdkDeviceId)
-            .map((d) => d.id),
-          timeoutMs: 60000,
-          startPlayback: true,
-        }),
-      });
-      const handoffJson = (await handoff.json().catch(() => ({}))) as {
-        status?: string;
-        device?: { id?: string; name?: string };
-        visibleDevices?: string[];
-      };
-      if (!handoff.ok || !handoffJson.device?.id) {
-        if (handoffJson.status === "cast_launched_spotify_not_exposed") {
-          const visible = handoffJson.visibleDevices?.length
-            ? ` Visible: ${handoffJson.visibleDevices.join(", ")}.`
-            : "";
-          setSpotifyNotice(
-            `Chromecast "${chosen.name}" woke up, but Spotify did not expose a playable Connect device yet.${visible} Open Spotify app once, select that speaker, then retry.`,
-          );
-        } else {
-          setSpotifyNotice("Chromecast woke, but Spotify handoff failed. Try again.");
-        }
-        return;
-      }
-      setSpotifySelectedDeviceId(handoffJson.device.id);
-      setSpotifyNotice(`Playing on ${chosen.name}.`);
+    } else {
       await fetchBoard();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.name === "AbortError"
-          ? "cast_connect_client_timeout"
-          : e instanceof Error
-            ? e.message
-            : "cast_connect_client_error";
-      setSpotifyNotice(`Cast connect failed: ${msg}`);
-    } finally {
-      setBusy(null);
-      window.setTimeout(() => {
-        setSuspendWebPlayerForHandoff(false);
-      }, 65_000);
     }
+    setBusy(null);
   }
 
   function openRangePicker() {
@@ -1723,19 +1607,27 @@ export function Board() {
                       )}
                     </select>
                     <p className="mt-1 text-xs normal-case tracking-normal text-slate-500 sm:text-sm">
-                      Only Spotify Connect devices appear here. If a speaker is missing,
-                      use Cast wake-up below, then wait for auto-handoff.
+                      Only Spotify Connect devices appear here. If one is missing, activate it in Spotify once and refresh.
                     </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={busy === "spotify-refresh-devices"}
+                        className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400 disabled:opacity-50"
+                        onClick={() => void refreshSpotifyDevices()}
+                      >
+                        {busy === "spotify-refresh-devices" ? "Refreshing..." : "Refresh devices"}
+                      </button>
+                      <p className="text-xs normal-case tracking-normal text-slate-500 sm:text-sm">
+                        If empty: open Spotify on phone, select the target device, then refresh here.
+                      </p>
+                    </div>
                   </label>
                   <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/30 px-3 py-2">
                     <p className="text-xs text-slate-400 sm:text-sm">
                       FamilyBoard player:{" "}
-                      <span className={suspendWebPlayerForHandoff ? "text-amber-300" : spotifySdkReady ? "text-emerald-300" : "text-slate-500"}>
-                        {suspendWebPlayerForHandoff
-                          ? "paused for cast handoff"
-                          : spotifySdkReady
-                            ? "ready"
-                            : "not ready"}
+                      <span className={spotifySdkReady ? "text-emerald-300" : "text-slate-500"}>
+                        {spotifySdkReady ? "ready" : "not ready"}
                       </span>
                     </p>
                     {spotifySdkDeviceId ? (
@@ -1756,48 +1648,6 @@ export function Board() {
                         Play here
                       </button>
                     ) : null}
-                  </div>
-                  <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-2.5">
-                    <p className="text-xs text-slate-400 sm:text-sm">
-                      Chromecast speaker handoff
-                    </p>
-                    <p className="mt-1 text-xs normal-case tracking-normal text-slate-500 sm:text-sm">
-                      Pick a Chromecast and click Use selected speaker. If Spotify still cannot find it,
-                      open Spotify app once and choose the same speaker, then retry.
-                    </p>
-                    <div className="mt-2 flex items-center gap-2">
-                      <select
-                        className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500 sm:text-base"
-                        value={castSpeakerChoice}
-                        onChange={(e) => setCastSpeakerChoice(e.target.value)}
-                      >
-                        {castSpeakerCandidates.length === 0 ? (
-                          <option value="">No speaker devices yet</option>
-                        ) : (
-                          castSpeakerCandidates.map((d) => (
-                            <option key={`cast-${d.id}`} value={d.id}>
-                              {d.name ?? "Unknown"} ({d.host})
-                            </option>
-                          ))
-                        )}
-                      </select>
-                      <button
-                        type="button"
-                        className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400 disabled:opacity-50"
-                        disabled={castSpeakerLoading}
-                        onClick={() => void refreshCastSpeakerCandidates(6)}
-                      >
-                        {castSpeakerLoading ? "..." : "Refresh speakers"}
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-                        disabled={!castSpeakerChoice || busy === "spotify-cast-handoff"}
-                        onClick={() => void confirmCastSpeakerHandoff()}
-                      >
-                        Use selected speaker
-                      </button>
-                    </div>
                   </div>
 
                   <div className="rounded-lg border border-slate-800 bg-slate-950/35 p-2.5">
