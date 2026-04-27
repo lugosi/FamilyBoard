@@ -81,6 +81,39 @@ export function defaultCalendarRangeKeys(weeksAhead = 4): CalendarRangeKeys {
   };
 }
 
+/** Default span for “this week” home view: N full weeks starting Monday of the current week. */
+export const DEFAULT_HOME_CALENDAR_WEEKS = 3;
+
+/** Monday of the week containing `d` through last local day of that calendar month. */
+export function calendarMonthRangeKeys(year: number, monthIndex: number): CalendarRangeKeys {
+  const first = new Date(year, monthIndex, 1);
+  const last = new Date(year, monthIndex + 1, 0);
+  first.setHours(0, 0, 0, 0);
+  last.setHours(0, 0, 0, 0);
+  const weekStart = startOfWeekMonday(first);
+  weekStart.setHours(0, 0, 0, 0);
+  return {
+    fromKey: dateKeyLocal(weekStart),
+    toInclusiveKey: dateKeyLocal(last),
+  };
+}
+
+export function midpointOfRangeKeys(keys: CalendarRangeKeys): Date {
+  const a = startOfDay(parseLocalDateKey(keys.fromKey));
+  const b = startOfDay(parseLocalDateKey(keys.toInclusiveKey));
+  return new Date(Math.floor((a.getTime() + b.getTime()) / 2));
+}
+
+/** Move the visible calendar month backward or forward (based on range midpoint). */
+export function shiftCalendarRangeByMonth(
+  keys: CalendarRangeKeys,
+  deltaMonths: number,
+): CalendarRangeKeys {
+  const mid = midpointOfRangeKeys(keys);
+  const t = new Date(mid.getFullYear(), mid.getMonth() + deltaMonths, 1);
+  return calendarMonthRangeKeys(t.getFullYear(), t.getMonth());
+}
+
 export function rangeKeysToIso(keys: CalendarRangeKeys): { from: string; to: string } {
   return rangeFromPicker(keys.fromKey, keys.toInclusiveKey);
 }

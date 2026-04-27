@@ -2,17 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CalendarRangePickerModal } from "@/components/calendar/CalendarRangePickerModal";
 import { CompactCalendarGrid } from "@/components/calendar/CompactCalendarGrid";
 import {
   addDays,
   dateKeyLocal,
+  DEFAULT_HOME_CALENDAR_WEEKS,
   defaultCalendarRangeKeys,
   enumerateWeekStarts,
   eventOverlapsLocalDay,
   getEventBounds,
   parseLocalDateKey,
   rangeKeysToIso,
+  shiftCalendarRangeByMonth,
   startOfDay,
   type CalendarRangeKeys,
   type GEvent,
@@ -292,7 +293,7 @@ export function Board() {
   const [editEnd, setEditEnd] = useState("");
 
   const [rangeKeys, setRangeKeys] = useState<CalendarRangeKeys>(() =>
-    defaultCalendarRangeKeys(4),
+    defaultCalendarRangeKeys(DEFAULT_HOME_CALENDAR_WEEKS),
   );
   const fetchIso = useMemo(() => rangeKeysToIso(rangeKeys), [rangeKeys]);
   const weekStarts = useMemo(() => {
@@ -301,11 +302,6 @@ export function Board() {
     return enumerateWeekStarts(a, b);
   }, [rangeKeys.fromKey, rangeKeys.toInclusiveKey]);
 
-  const [rangePickerOpen, setRangePickerOpen] = useState(false);
-  const [pickerDraft, setPickerDraft] = useState(() => {
-    const k = defaultCalendarRangeKeys(4);
-    return { from: k.fromKey, to: k.toInclusiveKey };
-  });
   const [calendars, setCalendars] = useState<CalendarOption[]>([]);
   const [selectedCalendarId, setSelectedCalendarId] = useState("primary");
 
@@ -1167,24 +1163,16 @@ export function Board() {
     setBusy(null);
   }
 
-  function openRangePicker() {
-    setPickerDraft({ from: rangeKeys.fromKey, to: rangeKeys.toInclusiveKey });
-    setRangePickerOpen(true);
+  function goCalendarPreviousMonth() {
+    setRangeKeys((prev) => shiftCalendarRangeByMonth(prev, -1));
   }
 
-  function applyRangePicker() {
-    setRangeKeys({
-      fromKey: pickerDraft.from,
-      toInclusiveKey: pickerDraft.to,
-    });
-    setRangePickerOpen(false);
+  function goCalendarNextMonth() {
+    setRangeKeys((prev) => shiftCalendarRangeByMonth(prev, 1));
   }
 
-  function resetCalendarRange() {
-    const k = defaultCalendarRangeKeys(4);
-    setRangeKeys(k);
-    setPickerDraft({ from: k.fromKey, to: k.toInclusiveKey });
-    setRangePickerOpen(false);
+  function goCalendarTodayWeeks() {
+    setRangeKeys(defaultCalendarRangeKeys(DEFAULT_HOME_CALENDAR_WEEKS));
   }
 
   const current = weather?.current as
@@ -1327,44 +1315,44 @@ export function Board() {
             </button>
           </div>
         ) : null}
-        <div className="flex shrink-0 items-center gap-3 rounded-xl border border-slate-300/90 bg-slate-100 px-4 py-3 shadow-md shadow-slate-950/20 sm:gap-4 sm:px-5 sm:py-3.5 md:py-4 md:shadow-lg">
-          <span className="shrink-0 text-base font-semibold tracking-tight text-slate-800 sm:text-lg">
-            Today 8am-8pm
-          </span>
-          <div className="board-scrollbar min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-0.5 text-base text-slate-700 sm:text-lg">
-            {todayAllDayStrip.length === 0 && todayTimedStrip.length === 0 ? (
-              <span className="text-slate-500 sm:text-base">No events in this window.</span>
-            ) : (
-              <>
-                {todayAllDayStrip.map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => openEdit(item.event)}
-                    className="mr-2 inline-flex max-w-[15rem] items-center truncate rounded-full border border-violet-400 bg-violet-100 px-3 py-1.5 text-left text-sm font-medium text-violet-950 hover:border-violet-500 hover:bg-violet-200/90 sm:mr-3 sm:max-w-[20rem] sm:px-3.5 sm:py-2 sm:text-base"
-                    title={item.summary}
-                  >
-                    {item.summary}
-                  </button>
-                ))}
-                {todayTimedStrip.map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => openEdit(item.event)}
-                    className="mr-2 inline-flex max-w-full items-center rounded-full border border-slate-400 bg-white px-3 py-1.5 text-left text-sm font-medium text-slate-800 shadow-sm hover:border-slate-500 hover:bg-slate-50 sm:mr-3 sm:px-3.5 sm:py-2 sm:text-base"
-                    title={item.label}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </>
-            )}
-          </div>
-        </div>
 
         <div className="board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overflow-x-hidden sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
           <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
+            <div className="mb-3 flex min-w-0 shrink-0 items-center gap-3 rounded-xl border border-slate-400/80 bg-slate-200 px-4 py-3 shadow-md shadow-slate-950/25 sm:mb-4 sm:gap-4 sm:px-5 sm:py-3.5 md:py-4 md:shadow-lg">
+              <span className="shrink-0 text-base font-semibold tracking-tight text-slate-800 sm:text-lg">
+                Today 8am-8pm
+              </span>
+              <div className="board-scrollbar min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-0.5 text-base text-slate-700 sm:text-lg">
+                {todayAllDayStrip.length === 0 && todayTimedStrip.length === 0 ? (
+                  <span className="text-slate-600 sm:text-base">No events in this window.</span>
+                ) : (
+                  <>
+                    {todayAllDayStrip.map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => openEdit(item.event)}
+                        className="mr-2 inline-flex max-w-[15rem] items-center truncate rounded-full border border-violet-500/70 bg-violet-200/90 px-3 py-1.5 text-left text-sm font-medium text-violet-950 hover:border-violet-600 hover:bg-violet-300/90 sm:mr-3 sm:max-w-[20rem] sm:px-3.5 sm:py-2 sm:text-base"
+                        title={item.summary}
+                      >
+                        {item.summary}
+                      </button>
+                    ))}
+                    {todayTimedStrip.map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => openEdit(item.event)}
+                        className="mr-2 inline-flex max-w-full items-center rounded-full border border-slate-500/80 bg-slate-50 px-3 py-1.5 text-left text-sm font-medium text-slate-800 shadow-sm hover:border-slate-600 hover:bg-white sm:mr-3 sm:px-3.5 sm:py-2 sm:text-base"
+                        title={item.label}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            </div>
             {!status?.googleConfigured ? (
               <p className="mt-4 text-base text-slate-400 sm:text-lg">
                 Set{" "}
@@ -1439,13 +1427,29 @@ export function Board() {
                   >
                     New event
                   </button>
-                  <button
-                    type="button"
-                    className="rounded-full border border-slate-600 px-4 py-2 text-base text-slate-100 hover:border-slate-400 sm:py-2.5 sm:text-lg"
-                    onClick={() => openRangePicker()}
-                  >
-                    Dates
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="rounded-full border border-slate-600 px-3 py-2 text-sm text-slate-100 hover:border-slate-400 sm:px-4 sm:py-2.5 sm:text-base"
+                      onClick={() => goCalendarPreviousMonth()}
+                    >
+                      Previous month
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full border border-slate-600 px-3 py-2 text-sm text-slate-100 hover:border-slate-400 sm:px-4 sm:py-2.5 sm:text-base"
+                      onClick={() => goCalendarNextMonth()}
+                    >
+                      Next month
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full border border-slate-600 px-3 py-2 text-sm text-slate-100 hover:border-slate-400 sm:px-4 sm:py-2.5 sm:text-base"
+                      onClick={() => goCalendarTodayWeeks()}
+                    >
+                      Today
+                    </button>
+                  </div>
                   <button
                     type="button"
                     className="rounded-full border border-slate-600 px-4 py-2 text-base text-slate-100 hover:border-slate-400 sm:py-2.5 sm:text-lg"
@@ -2357,17 +2361,6 @@ export function Board() {
           </div>
         </div>
       </div>
-
-      <CalendarRangePickerModal
-        open={rangePickerOpen}
-        draftFrom={pickerDraft.from}
-        draftTo={pickerDraft.to}
-        onDraftFrom={(from) => setPickerDraft((d) => ({ ...d, from }))}
-        onDraftTo={(to) => setPickerDraft((d) => ({ ...d, to }))}
-        onClose={() => setRangePickerOpen(false)}
-        onApply={() => applyRangePicker()}
-        onReset={() => resetCalendarRange()}
-      />
 
       {newEventOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
