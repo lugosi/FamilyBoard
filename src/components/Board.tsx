@@ -9,6 +9,7 @@ import {
   dateKeyLocal,
   defaultCalendarRangeKeys,
   enumerateWeekStarts,
+  eventOverlapsLocalDay,
   getEventBounds,
   parseLocalDateKey,
   rangeKeysToIso,
@@ -366,6 +367,14 @@ export function Board() {
   function dismissAlertBanner() {
     if (alertText) setDismissedAlertSignature(alertText);
   }
+
+  useEffect(() => {
+    if (alertText == null || alertText === dismissedAlertSignature) return;
+    const id = window.setTimeout(() => {
+      setDismissedAlertSignature(alertText);
+    }, 5000);
+    return () => window.clearTimeout(id);
+  }, [alertText, dismissedAlertSignature]);
 
   const fetchSpotifyDevices = useCallback(
     async (signal?: AbortSignal): Promise<SpotifyDevice[] | null> => {
@@ -1188,7 +1197,31 @@ export function Board() {
     hour: "numeric",
     minute: "2-digit",
   });
-  const todayScheduleItems = useMemo(() => {
+  const todayAllDayStrip = useMemo(() => {
+    const today = new Date();
+    return events
+      .map((ev) => {
+        const b = getEventBounds(ev);
+        if (!b || b.kind !== "allday") return null;
+        if (!eventOverlapsLocalDay(ev, today)) return null;
+        return {
+          kind: "allday" as const,
+          key: ev.id ?? `allday-${b.startKey}-${ev.summary ?? "event"}`,
+          summary: ev.summary || "(No title)",
+          event: ev,
+        };
+      })
+      .filter(
+        (x): x is {
+          kind: "allday";
+          key: string;
+          summary: string;
+          event: CalendarEvent;
+        } => Boolean(x),
+      );
+  }, [events]);
+
+  const todayTimedStrip = useMemo(() => {
     const now = new Date();
     const dayStart = new Date(now);
     dayStart.setHours(8, 0, 0, 0);
@@ -1204,12 +1237,22 @@ export function Board() {
         const start = new Date(Math.max(b.start.getTime(), dayStart.getTime()));
         const end = new Date(Math.min(b.end.getTime(), dayEnd.getTime()));
         return {
+          kind: "timed" as const,
           key: ev.id ?? `${ev.summary ?? "event"}-${b.start.toISOString()}`,
           startMs: start.getTime(),
           label: `${fmt(start)}-${fmt(end)} ${ev.summary || "(No title)"}`,
+          event: ev,
         };
       })
-      .filter((x): x is { key: string; startMs: number; label: string } => Boolean(x))
+      .filter(
+        (x): x is {
+          kind: "timed";
+          key: string;
+          startMs: number;
+          label: string;
+          event: CalendarEvent;
+        } => Boolean(x),
+      )
       .sort((a, b) => a.startMs - b.startMs)
       .slice(0, 20);
   }, [events]);
@@ -1240,18 +1283,33 @@ export function Board() {
         <div className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 sm:text-base">
           <span className="shrink-0 font-medium text-slate-200">Today 8am-8pm</span>
           <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap">
-            {todayScheduleItems.length > 0 ? (
-              todayScheduleItems.map((item) => (
-                <span
-                  key={item.key}
-                  className="mr-2 inline-flex max-w-full items-center rounded-full border border-slate-700 bg-slate-950/50 px-2 py-0.5 text-xs text-slate-200 sm:text-sm"
-                  title={item.label}
-                >
-                  {item.label}
-                </span>
-              ))
-            ) : (
+            {todayAllDayStrip.length === 0 && todayTimedStrip.length === 0 ? (
               <span className="text-slate-500">No events in this window.</span>
+            ) : (
+              <>
+                {todayAllDayStrip.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => openEdit(item.event)}
+                    className="mr-2 inline-flex max-w-[14rem] items-center truncate rounded-full border border-violet-500/50 bg-violet-950/40 px-2 py-0.5 text-left text-xs text-violet-100 hover:border-violet-400/70 hover:bg-violet-950/60 sm:max-w-[18rem] sm:text-sm"
+                    title={item.summary}
+                  >
+                    {item.summary}
+                  </button>
+                ))}
+                {todayTimedStrip.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => openEdit(item.event)}
+                    className="mr-2 inline-flex max-w-full items-center rounded-full border border-slate-700 bg-slate-950/50 px-2 py-0.5 text-left text-xs text-slate-200 hover:border-slate-500 hover:bg-slate-900/70 sm:text-sm"
+                    title={item.label}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </>
             )}
           </div>
         </div>
