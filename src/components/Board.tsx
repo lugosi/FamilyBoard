@@ -275,6 +275,8 @@ export function Board() {
   const [spotifySelectedDeviceId, setSpotifySelectedDeviceId] = useState<string>("");
   const [spotifyNotice, setSpotifyNotice] = useState<string | null>(null);
   const spotifyPlayerRef = useRef<SpotifyWebPlaybackPlayer | null>(null);
+  /** Last active Connect device id from `/me/player` polls; used to refresh device list when output moves. */
+  const spotifyPollDeviceIdRef = useRef<string | null | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -529,6 +531,51 @@ export function Board() {
     }, 60_000);
     return () => window.clearInterval(id);
   }, [fetchBoard]);
+
+  useEffect(() => {
+    if (!status?.spotifyConfigured || !status.spotifyLinked) {
+      spotifyPollDeviceIdRef.current = undefined;
+      return;
+    }
+
+    let cancelled = false;
+
+    async function tickSpotifyConnectState() {
+      if (cancelled) return;
+      try {
+        const pRes = await fetch("/api/spotify/now-playing");
+        if (cancelled) return;
+        if (pRes.status === 401) {
+          setSpotifyPlayback(null);
+          setSpotifyDevices([]);
+          spotifyPollDeviceIdRef.current = undefined;
+          return;
+        }
+        if (!pRes.ok) return;
+        const data = (await pRes.json()) as { playback?: SpotifyPlayback | null };
+        if (cancelled) return;
+        const playback = data.playback ?? null;
+        const nextId = playback?.device?.id ?? null;
+        const deviceChanged = spotifyPollDeviceIdRef.current !== nextId;
+        if (deviceChanged) {
+          spotifyPollDeviceIdRef.current = nextId;
+          setSpotifySeekDraft(null);
+          await fetchSpotifyDevices();
+          if (cancelled) return;
+        }
+        if (!cancelled) setSpotifyPlayback(playback);
+      } catch {
+        /* ignore transient network errors */
+      }
+    }
+
+    void tickSpotifyConnectState();
+    const intervalId = window.setInterval(() => void tickSpotifyConnectState(), 6000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [status?.spotifyConfigured, status?.spotifyLinked, fetchSpotifyDevices]);
 
   useEffect(() => {
     if (!status?.spotifyConfigured || !status.spotifyLinked) {
@@ -1280,11 +1327,13 @@ export function Board() {
             </button>
           </div>
         ) : null}
-        <div className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-sm text-slate-300 sm:text-base">
-          <span className="shrink-0 font-medium text-slate-200">Today 8am-8pm</span>
-          <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap">
+        <div className="flex shrink-0 items-center gap-3 rounded-xl border border-slate-300/90 bg-slate-100 px-4 py-3 shadow-md shadow-slate-950/20 sm:gap-4 sm:px-5 sm:py-3.5 md:py-4 md:shadow-lg">
+          <span className="shrink-0 text-base font-semibold tracking-tight text-slate-800 sm:text-lg">
+            Today 8am-8pm
+          </span>
+          <div className="board-scrollbar min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-0.5 text-base text-slate-700 sm:text-lg">
             {todayAllDayStrip.length === 0 && todayTimedStrip.length === 0 ? (
-              <span className="text-slate-500">No events in this window.</span>
+              <span className="text-slate-500 sm:text-base">No events in this window.</span>
             ) : (
               <>
                 {todayAllDayStrip.map((item) => (
@@ -1292,7 +1341,7 @@ export function Board() {
                     key={item.key}
                     type="button"
                     onClick={() => openEdit(item.event)}
-                    className="mr-2 inline-flex max-w-[14rem] items-center truncate rounded-full border border-violet-500/50 bg-violet-950/40 px-2 py-0.5 text-left text-xs text-violet-100 hover:border-violet-400/70 hover:bg-violet-950/60 sm:max-w-[18rem] sm:text-sm"
+                    className="mr-2 inline-flex max-w-[15rem] items-center truncate rounded-full border border-violet-400 bg-violet-100 px-3 py-1.5 text-left text-sm font-medium text-violet-950 hover:border-violet-500 hover:bg-violet-200/90 sm:mr-3 sm:max-w-[20rem] sm:px-3.5 sm:py-2 sm:text-base"
                     title={item.summary}
                   >
                     {item.summary}
@@ -1303,7 +1352,7 @@ export function Board() {
                     key={item.key}
                     type="button"
                     onClick={() => openEdit(item.event)}
-                    className="mr-2 inline-flex max-w-full items-center rounded-full border border-slate-700 bg-slate-950/50 px-2 py-0.5 text-left text-xs text-slate-200 hover:border-slate-500 hover:bg-slate-900/70 sm:text-sm"
+                    className="mr-2 inline-flex max-w-full items-center rounded-full border border-slate-400 bg-white px-3 py-1.5 text-left text-sm font-medium text-slate-800 shadow-sm hover:border-slate-500 hover:bg-slate-50 sm:mr-3 sm:px-3.5 sm:py-2 sm:text-base"
                     title={item.label}
                   >
                     {item.label}
@@ -1314,7 +1363,7 @@ export function Board() {
           </div>
         </div>
 
-        <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overflow-x-hidden sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
+        <div className="board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overflow-x-hidden sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
           <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
             {!status?.googleConfigured ? (
               <p className="mt-4 text-base text-slate-400 sm:text-lg">
@@ -1348,7 +1397,7 @@ export function Board() {
                       No weeks in this range.
                     </p>
                   ) : (
-                    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
+                    <div className="board-scrollbar flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
                       <CompactCalendarGrid
                         weekStarts={weekStarts}
                         events={events}
@@ -1416,7 +1465,7 @@ export function Board() {
             ) : null}
           </section>
 
-          <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto sm:gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto">
+          <div className="board-scrollbar flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto sm:gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto">
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Clock</h2>
@@ -2145,7 +2194,7 @@ export function Board() {
                             </button>
                           ))}
                         </div>
-                        <div className="mt-2 max-h-56 space-y-2 overflow-y-auto pr-1">
+                        <div className="board-scrollbar mt-2 max-h-56 space-y-2 overflow-y-auto pr-1">
                           {spotifyResultTab === "tracks"
                             ? spotifySearchResults.tracks.slice(0, 8).map((t) => (
                                 <div
