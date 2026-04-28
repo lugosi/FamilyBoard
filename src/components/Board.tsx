@@ -1113,6 +1113,17 @@ export function Board() {
     await spotifyControl("seek", { positionMs: clamped });
   }
 
+  function spotifyContextUri(
+    kind: "album" | "playlist",
+    id?: string,
+    uri?: string,
+  ): string | undefined {
+    const cleanId = (id ?? "").trim();
+    if (cleanId) return `spotify:${kind}:${cleanId}`;
+    const cleanUri = (uri ?? "").trim();
+    return cleanUri || undefined;
+  }
+
   async function searchSpotify() {
     const q = spotifyQuery.trim();
     if (!q) {
@@ -2310,7 +2321,7 @@ export function Board() {
                                     className="mt-1.5 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-500"
                                     onClick={() =>
                                       void spotifyControl("play_context", {
-                                        uri: a.uri,
+                                        uri: spotifyContextUri("album", a.id, a.uri),
                                         deviceId: spotifyEffectiveDeviceId || undefined,
                                       })
                                     }
@@ -2351,7 +2362,7 @@ export function Board() {
                                     className="mt-1.5 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-500"
                                     onClick={() =>
                                       void spotifyControl("play_context", {
-                                        uri: p.uri,
+                                        uri: spotifyContextUri("playlist", p.id, p.uri),
                                         deviceId: spotifyEffectiveDeviceId || undefined,
                                       })
                                     }
