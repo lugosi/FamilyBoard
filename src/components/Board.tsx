@@ -1184,6 +1184,7 @@ export function Board() {
   const hourlyToday = weather?.hourlyToday as
     | Array<{ time?: string; temperatureF?: number; code?: number }>
     | undefined;
+  const todayForecast = daily?.[0];
   const spotifyTrack = spotifyPlayback?.item;
   const spotifyArtist = spotifyTrack?.artists?.map((a) => a.name).filter(Boolean).join(", ");
   const spotifyActiveDevice =
@@ -1318,13 +1319,13 @@ export function Board() {
 
         <div className="board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overflow-x-hidden sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
           <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
-            <div className="mb-3 flex min-w-0 shrink-0 items-center gap-3 rounded-xl border border-slate-400/80 bg-slate-200 px-4 py-3 shadow-md shadow-slate-950/25 sm:mb-4 sm:gap-4 sm:px-5 sm:py-3.5 md:py-4 md:shadow-lg">
-              <span className="shrink-0 text-base font-semibold tracking-tight text-slate-800 sm:text-lg">
+            <div className="mb-3 flex min-w-0 shrink-0 items-center gap-3 rounded-xl border border-slate-500/70 bg-slate-500/90 px-4 py-3 shadow-md shadow-slate-950/30 sm:mb-4 sm:gap-4 sm:px-5 sm:py-3.5 md:py-4 md:shadow-lg">
+              <span className="shrink-0 text-base font-semibold tracking-tight text-slate-950 sm:text-lg">
                 Today 8am-8pm
               </span>
-              <div className="board-scrollbar min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-0.5 text-base text-slate-700 sm:text-lg">
+              <div className="board-scrollbar min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-0.5 text-base text-slate-900 sm:text-lg">
                 {todayAllDayStrip.length === 0 && todayTimedStrip.length === 0 ? (
-                  <span className="text-slate-600 sm:text-base">No events in this window.</span>
+                  <span className="text-slate-800 sm:text-base">No events in this window.</span>
                 ) : (
                   <>
                     {todayAllDayStrip.map((item) => (
@@ -1332,7 +1333,7 @@ export function Board() {
                         key={item.key}
                         type="button"
                         onClick={() => openEdit(item.event)}
-                        className="mr-2 inline-flex max-w-[15rem] items-center truncate rounded-full border border-violet-500/70 bg-violet-200/90 px-3 py-1.5 text-left text-sm font-medium text-violet-950 hover:border-violet-600 hover:bg-violet-300/90 sm:mr-3 sm:max-w-[20rem] sm:px-3.5 sm:py-2 sm:text-base"
+                        className="mr-2 inline-flex max-w-[15rem] items-center truncate rounded-full border border-violet-600/80 bg-violet-300/95 px-3 py-1.5 text-left text-sm font-medium text-violet-950 hover:border-violet-700 hover:bg-violet-300 sm:mr-3 sm:max-w-[20rem] sm:px-3.5 sm:py-2 sm:text-base"
                         title={item.summary}
                       >
                         {item.summary}
@@ -1343,7 +1344,7 @@ export function Board() {
                         key={item.key}
                         type="button"
                         onClick={() => openEdit(item.event)}
-                        className="mr-2 inline-flex max-w-full items-center rounded-full border border-slate-500/80 bg-slate-50 px-3 py-1.5 text-left text-sm font-medium text-slate-800 shadow-sm hover:border-slate-600 hover:bg-white sm:mr-3 sm:px-3.5 sm:py-2 sm:text-base"
+                        className="mr-2 inline-flex max-w-full items-center rounded-full border border-slate-600/90 bg-slate-200/95 px-3 py-1.5 text-left text-sm font-medium text-slate-900 shadow-sm hover:border-slate-700 hover:bg-slate-100 sm:mr-3 sm:px-3.5 sm:py-2 sm:text-base"
                         title={item.label}
                       >
                         {item.label}
@@ -1585,38 +1586,56 @@ export function Board() {
                         className="h-9 w-9 shrink-0 sm:h-10 sm:w-10"
                       />
                     </div>
-                    <div className="flex items-center gap-3 text-sm text-slate-300 sm:text-base">
-                      <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                        <svg
-                          aria-hidden="true"
-                          viewBox="0 0 24 24"
-                          className="h-4 w-4 text-sky-300"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
+                    <div className="flex flex-col items-end gap-1.5 text-sm text-slate-300 sm:text-base">
+                      {todayForecast &&
+                      typeof todayForecast.minF === "number" &&
+                      typeof todayForecast.maxF === "number" ? (
+                        <span
+                          className="whitespace-nowrap text-xs tabular-nums text-slate-400 sm:text-sm"
+                          title="Today's forecast high / low"
                         >
-                          <path d="M12 3C12 3 6 10 6 14a6 6 0 0 0 12 0c0-4-6-11-6-11z" />
-                        </svg>
-                        {Math.round(current.humidity ?? 0)}%
-                      </span>
-                      <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                        <svg
-                          aria-hidden="true"
-                          viewBox="0 0 24 24"
-                          className="h-4 w-4 text-slate-300"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M3 9h10a3 3 0 1 0-3-3" />
-                          <path d="M3 15h14a3 3 0 1 1-3 3" />
-                        </svg>
-                        {Math.round(current.windMph ?? 0)} mph
-                      </span>
+                          <span className="font-semibold text-slate-100">
+                            {Math.round(todayForecast.maxF)}°
+                          </span>
+                          <span className="mx-1 text-slate-500">/</span>
+                          <span className="text-slate-300">
+                            {Math.round(todayForecast.minF)}°
+                          </span>
+                        </span>
+                      ) : null}
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                          <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                            className="h-4 w-4 text-sky-300"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M12 3C12 3 6 10 6 14a6 6 0 0 0 12 0c0-4-6-11-6-11z" />
+                          </svg>
+                          {Math.round(current.humidity ?? 0)}%
+                        </span>
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                          <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                            className="h-4 w-4 text-slate-300"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M3 9h10a3 3 0 1 0-3-3" />
+                            <path d="M3 15h14a3 3 0 1 1-3 3" />
+                          </svg>
+                          {Math.round(current.windMph ?? 0)} mph
+                        </span>
+                      </div>
                     </div>
                   </div>
                   {hourlyToday && hourlyToday.length > 0 ? (
