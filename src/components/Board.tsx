@@ -1145,7 +1145,9 @@ export function Board() {
       if (seq !== spotifySearchSeq.current) return;
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
-        setMessage(j.error ?? "Spotify search failed");
+        const msg = j.error ?? "Spotify search failed";
+        setMessage(msg);
+        setSpotifyNotice(msg);
         return;
       }
       const data = (await res.json()) as {
@@ -1173,7 +1175,7 @@ export function Board() {
   useEffect(() => {
     if (!spotifyPickOpen) return;
     const q = spotifyQuery.trim();
-    if (q.length < 2) {
+    if (q.length < 1) {
       spotifySearchSeq.current += 1;
       setSpotifySearching(false);
       setSpotifySearchResults({ tracks: [], albums: [], playlists: [] });
@@ -2455,6 +2457,13 @@ export function Board() {
                     if (e.key === "Enter") void searchSpotify();
                   }}
                 />
+                <button
+                  type="button"
+                  className="shrink-0 rounded-full bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-500 sm:text-sm"
+                  onClick={() => void searchSpotify()}
+                >
+                  Search
+                </button>
                 {spotifySearching ? (
                   <span className="shrink-0 text-xs font-medium text-sky-400 sm:text-sm">
                     Searching…
@@ -2462,7 +2471,7 @@ export function Board() {
                 ) : null}
               </div>
               <p className="mt-2 text-xs text-slate-500 sm:text-sm">
-                Type at least 2 characters — results update as you type. Press Enter to search
+                Type at least 1 character — results update as you type. Press Enter to search
                 immediately.
               </p>
             </div>
