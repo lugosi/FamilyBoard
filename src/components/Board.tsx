@@ -271,6 +271,9 @@ export function Board() {
     playlists: SpotifySearchPlaylist[];
   }>({ tracks: [], albums: [], playlists: [] });
   const [spotifyResultTab, setSpotifyResultTab] = useState<SpotifyResultTab>("tracks");
+  const [spotifyPickOpen, setSpotifyPickOpen] = useState(false);
+  const spotifyPickInputRef = useRef<HTMLInputElement | null>(null);
+  const spotifySearchSeq = useRef(0);
   const [spotifySdkReady, setSpotifySdkReady] = useState(false);
   const [spotifySdkDeviceId, setSpotifySdkDeviceId] = useState<string | null>(null);
   const [spotifySelectedDeviceId, setSpotifySelectedDeviceId] = useState<string>("");
@@ -1014,7 +1017,7 @@ export function Board() {
       | "play_context"
       | "queue_track",
     extra?: Record<string, unknown>,
-  ) {
+  ): Promise<boolean> {
     setSpotifyNotice(null);
     const requestedDeviceId =
       typeof extra?.deviceId === "string" && extra.deviceId.trim()
@@ -1046,7 +1049,7 @@ export function Board() {
       setDismissedAlertSignature(null);
       setMessage(msg);
       setSpotifyNotice(msg);
-      return;
+      return false;
     }
     setBusy(`spotify-${action}`);
     setMessage(null);
@@ -1081,7 +1084,7 @@ export function Board() {
         : combined || "Spotify action failed";
       setMessage(msg);
       setSpotifyNotice(msg);
-      return;
+      return false;
     }
     if (j.warning) {
       setDismissedAlertSignature(null);
@@ -1100,9 +1103,11 @@ export function Board() {
           setDismissedAlertSignature(null);
           setMessage(msg);
           setSpotifyNotice(msg);
+          return false;
         }
       }
     }
+    return true;
   }
 
   async function commitSpotifySeek() {
@@ -1124,35 +1129,73 @@ export function Board() {
     return cleanUri || undefined;
   }
 
-  async function searchSpotify() {
+  const searchSpotify = useCallback(async () => {
     const q = spotifyQuery.trim();
     if (!q) {
       setSpotifySearchResults({ tracks: [], albums: [], playlists: [] });
+      setSpotifySearching(false);
       return;
     }
+    const seq = ++spotifySearchSeq.current;
     setSpotifySearching(true);
-    const res = await fetch(`/api/spotify/search?q=${encodeURIComponent(q)}&limit=8`);
-    setSpotifySearching(false);
-    if (!res.ok) {
-      const j = (await res.json().catch(() => ({}))) as { error?: string };
-      setMessage(j.error ?? "Spotify search failed");
+    try {
+      const res = await fetch(
+        `/api/spotify/search?q=${encodeURIComponent(q)}&limit=20`,
+      );
+      if (seq !== spotifySearchSeq.current) return;
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        setMessage(j.error ?? "Spotify search failed");
+        return;
+      }
+      const data = (await res.json()) as {
+        tracks?: SpotifySearchTrack[];
+        albums?: SpotifySearchAlbum[];
+        playlists?: SpotifySearchPlaylist[];
+      };
+      if (seq !== spotifySearchSeq.current) return;
+      const next = {
+        tracks: data.tracks ?? [],
+        albums: data.albums ?? [],
+        playlists: data.playlists ?? [],
+      };
+      setSpotifySearchResults(next);
+      if (next.tracks.length > 0) setSpotifyResultTab("tracks");
+      else if (next.albums.length > 0) setSpotifyResultTab("albums");
+      else if (next.playlists.length > 0) setSpotifyResultTab("playlists");
+    } finally {
+      if (seq === spotifySearchSeq.current) {
+        setSpotifySearching(false);
+      }
+    }
+  }, [spotifyQuery]);
+
+  useEffect(() => {
+    if (!spotifyPickOpen) return;
+    const q = spotifyQuery.trim();
+    if (q.length < 2) {
+      spotifySearchSeq.current += 1;
+      setSpotifySearching(false);
+      setSpotifySearchResults({ tracks: [], albums: [], playlists: [] });
       return;
     }
-    const data = (await res.json()) as {
-      tracks?: SpotifySearchTrack[];
-      albums?: SpotifySearchAlbum[];
-      playlists?: SpotifySearchPlaylist[];
-    };
-    const next = {
-      tracks: data.tracks ?? [],
-      albums: data.albums ?? [],
-      playlists: data.playlists ?? [],
-    };
-    setSpotifySearchResults(next);
-    if (next.tracks.length > 0) setSpotifyResultTab("tracks");
-    else if (next.albums.length > 0) setSpotifyResultTab("albums");
-    else if (next.playlists.length > 0) setSpotifyResultTab("playlists");
-  }
+    const id = window.setTimeout(() => void searchSpotify(), 420);
+    return () => window.clearTimeout(id);
+  }, [spotifyPickOpen, spotifyQuery, searchSpotify]);
+
+  useEffect(() => {
+    if (!spotifyPickOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setSpotifyPickOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [spotifyPickOpen]);
+
+  useEffect(() => {
+    if (!spotifyPickOpen) return;
+    queueMicrotask(() => spotifyPickInputRef.current?.focus());
+  }, [spotifyPickOpen]);
 
   async function refreshSpotifyDevices() {
     setBusy("spotify-refresh-devices");
@@ -2171,197 +2214,36 @@ export function Board() {
                     </div>
                   ) : null}
 
-                  <div className="rounded-lg border border-slate-800 bg-slate-950/35 p-2.5">
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-400 sm:text-sm">
-                      Choose music
-                    </p>
-                    <div className="mt-2 flex gap-2">
-                      <input
-                        className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-500 sm:text-base"
-                        placeholder="Search tracks, albums, playlists"
-                        value={spotifyQuery}
-                        onChange={(e) => setSpotifyQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") void searchSpotify();
-                        }}
-                      />
-                      <button
-                        type="button"
-                        disabled={spotifySearching}
-                        className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
-                        onClick={() => void searchSpotify()}
-                      >
-                        {spotifySearching ? "..." : "Search"}
-                      </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-600 bg-gradient-to-r from-emerald-950/50 via-slate-950/60 to-sky-950/50 px-4 py-3 text-left transition hover:border-slate-400 hover:from-emerald-900/40 hover:to-sky-900/40"
+                    onClick={() => setSpotifyPickOpen(true)}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white sm:text-base">
+                        Search music
+                      </p>
+                      <p className="truncate text-xs text-slate-400 sm:text-sm">
+                        Tracks, albums, playlists — full search
+                      </p>
                     </div>
-                    {(spotifySearchResults.tracks.length > 0 ||
-                      spotifySearchResults.albums.length > 0 ||
-                      spotifySearchResults.playlists.length > 0) ? (
-                      <>
-                        <div className="mt-2 flex gap-1.5">
-                          {(["tracks", "albums", "playlists"] as const).map((tab) => (
-                            <button
-                              key={tab}
-                              type="button"
-                              className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                                spotifyResultTab === tab
-                                  ? "bg-sky-600 text-white"
-                                  : "border border-slate-600 text-slate-300 hover:border-slate-400"
-                              }`}
-                              onClick={() => setSpotifyResultTab(tab)}
-                            >
-                              {tab[0]!.toUpperCase() + tab.slice(1)}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="board-scrollbar mt-2 max-h-56 space-y-2 overflow-y-auto pr-1">
-                          {spotifyResultTab === "tracks"
-                            ? spotifySearchResults.tracks.slice(0, 8).map((t) => (
-                                <div
-                                  key={`t-${t.id}`}
-                                  className="rounded-md border border-slate-800 bg-slate-900/60 px-2 py-1.5"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    {t.album?.images?.[0]?.url ? (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img
-                                        src={t.album.images[0].url}
-                                        alt=""
-                                        className="h-9 w-9 shrink-0 rounded object-cover"
-                                      />
-                                    ) : (
-                                      <div className="h-9 w-9 shrink-0 rounded border border-slate-700 bg-slate-900/70" />
-                                    )}
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm font-medium text-white sm:text-base">
-                                        {t.name ?? "Unknown track"}
-                                      </p>
-                                      <p className="truncate text-xs text-slate-400 sm:text-sm">
-                                        {t.artists
-                                          ?.map((a) => a.name)
-                                          .filter(Boolean)
-                                          .join(", ") ?? "Unknown artist"}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div className="mt-1.5 flex gap-1.5">
-                                    <button
-                                      type="button"
-                                      className="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-500"
-                                      onClick={() =>
-                                        void spotifyControl("play_track", {
-                                          uri: t.uri,
-                                          deviceId: spotifyEffectiveDeviceId || undefined,
-                                        })
-                                      }
-                                    >
-                                      Play now
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400"
-                                      onClick={() =>
-                                        void spotifyControl("queue_track", {
-                                          uri: t.uri,
-                                          deviceId: spotifyEffectiveDeviceId || undefined,
-                                        })
-                                      }
-                                    >
-                                      Queue
-                                    </button>
-                                  </div>
-                                </div>
-                              ))
-                            : null}
-                          {spotifyResultTab === "albums"
-                            ? spotifySearchResults.albums.slice(0, 8).map((a) => (
-                                <div
-                                  key={`a-${a.id}`}
-                                  className="rounded-md border border-slate-800 bg-slate-900/60 px-2 py-1.5"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    {a.images?.[0]?.url ? (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img
-                                        src={a.images[0].url}
-                                        alt=""
-                                        className="h-9 w-9 shrink-0 rounded object-cover"
-                                      />
-                                    ) : (
-                                      <div className="h-9 w-9 shrink-0 rounded border border-slate-700 bg-slate-900/70" />
-                                    )}
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm font-medium text-white sm:text-base">
-                                        Album: {a.name ?? "Unknown"}
-                                      </p>
-                                      <p className="truncate text-xs text-slate-400 sm:text-sm">
-                                        {a.artists
-                                          ?.map((x) => x.name)
-                                          .filter(Boolean)
-                                          .join(", ") ?? "Unknown artist"}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    className="mt-1.5 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-500"
-                                    onClick={() =>
-                                      void spotifyControl("play_context", {
-                                        uri: spotifyContextUri("album", a.id, a.uri),
-                                        deviceId: spotifyEffectiveDeviceId || undefined,
-                                      })
-                                    }
-                                  >
-                                    Play album
-                                  </button>
-                                </div>
-                              ))
-                            : null}
-                          {spotifyResultTab === "playlists"
-                            ? spotifySearchResults.playlists.slice(0, 8).map((p) => (
-                                <div
-                                  key={`p-${p.id}`}
-                                  className="rounded-md border border-slate-800 bg-slate-900/60 px-2 py-1.5"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    {p.images?.[0]?.url ? (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img
-                                        src={p.images[0].url}
-                                        alt=""
-                                        className="h-9 w-9 shrink-0 rounded object-cover"
-                                      />
-                                    ) : (
-                                      <div className="h-9 w-9 shrink-0 rounded border border-slate-700 bg-slate-900/70" />
-                                    )}
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm font-medium text-white sm:text-base">
-                                        Playlist: {p.name ?? "Unknown"}
-                                      </p>
-                                      <p className="truncate text-xs text-slate-400 sm:text-sm">
-                                        by {p.owner?.display_name ?? "Unknown owner"}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    className="mt-1.5 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-500"
-                                    onClick={() =>
-                                      void spotifyControl("play_context", {
-                                        uri: spotifyContextUri("playlist", p.id, p.uri),
-                                        deviceId: spotifyEffectiveDeviceId || undefined,
-                                      })
-                                    }
-                                  >
-                                    Play playlist
-                                  </button>
-                                </div>
-                              ))
-                            : null}
-                        </div>
-                      </>
-                    ) : null}
-                  </div>
+                    <span
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-slate-200"
+                      aria-hidden
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M9 18V6l12 6-12 6z" />
+                      </svg>
+                    </span>
+                  </button>
 
                   <button
                     type="button"
@@ -2511,6 +2393,299 @@ export function Board() {
               >
                 {busy === "delete" ? "Deleting…" : "Delete"}
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {spotifyPickOpen ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/75 p-0 sm:items-center sm:p-4"
+          onClick={() => setSpotifyPickOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="flex h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-slate-700 bg-slate-950 shadow-2xl sm:h-auto sm:max-h-[85dvh] sm:max-w-2xl sm:rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="spotify-picker-title"
+          >
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+              <h3
+                id="spotify-picker-title"
+                className="text-lg font-semibold tracking-tight text-white sm:text-xl"
+              >
+                Search music
+              </h3>
+              <button
+                type="button"
+                className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                aria-label="Close search"
+                onClick={() => setSpotifyPickOpen(false)}
+              >
+                <span className="block text-xl leading-none" aria-hidden>
+                  ×
+                </span>
+              </button>
+            </div>
+
+            <div className="shrink-0 px-4 pb-2 pt-3">
+              <div className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/90 px-4 py-2.5 shadow-inner shadow-black/20">
+                <svg
+                  aria-hidden
+                  viewBox="0 0 24 24"
+                  className="h-5 w-5 shrink-0 text-slate-500"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M21 21l-4.3-4.3" />
+                </svg>
+                <input
+                  ref={spotifyPickInputRef}
+                  className="min-w-0 flex-1 bg-transparent text-base text-white outline-none placeholder:text-slate-500 sm:text-lg"
+                  placeholder="What do you want to play?"
+                  value={spotifyQuery}
+                  onChange={(e) => setSpotifyQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void searchSpotify();
+                  }}
+                />
+                {spotifySearching ? (
+                  <span className="shrink-0 text-xs font-medium text-sky-400 sm:text-sm">
+                    Searching…
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-2 text-xs text-slate-500 sm:text-sm">
+                Type at least 2 characters — results update as you type. Press Enter to search
+                immediately.
+              </p>
+            </div>
+
+            <div className="shrink-0 border-b border-slate-800 px-3 pb-2">
+              <div className="flex gap-1 overflow-x-auto pb-1">
+                {(["tracks", "albums", "playlists"] as const).map((tab) => {
+                  const count =
+                    tab === "tracks"
+                      ? spotifySearchResults.tracks.length
+                      : tab === "albums"
+                        ? spotifySearchResults.albums.length
+                        : spotifySearchResults.playlists.length;
+                  const label =
+                    tab === "tracks" ? "Songs" : tab === "albums" ? "Albums" : "Playlists";
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold sm:text-sm ${
+                        spotifyResultTab === tab
+                          ? "bg-white text-slate-950"
+                          : "border border-slate-700 text-slate-300 hover:border-slate-500"
+                      }`}
+                      onClick={() => setSpotifyResultTab(tab)}
+                    >
+                      {label}
+                      <span className="ml-1 tabular-nums opacity-70">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="board-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-2">
+              {spotifyQuery.trim().length < 2 ? (
+                <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
+                  Start typing to search Spotify.
+                </p>
+              ) : spotifyResultTab === "tracks" ? (
+                spotifySearchResults.tracks.length === 0 ? (
+                  <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
+                    No songs found.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-slate-800/90">
+                    {spotifySearchResults.tracks.slice(0, 20).map((t) => (
+                      <li key={`tp-${t.id}`} className="flex items-center gap-3 py-3">
+                        {t.album?.images?.[0]?.url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={t.album.images[0].url}
+                            alt=""
+                            className="h-14 w-14 shrink-0 rounded-md object-cover shadow-md"
+                          />
+                        ) : (
+                          <div className="h-14 w-14 shrink-0 rounded-md border border-slate-800 bg-slate-900" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-base font-medium text-white sm:text-lg">
+                            {t.name ?? "Unknown track"}
+                          </p>
+                          <p className="truncate text-sm text-slate-400">
+                            {t.artists
+                              ?.map((a) => a.name)
+                              .filter(Boolean)
+                              .join(", ") ?? "Unknown artist"}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            className="rounded-full p-2.5 text-slate-300 hover:bg-slate-800 hover:text-white"
+                            aria-label="Add to queue"
+                            title="Add to queue"
+                            onClick={() =>
+                              void spotifyControl("queue_track", {
+                                uri: t.uri,
+                                deviceId: spotifyEffectiveDeviceId || undefined,
+                              })
+                            }
+                          >
+                            <svg
+                              aria-hidden
+                              viewBox="0 0 24 24"
+                              className="h-5 w-5"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M5 12h10M12 5v14" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg hover:bg-emerald-400"
+                            aria-label="Play"
+                            title="Play"
+                            onClick={() =>
+                              void (async () => {
+                                const ok = await spotifyControl("play_track", {
+                                  uri: t.uri,
+                                  deviceId: spotifyEffectiveDeviceId || undefined,
+                                });
+                                if (ok) setSpotifyPickOpen(false);
+                              })()
+                            }
+                          >
+                            <svg
+                              aria-hidden
+                              viewBox="0 0 24 24"
+                              className="ml-0.5 h-5 w-5"
+                              fill="currentColor"
+                            >
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : spotifyResultTab === "albums" ? (
+                spotifySearchResults.albums.length === 0 ? (
+                  <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
+                    No albums found.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-slate-800/90">
+                    {spotifySearchResults.albums.slice(0, 20).map((a) => (
+                      <li key={`ap-${a.id}`}>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-3 rounded-xl py-3 text-left hover:bg-slate-900/80"
+                          onClick={() =>
+                            void (async () => {
+                              const ok = await spotifyControl("play_context", {
+                                uri: spotifyContextUri("album", a.id, a.uri),
+                                deviceId: spotifyEffectiveDeviceId || undefined,
+                              });
+                              if (ok) setSpotifyPickOpen(false);
+                            })()
+                          }
+                        >
+                          {a.images?.[0]?.url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={a.images[0].url}
+                              alt=""
+                              className="h-14 w-14 shrink-0 rounded-md object-cover shadow-md"
+                            />
+                          ) : (
+                            <div className="h-14 w-14 shrink-0 rounded-md border border-slate-800 bg-slate-900" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-base font-medium text-white sm:text-lg">
+                              {a.name ?? "Unknown album"}
+                            </p>
+                            <p className="truncate text-sm text-slate-400">
+                              Album ·{" "}
+                              {a.artists
+                                ?.map((x) => x.name)
+                                .filter(Boolean)
+                                .join(", ") ?? "Unknown artist"}
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white">
+                            Play
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : spotifySearchResults.playlists.length === 0 ? (
+                <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
+                  No playlists found.
+                </p>
+              ) : (
+                <ul className="divide-y divide-slate-800/90">
+                  {spotifySearchResults.playlists.slice(0, 20).map((p) => (
+                    <li key={`pp-${p.id}`}>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-3 rounded-xl py-3 text-left hover:bg-slate-900/80"
+                        onClick={() =>
+                          void (async () => {
+                            const ok = await spotifyControl("play_context", {
+                              uri: spotifyContextUri("playlist", p.id, p.uri),
+                              deviceId: spotifyEffectiveDeviceId || undefined,
+                            });
+                            if (ok) setSpotifyPickOpen(false);
+                          })()
+                        }
+                      >
+                        {p.images?.[0]?.url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={p.images[0].url}
+                            alt=""
+                            className="h-14 w-14 shrink-0 rounded-md object-cover shadow-md"
+                          />
+                        ) : (
+                          <div className="h-14 w-14 shrink-0 rounded-md border border-slate-800 bg-slate-900" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-base font-medium text-white sm:text-lg">
+                            {p.name ?? "Unknown playlist"}
+                          </p>
+                          <p className="truncate text-sm text-slate-400">
+                            Playlist · by {p.owner?.display_name ?? "Unknown"}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white">
+                          Play
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
         </div>
