@@ -67,7 +67,7 @@ export async function GET(request: Request) {
   const q = url.searchParams.get("q")?.trim() ?? "";
   const limit = Math.max(
     1,
-    Math.min(20, Number.parseInt(url.searchParams.get("limit") ?? "10", 10) || 10),
+    Math.min(10, Number.parseInt(url.searchParams.get("limit") ?? "10", 10) || 10),
   );
   if (!q) {
     return NextResponse.json({ tracks: [], albums: [], playlists: [] });

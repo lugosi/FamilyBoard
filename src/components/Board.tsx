@@ -1140,7 +1140,7 @@ export function Board() {
     setSpotifySearching(true);
     try {
       const res = await fetch(
-        `/api/spotify/search?q=${encodeURIComponent(q)}&limit=20`,
+        `/api/spotify/search?q=${encodeURIComponent(q)}&limit=10`,
       );
       if (seq !== spotifySearchSeq.current) return;
       if (!res.ok) {
@@ -2104,64 +2104,66 @@ export function Board() {
                     </p>
                   )}
 
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={busy === "spotify-previous"}
-                      className="rounded-full border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
-                      onClick={() => void spotifyControl("previous")}
-                    >
-                      Prev
-                    </button>
-                    {spotifyPlayback?.is_playing ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={busy === "spotify-pause"}
-                        className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
-                        onClick={() => void spotifyControl("pause")}
+                        disabled={busy === "spotify-previous"}
+                        className="rounded-full border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
+                        onClick={() => void spotifyControl("previous")}
                       >
-                        Pause
+                        Prev
                       </button>
-                    ) : (
+                      {spotifyPlayback?.is_playing ? (
+                        <button
+                          type="button"
+                          disabled={busy === "spotify-pause"}
+                          className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
+                          onClick={() => void spotifyControl("pause")}
+                        >
+                          Pause
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={busy === "spotify-play"}
+                          className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
+                          onClick={() =>
+                            void spotifyControl("play", {
+                              deviceId: spotifyEffectiveDeviceId || undefined,
+                            })
+                          }
+                        >
+                          Play
+                        </button>
+                      )}
                       <button
                         type="button"
-                        disabled={busy === "spotify-play"}
-                        className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
-                        onClick={() =>
-                          void spotifyControl("play", {
-                            deviceId: spotifyEffectiveDeviceId || undefined,
+                        disabled={busy === "spotify-next"}
+                        className="rounded-full border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
+                        onClick={() => void spotifyControl("next")}
+                      >
+                        Next
+                      </button>
+                    </div>
+
+                    <label className="min-w-0 flex-1 text-right text-sm font-medium uppercase tracking-wide text-slate-400 sm:min-w-[14rem] sm:text-base">
+                      Volume {Math.round(spotifyActiveDevice?.volume_percent ?? 0)}%
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={Math.round(spotifyActiveDevice?.volume_percent ?? 0)}
+                        disabled={!spotifyActiveDevice}
+                        className="mt-1.5 w-full accent-sky-500 disabled:opacity-40"
+                        onChange={(e) =>
+                          void spotifyControl("set_volume", {
+                            volumePercent: Number(e.target.value),
                           })
                         }
-                      >
-                        Play
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      disabled={busy === "spotify-next"}
-                      className="rounded-full border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
-                      onClick={() => void spotifyControl("next")}
-                    >
-                      Next
-                    </button>
+                      />
+                    </label>
                   </div>
-
-                  <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
-                    Volume {Math.round(spotifyActiveDevice?.volume_percent ?? 0)}%
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={Math.round(spotifyActiveDevice?.volume_percent ?? 0)}
-                      disabled={!spotifyActiveDevice}
-                      className="mt-2 w-full accent-sky-500 disabled:opacity-40"
-                      onChange={(e) =>
-                        void spotifyControl("set_volume", {
-                          volumePercent: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
 
                   <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
                     Device
