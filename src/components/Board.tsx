@@ -1482,7 +1482,7 @@ export function Board() {
           </section>
 
           <div className="board-scrollbar flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto sm:gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto">
-            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Clock</h2>
                 <button
@@ -1787,16 +1787,16 @@ export function Board() {
                   No rooms or zones found.
                 </p>
               ) : (
-                <div className="mt-3 space-y-3">
-                  <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="mt-2.5 space-y-2.5">
+                  <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                     {pinnedHueAreas.map((area) => (
                       <li
                         key={area.id}
-                        className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-2"
+                        className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="truncate text-base font-medium text-white sm:text-lg">
+                            <p className="truncate text-sm font-medium text-white sm:text-base">
                               {area.name}
                             </p>
                             <p className="text-xs uppercase tracking-wide text-slate-500 sm:text-sm">
@@ -1816,16 +1816,19 @@ export function Board() {
                             {area.on ? "On" : "Off"}
                           </button>
                         </div>
-                        <div className="mt-2 flex items-center gap-2">
+                        <div className="mt-1.5">
                           <select
-                            className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
+                            className="min-w-0 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
                             value={hueThemeByArea[area.id] ?? "relax"}
-                            onChange={(e) =>
+                            onChange={(e) => {
+                              const theme = e.target.value as HueThemeKey;
                               setHueThemeByArea((prev) => ({
                                 ...prev,
-                                [area.id]: e.target.value as HueThemeKey,
-                              }))
-                            }
+                                [area.id]: theme,
+                              }));
+                              void applyHueTheme(area.id, theme);
+                            }}
+                            disabled={busy === `hue-theme-${area.id}`}
                           >
                             {HUE_THEME_OPTIONS.map((opt) => (
                               <option key={opt.key} value={opt.key}>
@@ -1833,16 +1836,6 @@ export function Board() {
                               </option>
                             ))}
                           </select>
-                          <button
-                            type="button"
-                            disabled={busy === `hue-theme-${area.id}`}
-                            className="shrink-0 rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400 disabled:opacity-50"
-                            onClick={() =>
-                              void applyHueTheme(area.id, hueThemeByArea[area.id] ?? "relax")
-                            }
-                          >
-                            {busy === `hue-theme-${area.id}` ? "Applying..." : "Apply theme"}
-                          </button>
                         </div>
                       </li>
                     ))}
@@ -1860,15 +1853,15 @@ export function Board() {
                         </span>
                       </button>
                       {showOtherHueAreas ? (
-                        <ul className="grid grid-cols-1 gap-2 border-t border-slate-800 p-2 sm:grid-cols-2">
+                        <ul className="grid grid-cols-1 gap-1.5 border-t border-slate-800 p-2 sm:grid-cols-2">
                           {otherHueAreas.map((area) => (
                             <li
                               key={area.id}
-                              className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-2"
+                              className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="min-w-0">
-                                  <p className="truncate text-base font-medium text-white sm:text-lg">
+                                  <p className="truncate text-sm font-medium text-white sm:text-base">
                                     {area.name}
                                   </p>
                                   <p className="text-xs uppercase tracking-wide text-slate-500 sm:text-sm">
@@ -1888,16 +1881,19 @@ export function Board() {
                                   {area.on ? "On" : "Off"}
                                 </button>
                               </div>
-                              <div className="mt-2 flex items-center gap-2">
+                              <div className="mt-1.5">
                                 <select
-                                  className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
+                                  className="min-w-0 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
                                   value={hueThemeByArea[area.id] ?? "relax"}
-                                  onChange={(e) =>
+                                  onChange={(e) => {
+                                    const theme = e.target.value as HueThemeKey;
                                     setHueThemeByArea((prev) => ({
                                       ...prev,
-                                      [area.id]: e.target.value as HueThemeKey,
-                                    }))
-                                  }
+                                      [area.id]: theme,
+                                    }));
+                                    void applyHueTheme(area.id, theme);
+                                  }}
+                                  disabled={busy === `hue-theme-${area.id}`}
                                 >
                                   {HUE_THEME_OPTIONS.map((opt) => (
                                     <option key={opt.key} value={opt.key}>
@@ -1905,16 +1901,6 @@ export function Board() {
                                     </option>
                                   ))}
                                 </select>
-                                <button
-                                  type="button"
-                                  disabled={busy === `hue-theme-${area.id}`}
-                                  className="shrink-0 rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400 disabled:opacity-50"
-                                  onClick={() =>
-                                    void applyHueTheme(area.id, hueThemeByArea[area.id] ?? "relax")
-                                  }
-                                >
-                                  {busy === `hue-theme-${area.id}` ? "Applying..." : "Apply theme"}
-                                </button>
                               </div>
                             </li>
                           ))}
