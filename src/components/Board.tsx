@@ -1144,8 +1144,15 @@ export function Board() {
       );
       if (seq !== spotifySearchSeq.current) return;
       if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { error?: string };
-        const msg = j.error ?? "Spotify search failed";
+        const j = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          detail?: { error?: { message?: string; reason?: string } | string };
+        };
+        const detail =
+          typeof j.detail?.error === "string"
+            ? j.detail.error
+            : j.detail?.error?.reason || j.detail?.error?.message;
+        const msg = [j.error, detail].filter(Boolean).join(" — ") || "Spotify search failed";
         setMessage(msg);
         setSpotifyNotice(msg);
         return;
@@ -1556,14 +1563,14 @@ export function Board() {
                 </button>
               </div>
               {!collapsedWidgets.clock ? (
-                <>
-                  <p className="mt-3 text-xs uppercase tracking-wide text-slate-400 sm:text-sm">
-                    {clockDate}
-                  </p>
-                  <p className="mt-1 text-3xl font-semibold leading-tight text-white sm:text-4xl">
+                <div className="mt-3 flex items-baseline justify-between gap-3">
+                  <p className="text-3xl font-semibold leading-tight text-white sm:text-4xl">
                     {clockTime}
                   </p>
-                </>
+                  <p className="truncate text-xs uppercase tracking-wide text-slate-400 sm:text-sm">
+                    {clockDate}
+                  </p>
+                </div>
               ) : null}
             </section>
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">

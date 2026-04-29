@@ -29,6 +29,26 @@ type SearchPlaylist = {
   owner?: { display_name?: string };
 };
 
+function spotifyDetailMessage(detail: unknown): string | null {
+  if (!detail || typeof detail !== "object") return null;
+  const root = detail as {
+    error?: { message?: string; reason?: string; status?: number } | string;
+    message?: string;
+    reason?: string;
+  };
+  if (typeof root.error === "string") return root.error;
+  if (root.error?.reason && root.error?.message) {
+    return `${root.error.message} (${root.error.reason})`;
+  }
+  return (
+    root.error?.message ??
+    root.error?.reason ??
+    root.message ??
+    root.reason ??
+    null
+  );
+}
+
 export async function GET(request: Request) {
   try {
     requireSpotifyOAuthEnv();
@@ -54,7 +74,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const endpoint = `/search?q=${encodeURIComponent(q)}&type=track,album,playlist&limit=${limit}`;
+    const endpoint = `/search?q=${encodeURIComponent(q)}&type=track,album,playlist&limit=${limit}&market=from_token`;
     const out = await spotifyApiFetch<{
       tracks?: { items?: SearchTrack[] };
       albums?: { items?: SearchAlbum[] };
@@ -64,8 +84,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Spotify link expired" }, { status: 401 });
     }
     if (out.status >= 400) {
+      const detailMsg = spotifyDetailMessage(out.data);
       return NextResponse.json(
-        { error: "Spotify API request failed", detail: out.data },
+        {
+          error: detailMsg
+            ? `Spotify API request failed: ${detailMsg}`
+            : "Spotify API request failed",
+          detail: out.data,
+        },
         { status: 502 },
       );
     }
