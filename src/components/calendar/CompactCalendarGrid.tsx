@@ -69,10 +69,12 @@ export function CompactCalendarGrid({
       className={`flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-lg border border-slate-800 bg-black ${rootText}`}
     >
       <div className="grid shrink-0 grid-cols-7 border-b border-slate-700/90">
-        {WEEKDAY.map((d) => (
+        {WEEKDAY.map((d, idx) => (
           <div
             key={d}
-            className={`border-l border-slate-800 text-center first:border-l-0 ${headText}`}
+            className={`border-l border-slate-800 text-center first:border-l-0 ${
+              idx >= 5 ? "bg-slate-900/45" : ""
+            } ${headText}`}
           >
             {d}
           </div>
@@ -115,6 +117,7 @@ function CompactWeekBlock({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col border-b border-slate-800 last:border-b-0">
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-7 grid-rows-[minmax(0,1fr)] divide-x divide-slate-800/90">
         {Array.from({ length: 7 }, (_, dayIndex) => {
+          const weekend = dayIndex >= 5;
           const d = addDays(weekStartMonday, dayIndex);
           const key = dateKeyLocal(d);
           const today = key === dateKeyLocal(new Date());
@@ -138,7 +141,7 @@ function CompactWeekBlock({
             <div
               key={key}
               className={`flex h-full min-h-0 min-w-0 flex-col gap-px p-0.5 ${dayMinH} ${
-                today ? "bg-slate-900/40" : ""
+                today ? "bg-slate-900/40" : weekend ? "bg-slate-900/25" : ""
               }`}
             >
               <div

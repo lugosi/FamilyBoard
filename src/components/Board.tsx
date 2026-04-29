@@ -1846,31 +1846,9 @@ export function Board() {
                         key={area.id}
                         className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-white sm:text-base">
-                              {area.name}
-                            </p>
-                            <p className="text-xs uppercase tracking-wide text-slate-500 sm:text-sm">
-                              {area.type}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            disabled={busy === `hue-${area.id}`}
-                            onClick={() => void toggleArea(area.id, !area.on)}
-                            className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
-                              area.on
-                                ? "bg-amber-300 text-slate-900"
-                                : "bg-slate-800 text-slate-200"
-                            } disabled:opacity-40`}
-                          >
-                            {area.on ? "On" : "Off"}
-                          </button>
-                        </div>
-                        <div className="mt-1.5">
+                        <div className="flex items-center gap-2">
                           <select
-                            className="min-w-0 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
+                            className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
                             value={hueThemeByArea[area.id] ?? "relax"}
                             onChange={(e) => {
                               const theme = e.target.value as HueThemeKey;
@@ -1888,6 +1866,18 @@ export function Board() {
                               </option>
                             ))}
                           </select>
+                          <button
+                            type="button"
+                            disabled={busy === `hue-${area.id}`}
+                            onClick={() => void toggleArea(area.id, !area.on)}
+                            className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
+                              area.on
+                                ? "bg-amber-300 text-slate-900"
+                                : "bg-slate-800 text-slate-200"
+                            } disabled:opacity-40`}
+                          >
+                            {area.on ? "On" : "Off"}
+                          </button>
                         </div>
                       </li>
                     ))}
@@ -1911,31 +1901,9 @@ export function Board() {
                               key={area.id}
                               className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
                             >
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-medium text-white sm:text-base">
-                                    {area.name}
-                                  </p>
-                                  <p className="text-xs uppercase tracking-wide text-slate-500 sm:text-sm">
-                                    {area.type}
-                                  </p>
-                                </div>
-                                <button
-                                  type="button"
-                                  disabled={busy === `hue-${area.id}`}
-                                  onClick={() => void toggleArea(area.id, !area.on)}
-                                  className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
-                                    area.on
-                                      ? "bg-amber-300 text-slate-900"
-                                      : "bg-slate-800 text-slate-200"
-                                  } disabled:opacity-40`}
-                                >
-                                  {area.on ? "On" : "Off"}
-                                </button>
-                              </div>
-                              <div className="mt-1.5">
+                              <div className="flex items-center gap-2">
                                 <select
-                                  className="min-w-0 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
+                                  className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
                                   value={hueThemeByArea[area.id] ?? "relax"}
                                   onChange={(e) => {
                                     const theme = e.target.value as HueThemeKey;
@@ -1953,6 +1921,18 @@ export function Board() {
                                     </option>
                                   ))}
                                 </select>
+                                <button
+                                  type="button"
+                                  disabled={busy === `hue-${area.id}`}
+                                  onClick={() => void toggleArea(area.id, !area.on)}
+                                  className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
+                                    area.on
+                                      ? "bg-amber-300 text-slate-900"
+                                      : "bg-slate-800 text-slate-200"
+                                  } disabled:opacity-40`}
+                                >
+                                  {area.on ? "On" : "Off"}
+                                </button>
                               </div>
                             </li>
                           ))}
@@ -2505,7 +2485,11 @@ export function Board() {
                           ? "bg-white text-slate-950"
                           : "border border-slate-700 text-slate-300 hover:border-slate-500"
                       }`}
-                      onClick={() => setSpotifyResultTab(tab)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setSpotifyResultTab(tab);
+                      }}
                     >
                       {label}
                       <span className="ml-1 tabular-nums opacity-70">{count}</span>
@@ -2516,7 +2500,7 @@ export function Board() {
             </div>
 
             <div className="board-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-2">
-              {spotifyQuery.trim().length < 2 ? (
+              {spotifyQuery.trim().length < 1 ? (
                 <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
                   Start typing to search Spotify.
                 </p>
@@ -2617,15 +2601,17 @@ export function Board() {
                         <button
                           type="button"
                           className="flex w-full items-center gap-3 rounded-xl py-3 text-left hover:bg-slate-900/80"
-                          onClick={() =>
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
                             void (async () => {
                               const ok = await spotifyControl("play_context", {
                                 uri: spotifyContextUri("album", a.id, a.uri),
                                 deviceId: spotifyEffectiveDeviceId || undefined,
                               });
                               if (ok) setSpotifyPickOpen(false);
-                            })()
-                          }
+                            })();
+                          }}
                         >
                           {a.images?.[0]?.url ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -2668,15 +2654,17 @@ export function Board() {
                       <button
                         type="button"
                         className="flex w-full items-center gap-3 rounded-xl py-3 text-left hover:bg-slate-900/80"
-                        onClick={() =>
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           void (async () => {
                             const ok = await spotifyControl("play_context", {
                               uri: spotifyContextUri("playlist", p.id, p.uri),
                               deviceId: spotifyEffectiveDeviceId || undefined,
                             });
                             if (ok) setSpotifyPickOpen(false);
-                          })()
-                        }
+                          })();
+                        }}
                       >
                         {p.images?.[0]?.url ? (
                           // eslint-disable-next-line @next/next/no-img-element
