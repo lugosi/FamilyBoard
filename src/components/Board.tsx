@@ -2597,22 +2597,10 @@ export function Board() {
                 ) : (
                   <ul className="divide-y divide-slate-800/90">
                     {spotifySearchResults.albums.slice(0, 20).map((a) => (
-                      <li key={`ap-${a.id}`}>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-3 rounded-xl py-3 text-left hover:bg-slate-900/80"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            void (async () => {
-                              const ok = await spotifyControl("play_context", {
-                                uri: spotifyContextUri("album", a.id, a.uri),
-                                deviceId: spotifyEffectiveDeviceId || undefined,
-                              });
-                              if (ok) setSpotifyPickOpen(false);
-                            })();
-                          }}
-                        >
+                      <li
+                        key={`ap-${a.id}`}
+                        className="flex items-center gap-3 rounded-xl py-3 hover:bg-slate-900/80"
+                      >
                           {a.images?.[0]?.url ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -2635,10 +2623,20 @@ export function Board() {
                                 .join(", ") ?? "Unknown artist"}
                             </p>
                           </div>
-                          <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white">
+                          <button
+                            type="button"
+                            className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void spotifyControl("play_context", {
+                                uri: spotifyContextUri("album", a.id, a.uri),
+                                deviceId: spotifyEffectiveDeviceId || undefined,
+                              });
+                            }}
+                          >
                             Play
-                          </span>
-                        </button>
+                          </button>
                       </li>
                     ))}
                   </ul>
@@ -2650,22 +2648,10 @@ export function Board() {
               ) : (
                 <ul className="divide-y divide-slate-800/90">
                   {spotifySearchResults.playlists.slice(0, 20).map((p) => (
-                    <li key={`pp-${p.id}`}>
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-3 rounded-xl py-3 text-left hover:bg-slate-900/80"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          void (async () => {
-                            const ok = await spotifyControl("play_context", {
-                              uri: spotifyContextUri("playlist", p.id, p.uri),
-                              deviceId: spotifyEffectiveDeviceId || undefined,
-                            });
-                            if (ok) setSpotifyPickOpen(false);
-                          })();
-                        }}
-                      >
+                    <li
+                      key={`pp-${p.id}`}
+                      className="flex items-center gap-3 rounded-xl py-3 hover:bg-slate-900/80"
+                    >
                         {p.images?.[0]?.url ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -2684,10 +2670,20 @@ export function Board() {
                             Playlist · by {p.owner?.display_name ?? "Unknown"}
                           </p>
                         </div>
-                        <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white">
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void spotifyControl("play_context", {
+                              uri: spotifyContextUri("playlist", p.id, p.uri),
+                              deviceId: spotifyEffectiveDeviceId || undefined,
+                            });
+                          }}
+                        >
                           Play
-                        </span>
-                      </button>
+                        </button>
                     </li>
                   ))}
                 </ul>
