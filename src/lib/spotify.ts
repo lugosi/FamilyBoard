@@ -9,6 +9,7 @@ const SPOTIFY_ACCOUNTS_BASE = "https://accounts.spotify.com";
 export const SPOTIFY_SCOPES = [
   "user-read-playback-state",
   "user-read-currently-playing",
+  "user-read-recently-played",
   "user-modify-playback-state",
   "streaming",
   "user-read-email",

@@ -757,6 +757,40 @@ export function Board() {
     });
   }
 
+  function mergeSpotifyRecentItems(
+    primary: SpotifyRecentItem[],
+    secondary: SpotifyRecentItem[],
+  ): SpotifyRecentItem[] {
+    const byKey = new Map<string, SpotifyRecentItem>();
+    for (const item of [...primary, ...secondary]) {
+      const key = `${item.kind}:${item.id}`;
+      const existing = byKey.get(key);
+      if (!existing || item.addedAt > existing.addedAt) {
+        byKey.set(key, item);
+      }
+    }
+    return Array.from(byKey.values())
+      .sort((a, b) => b.addedAt - a.addedAt)
+      .slice(0, 30);
+  }
+
+  const refreshSpotifyAccountRecent = useCallback(async () => {
+    const res = await fetch("/api/spotify/recent?limit=20");
+    if (!res.ok) {
+      if (res.status === 403) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        setSpotifyNotice(
+          j.error ??
+            "Recent playback scope missing. Re-link Spotify to enable account recent history.",
+        );
+      }
+      return;
+    }
+    const data = (await res.json()) as { recent?: SpotifyRecentItem[] };
+    const recent = data.recent ?? [];
+    setSpotifyRecentItems((prev) => mergeSpotifyRecentItems(recent, prev));
+  }, []);
+
   useEffect(() => {
     if (spotifySeekDraft !== null) return;
     const anchorMs = Math.max(0, Number(spotifyPlayback?.progress_ms ?? 0));
@@ -1263,6 +1297,14 @@ export function Board() {
     if (!spotifyPickOpen) return;
     queueMicrotask(() => spotifyPickInputRef.current?.focus());
   }, [spotifyPickOpen]);
+
+  useEffect(() => {
+    if (!spotifyPickOpen) return;
+    if (spotifyResultTab !== "recent") return;
+    queueMicrotask(() => {
+      void refreshSpotifyAccountRecent();
+    });
+  }, [spotifyPickOpen, spotifyResultTab, refreshSpotifyAccountRecent]);
 
   async function refreshSpotifyDevices() {
     setBusy("spotify-refresh-devices");
@@ -2158,8 +2200,8 @@ export function Board() {
                     </p>
                   )}
 
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                    <div className="flex flex-wrap gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
                         disabled={busy === "spotify-previous"}
@@ -2221,15 +2263,15 @@ export function Board() {
                       </button>
                     </div>
 
-                    <label className="min-w-0 text-sm font-medium uppercase tracking-wide text-slate-400 sm:min-w-[14rem] sm:max-w-[18rem] sm:flex-1 sm:text-right sm:text-base">
-                      Volume {Math.round(spotifyActiveDevice?.volume_percent ?? 0)}%
+                    <label className="w-36 shrink-0 text-right text-xs font-medium uppercase tracking-wide text-slate-400 sm:w-44 sm:text-sm">
+                      Vol {Math.round(spotifyActiveDevice?.volume_percent ?? 0)}%
                       <input
                         type="range"
                         min={0}
                         max={100}
                         value={Math.round(spotifyActiveDevice?.volume_percent ?? 0)}
                         disabled={!spotifyActiveDevice}
-                        className="mt-1.5 w-full accent-sky-500 disabled:opacity-40"
+                        className="mt-1 w-full accent-sky-500 disabled:opacity-40"
                         onChange={(e) =>
                           void spotifyControl("set_volume", {
                             volumePercent: Number(e.target.value),
