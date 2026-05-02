@@ -2247,60 +2247,69 @@ export function Board() {
                   ) : null}
                   <div className="flex items-stretch gap-3">
                     <div className="min-w-0 flex-1 space-y-3">
-                      {spotifyTrack ? (
-                        <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
-                      <div className="flex items-center gap-3">
-                        {spotifyCover ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={spotifyCover}
-                            alt=""
-                            className="h-14 w-14 shrink-0 rounded-md object-cover"
-                          />
+                      <div className="min-h-[6.75rem] rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
+                        <div className="flex items-center gap-3">
+                          {spotifyCover ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={spotifyCover}
+                              alt=""
+                              className="h-14 w-14 shrink-0 rounded-md object-cover"
+                            />
+                          ) : (
+                            <div className="h-14 w-14 shrink-0 rounded-md border border-slate-700 bg-slate-900/70" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            {spotifyTrack ? (
+                              <>
+                                <p className="truncate text-base font-semibold text-white sm:text-lg">
+                                  {spotifyTrack.name ?? "Unknown track"}
+                                </p>
+                                <p className="truncate text-sm text-slate-400 sm:text-base">
+                                  {spotifyArtist || "Unknown artist"}
+                                </p>
+                                <p className="truncate text-xs uppercase tracking-wide text-slate-500 sm:text-sm">
+                                  {spotifyTrack.album?.name ?? "Unknown album"}
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="truncate text-base font-semibold text-slate-300 sm:text-lg">
+                                  Nothing is currently playing
+                                </p>
+                                <p className="truncate text-sm text-slate-500 sm:text-base">
+                                  Pick something from Search to start music.
+                                </p>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {spotifyTrack && spotifyDurationMs > 0 ? (
+                          <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400 sm:text-xs">
+                            <span className="w-10 shrink-0 text-right tabular-nums">
+                              {formatMsClock(spotifyProgressMs)}
+                            </span>
+                            <input
+                              type="range"
+                              min={0}
+                              max={spotifyDurationMs}
+                              step={1000}
+                              value={spotifyProgressMs}
+                              className="min-w-0 flex-1 accent-sky-500"
+                              onChange={(e) =>
+                                setSpotifySeekDraft(Number(e.currentTarget.value))
+                              }
+                              onMouseUp={() => void commitSpotifySeek()}
+                              onTouchEnd={() => void commitSpotifySeek()}
+                            />
+                            <span className="w-10 shrink-0 tabular-nums">
+                              {formatMsClock(spotifyDurationMs)}
+                            </span>
+                          </div>
                         ) : (
-                          <div className="h-14 w-14 shrink-0 rounded-md border border-slate-700 bg-slate-900/70" />
+                          <div className="mt-2 h-[1.125rem]" aria-hidden />
                         )}
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-base font-semibold text-white sm:text-lg">
-                            {spotifyTrack.name ?? "Unknown track"}
-                          </p>
-                          <p className="truncate text-sm text-slate-400 sm:text-base">
-                            {spotifyArtist || "Unknown artist"}
-                          </p>
-                          <p className="truncate text-xs uppercase tracking-wide text-slate-500 sm:text-sm">
-                            {spotifyTrack.album?.name ?? "Unknown album"}
-                          </p>
-                        </div>
                       </div>
-                      {spotifyDurationMs > 0 ? (
-                        <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400 sm:text-xs">
-                          <span className="w-10 shrink-0 text-right tabular-nums">
-                            {formatMsClock(spotifyProgressMs)}
-                          </span>
-                          <input
-                            type="range"
-                            min={0}
-                            max={spotifyDurationMs}
-                            step={1000}
-                            value={spotifyProgressMs}
-                            className="min-w-0 flex-1 accent-sky-500"
-                            onChange={(e) =>
-                              setSpotifySeekDraft(Number(e.currentTarget.value))
-                            }
-                            onMouseUp={() => void commitSpotifySeek()}
-                            onTouchEnd={() => void commitSpotifySeek()}
-                          />
-                          <span className="w-10 shrink-0 tabular-nums">
-                            {formatMsClock(spotifyDurationMs)}
-                          </span>
-                        </div>
-                      ) : null}
-                        </div>
-                      ) : (
-                        <p className="text-base text-slate-400 sm:text-lg">
-                          Nothing is currently playing.
-                        </p>
-                      )}
 
                       <div className="flex items-center gap-2">
                       <button

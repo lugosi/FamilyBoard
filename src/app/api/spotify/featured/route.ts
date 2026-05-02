@@ -51,10 +51,18 @@ export async function GET(request: Request) {
 
   try {
     const endpoint = `/browse/featured-playlists?limit=${limit}&market=from_token${countryParam}`;
-    const out = await spotifyApiFetch<{
+    let out = await spotifyApiFetch<{
       playlists?: { items?: FeaturedPlaylist[] };
       message?: string;
     }>(endpoint);
+    if (out.status === 403) {
+      // Some accounts/markets reject `market=from_token` on browse endpoints.
+      const fallbackEndpoint = `/browse/featured-playlists?limit=${limit}${countryParam}`;
+      out = await spotifyApiFetch<{
+        playlists?: { items?: FeaturedPlaylist[] };
+        message?: string;
+      }>(fallbackEndpoint);
+    }
     if (out.status === 401) {
       return NextResponse.json({ error: "Spotify link expired" }, { status: 401 });
     }
