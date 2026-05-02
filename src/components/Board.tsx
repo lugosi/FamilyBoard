@@ -31,6 +31,7 @@ type HueArea = {
 type Status = {
   googleLinked: boolean;
   googleConfigured: boolean;
+  nestConfigured?: boolean;
   spotifyLinked: boolean;
   spotifyConfigured: boolean;
   hueReady: boolean;
@@ -52,6 +53,14 @@ type CalendarEvent = GEvent & {
   sourceCalendarId?: string;
   sourceCalendarSummary?: string;
   sourceCalendarColor?: string | null;
+};
+
+type IndoorClimate = {
+  temperatureF?: number | null;
+  humidity?: number | null;
+  deviceName?: string | null;
+  hasData?: boolean;
+  error?: string;
 };
 
 type SpotifyDevice = {
@@ -118,7 +127,7 @@ const HUE_THEME_OPTIONS: Array<{ key: HueThemeKey; label: string }> = [
   { key: "nightlight", label: "Nightlight" },
 ];
 
-type RightWidgetKey = "clock" | "weather" | "hue" | "spotify";
+type RightWidgetKey = "clock" | "weather" | "nest" | "hue" | "spotify";
 type SpotifyResultTab = "recent" | "featured" | "tracks" | "albums" | "playlists";
 
 type SpotifyWebPlaybackPlayer = {
@@ -256,6 +265,7 @@ export function Board() {
   const [todayEvents, setTodayEvents] = useState<CalendarEvent[]>([]);
   const [areas, setAreas] = useState<HueArea[]>([]);
   const [weather, setWeather] = useState<Record<string, unknown> | null>(null);
+  const [indoorClimate, setIndoorClimate] = useState<IndoorClimate | null>(null);
   const [spotifyPlayback, setSpotifyPlayback] = useState<SpotifyPlayback | null>(
     null,
   );
@@ -348,6 +358,7 @@ export function Board() {
   >({
     clock: false,
     weather: false,
+    nest: false,
     hue: false,
     spotify: false,
   });
@@ -555,6 +566,24 @@ export function Board() {
         }
       } else {
         setWeather(null);
+      }
+
+      if (s.googleLinked && s.nestConfigured) {
+        const nRes = await fetch("/api/nest/indoor", { signal });
+        if (signal?.aborted) return;
+        if (nRes.status === 401 || nRes.status === 403 || nRes.status === 501) {
+          const data = (await nRes.json().catch(() => ({}))) as { error?: string };
+          setIndoorClimate({
+            hasData: false,
+            error: data.error || "Nest indoor climate unavailable.",
+          });
+        } else if (nRes.ok) {
+          setIndoorClimate((await nRes.json()) as IndoorClimate);
+        } else {
+          setIndoorClimate({ hasData: false, error: "Nest indoor climate unavailable." });
+        }
+      } else {
+        setIndoorClimate(null);
       }
     },
     [fetchIso.from, fetchIso.to, selectedCalendarId, fetchSpotifyDevices],
@@ -1954,6 +1983,118 @@ export function Board() {
                 </div>
               ) : (
                 <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading weather…</p>
+              )}
+            </section>
+
+            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-xl font-medium text-white sm:text-2xl">Indoor</h2>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                    onClick={() => void fetchBoard()}
+                    aria-label="Refresh indoor climate"
+                    title="Refresh indoor climate"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                      <path d="M21 3v6h-6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                    onClick={() => toggleWidgetCollapse("nest")}
+                    aria-label={collapsedWidgets.nest ? "Expand indoor" : "Collapse indoor"}
+                    title={collapsedWidgets.nest ? "Expand indoor" : "Collapse indoor"}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      {collapsedWidgets.nest ? (
+                        <path d="M6 15l6-6 6 6" />
+                      ) : (
+                        <path d="M6 9l6 6 6-6" />
+                      )}
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              {collapsedWidgets.nest ? null : !status?.googleConfigured ? (
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                  Set{" "}
+                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                    GOOGLE_CLIENT_ID
+                  </code>{" "}
+                  and{" "}
+                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                    GOOGLE_CLIENT_SECRET
+                  </code>
+                  .
+                </p>
+              ) : !status.googleLinked ? (
+                <div className="mt-3 space-y-3">
+                  <p className="text-base text-slate-300 sm:text-lg">
+                    Link Google to read Nest indoor climate.
+                  </p>
+                  <a
+                    className="inline-flex rounded-full bg-white px-4 py-2 text-base font-medium text-slate-900 hover:bg-slate-100 sm:text-lg"
+                    href="/api/auth/google"
+                  >
+                    Link Google
+                  </a>
+                </div>
+              ) : !status.nestConfigured ? (
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                  Set{" "}
+                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                    GOOGLE_NEST_PROJECT_ID
+                  </code>{" "}
+                  to enable Nest indoor readings.
+                </p>
+              ) : indoorClimate?.hasData ? (
+                <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
+                  <div className="flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-4xl font-semibold leading-none text-white sm:text-5xl">
+                        {Math.round(Number(indoorClimate.temperatureF ?? 0))}°
+                        <span className="text-base text-slate-400 sm:text-lg">F</span>
+                      </p>
+                      <p className="mt-1 text-sm text-slate-400 sm:text-base">
+                        {indoorClimate.deviceName || "Nest thermostat"}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Humidity</p>
+                      <p className="text-2xl font-semibold text-sky-300 sm:text-3xl">
+                        {Math.round(Number(indoorClimate.humidity ?? 0))}%
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : indoorClimate?.error ? (
+                <p className="mt-3 rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 sm:text-base">
+                  {indoorClimate.error}
+                </p>
+              ) : (
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading indoor climate…</p>
               )}
             </section>
 

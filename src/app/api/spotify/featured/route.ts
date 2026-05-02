@@ -80,6 +80,23 @@ export async function GET(request: Request) {
       // Last fallback: known-safe default country.
       out = await requestFeatured(`/browse/featured-playlists?limit=${limit}&country=US`);
     }
+    if (out.status === 403) {
+      // Final fallback for accounts where browse endpoints are blocked:
+      // return a high-signal public playlist shelf via search.
+      const fallbackSearch = await spotifyApiFetch<{
+        playlists?: { items?: FeaturedPlaylist[] };
+      }>(
+        `/search?q=${encodeURIComponent("top hits")}&type=playlist&market=from_token&limit=${limit}`,
+      );
+      if (fallbackSearch.status >= 200 && fallbackSearch.status < 300) {
+        return NextResponse.json({
+          playlists: fallbackSearch.data?.playlists?.items ?? [],
+          message: "Fallback playlists shown because featured endpoint is restricted on this account.",
+          source: "search_fallback",
+        });
+      }
+      out = fallbackSearch as typeof out;
+    }
     if (out.status === 401) {
       return NextResponse.json({ error: "Spotify link expired" }, { status: 401 });
     }

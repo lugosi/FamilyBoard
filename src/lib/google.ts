@@ -8,6 +8,7 @@ const TOKEN_FILE = "google-tokens.json";
 export const GOOGLE_CALENDAR_SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+  "https://www.googleapis.com/auth/sdm.service",
 ];
 
 export type StoredGoogleTokens = {
@@ -83,4 +84,9 @@ export function getDefaultCalendarId(): string {
 
 export function getDefaultTimeZone(): string {
   return process.env.DEFAULT_TIMEZONE?.trim() || "UTC";
+}
+
+export function getNestProjectId(): string | null {
+  const id = process.env.GOOGLE_NEST_PROJECT_ID?.trim();
+  return id || null;
 }

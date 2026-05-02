@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readGoogleTokens } from "@/lib/google";
+import { getNestProjectId, readGoogleTokens } from "@/lib/google";
 import { getHueBridgeIp, readHueUsername } from "@/lib/hue";
 import { readSpotifyTokens } from "@/lib/spotify";
 import { getWeatherCoordinates } from "@/lib/weather";
@@ -10,6 +10,7 @@ export async function GET() {
   const hueIp = getHueBridgeIp();
   const hueUser = await readHueUsername();
   const weather = getWeatherCoordinates();
+  const nestProjectId = getNestProjectId();
 
   return NextResponse.json({
     googleLinked: Boolean(google?.refresh_token),
@@ -24,5 +25,6 @@ export async function GET() {
     hueBridgeIp: hueIp,
     huePaired: Boolean(hueUser),
     weatherConfigured: Boolean(weather),
+    nestConfigured: Boolean(nestProjectId),
   });
 }
