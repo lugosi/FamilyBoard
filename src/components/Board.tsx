@@ -100,6 +100,15 @@ type SpotifySearchPlaylist = {
   owner?: { display_name?: string };
 };
 type HueThemeKey = "bright" | "relax" | "focus" | "nightlight";
+type SpotifyRecentItem = {
+  kind: "track" | "album" | "playlist";
+  id: string;
+  name: string;
+  subtitle: string;
+  imageUrl?: string;
+  uri?: string;
+  addedAt: number;
+};
 
 const HUE_PINNED_ORDER = ["tv", "living room", "caro", "office"] as const;
 const HUE_THEME_OPTIONS: Array<{ key: HueThemeKey; label: string }> = [
@@ -110,7 +119,7 @@ const HUE_THEME_OPTIONS: Array<{ key: HueThemeKey; label: string }> = [
 ];
 
 type RightWidgetKey = "clock" | "weather" | "hue" | "spotify";
-type SpotifyResultTab = "tracks" | "albums" | "playlists";
+type SpotifyResultTab = "recent" | "tracks" | "albums" | "playlists";
 
 type SpotifyWebPlaybackPlayer = {
   addListener: (event: string, cb: (arg: unknown) => void) => boolean;
@@ -191,6 +200,7 @@ function pickDefaultCalendarId(options: CalendarOption[]): string {
 
 const SESSION_EXPLICIT_CALENDAR = "familyboard_explicit_calendar";
 const SPOTIFY_KNOWN_DEVICES_KEY = "familyboard_spotify_known_devices";
+const SPOTIFY_RECENT_ITEMS_KEY = "familyboard_spotify_recent_items";
 
 function mergeSpotifyDevices(
   primary: SpotifyDevice[],
@@ -240,6 +250,7 @@ export function Board() {
   const search = useSearchParams();
   const [status, setStatus] = useState<Status | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [todayEvents, setTodayEvents] = useState<CalendarEvent[]>([]);
   const [areas, setAreas] = useState<HueArea[]>([]);
   const [weather, setWeather] = useState<Record<string, unknown> | null>(null);
   const [spotifyPlayback, setSpotifyPlayback] = useState<SpotifyPlayback | null>(
@@ -270,7 +281,18 @@ export function Board() {
     albums: SpotifySearchAlbum[];
     playlists: SpotifySearchPlaylist[];
   }>({ tracks: [], albums: [], playlists: [] });
-  const [spotifyResultTab, setSpotifyResultTab] = useState<SpotifyResultTab>("tracks");
+  const [spotifyResultTab, setSpotifyResultTab] = useState<SpotifyResultTab>("recent");
+  const [spotifyRecentItems, setSpotifyRecentItems] = useState<SpotifyRecentItem[]>(() => {
+    try {
+      if (typeof window === "undefined") return [];
+      const raw = localStorage.getItem(SPOTIFY_RECENT_ITEMS_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as SpotifyRecentItem[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
   const [spotifyPickOpen, setSpotifyPickOpen] = useState(false);
   const spotifyPickInputRef = useRef<HTMLInputElement | null>(null);
   const spotifySearchSeq = useRef(0);
@@ -455,11 +477,27 @@ export function Board() {
           const data = (await cRes.json()) as { events: CalendarEvent[] };
           setEvents(data.events ?? []);
         }
+        const todayFrom = new Date();
+        todayFrom.setHours(0, 0, 0, 0);
+        const todayTo = new Date(todayFrom);
+        todayTo.setDate(todayTo.getDate() + 1);
+        const tRes = await fetch(
+          `/api/calendar/events?from=${encodeURIComponent(todayFrom.toISOString())}&to=${encodeURIComponent(todayTo.toISOString())}&calendarId=${encodeURIComponent(activeCalendarId)}`,
+          { signal },
+        );
+        if (signal?.aborted) return;
+        if (tRes.status === 401) {
+          setTodayEvents([]);
+        } else if (tRes.ok) {
+          const data = (await tRes.json()) as { events: CalendarEvent[] };
+          setTodayEvents(data.events ?? []);
+        }
       } else {
         setCalendars([]);
         setSelectedCalendarId("primary");
         clearCalendarExplicitChoice();
         setEvents([]);
+        setTodayEvents([]);
       }
 
       if (s.hueReady) {
@@ -700,6 +738,24 @@ export function Board() {
       // ignore storage failures
     }
   }, [spotifyKnownDevices]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        SPOTIFY_RECENT_ITEMS_KEY,
+        JSON.stringify(spotifyRecentItems.slice(0, 30)),
+      );
+    } catch {
+      // ignore storage failures
+    }
+  }, [spotifyRecentItems]);
+
+  function addSpotifyRecentItem(item: Omit<SpotifyRecentItem, "addedAt">) {
+    setSpotifyRecentItems((prev) => {
+      const deduped = prev.filter((x) => !(x.kind === item.kind && x.id === item.id));
+      return [{ ...item, addedAt: Date.now() }, ...deduped].slice(0, 30);
+    });
+  }
 
   useEffect(() => {
     if (spotifySeekDraft !== null) return;
@@ -1045,7 +1101,7 @@ export function Board() {
       !extra?.deviceId
     ) {
       const msg =
-        "No active Spotify device. Select a Spotify Connect device or click 'Play here' for FamilyBoard, then try again.";
+        "No active Spotify device. Select a Spotify Connect device, then try again.";
       setDismissedAlertSignature(null);
       setMessage(msg);
       setSpotifyNotice(msg);
@@ -1080,7 +1136,7 @@ export function Board() {
       setDismissedAlertSignature(null);
       const combined = [j.error, detail].filter(Boolean).join(" — ");
       const msg = combined.includes("NO_ACTIVE_DEVICE")
-        ? "Spotify has no active device yet. Select a Spotify Connect device or click 'Play here', then retry."
+        ? "Spotify has no active device yet. Select a Spotify Connect device, then retry."
         : combined || "Spotify action failed";
       setMessage(msg);
       setSpotifyNotice(msg);
@@ -1184,8 +1240,10 @@ export function Board() {
     const q = spotifyQuery.trim();
     if (q.length < 1) {
       spotifySearchSeq.current += 1;
-      setSpotifySearching(false);
-      setSpotifySearchResults({ tracks: [], albums: [], playlists: [] });
+      queueMicrotask(() => {
+        setSpotifySearching(false);
+        setSpotifySearchResults({ tracks: [], albums: [], playlists: [] });
+      });
       return;
     }
     const id = window.setTimeout(() => void searchSpotify(), 420);
@@ -1298,7 +1356,7 @@ export function Board() {
   });
   const todayAllDayStrip = useMemo(() => {
     const today = new Date();
-    return events
+    return todayEvents
       .map((ev) => {
         const b = getEventBounds(ev);
         if (!b || b.kind !== "allday") return null;
@@ -1318,7 +1376,7 @@ export function Board() {
           event: CalendarEvent;
         } => Boolean(x),
       );
-  }, [events]);
+  }, [todayEvents]);
 
   const todayTimedStrip = useMemo(() => {
     const now = new Date();
@@ -1328,7 +1386,7 @@ export function Board() {
     dayEnd.setHours(20, 0, 0, 0);
     const fmt = (d: Date) =>
       d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-    return events
+    return todayEvents
       .map((ev) => {
         const b = getEventBounds(ev);
         if (!b || b.kind !== "timed") return null;
@@ -1354,7 +1412,7 @@ export function Board() {
       )
       .sort((a, b) => a.startMs - b.startMs)
       .slice(0, 20);
-  }, [events]);
+  }, [todayEvents]);
 
   return (
     <>
@@ -1846,6 +1904,14 @@ export function Board() {
                         key={area.id}
                         className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
                       >
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <p className="min-w-0 truncate text-xs font-medium text-slate-200 sm:text-sm">
+                            {area.name}
+                          </p>
+                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">
+                            {area.type}
+                          </span>
+                        </div>
                         <div className="flex items-center gap-2">
                           <select
                             className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
@@ -1901,6 +1967,14 @@ export function Board() {
                               key={area.id}
                               className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
                             >
+                              <div className="mb-1 flex items-center justify-between gap-2">
+                                <p className="min-w-0 truncate text-xs font-medium text-slate-200 sm:text-sm">
+                                  {area.name}
+                                </p>
+                                <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">
+                                  {area.type}
+                                </span>
+                              </div>
                               <div className="flex items-center gap-2">
                                 <select
                                   className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
@@ -2084,7 +2158,7 @@ export function Board() {
                     </p>
                   )}
 
-                  <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -2125,9 +2199,29 @@ export function Board() {
                       >
                         Next
                       </button>
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-600 p-2 text-slate-100 hover:border-slate-400"
+                        onClick={() => setSpotifyPickOpen(true)}
+                        aria-label="Search music"
+                        title="Search music"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <circle cx="11" cy="11" r="7" />
+                          <path d="M20 20l-3.5-3.5" />
+                        </svg>
+                      </button>
                     </div>
 
-                    <label className="min-w-0 flex-1 text-right text-sm font-medium uppercase tracking-wide text-slate-400 sm:min-w-[14rem] sm:text-base">
+                    <label className="min-w-0 text-sm font-medium uppercase tracking-wide text-slate-400 sm:min-w-[14rem] sm:max-w-[18rem] sm:flex-1 sm:text-right sm:text-base">
                       Volume {Math.round(spotifyActiveDevice?.volume_percent ?? 0)}%
                       <input
                         type="range"
@@ -2146,8 +2240,7 @@ export function Board() {
                   </div>
 
                   <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
-                    Device
-                    <div className="mt-1 flex items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <select
                         className="w-full min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
                         value={spotifyEffectiveDeviceId}
@@ -2180,62 +2273,7 @@ export function Board() {
                         {busy === "spotify-refresh-devices" ? "Refreshing..." : "Refresh devices"}
                       </button>
                     </div>
-                    <p className="mt-2 text-xs normal-case tracking-normal text-slate-500 sm:text-sm">
-                      If empty: open Spotify on phone, select the target device, then refresh here.
-                    </p>
                   </label>
-                  {spotifySdkDeviceId ? (
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        className="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400"
-                        onClick={() =>
-                          {
-                            if (!spotifySdkDeviceId) return;
-                            setSpotifySelectedDeviceId(spotifySdkDeviceId);
-                            void spotifyControl("set_device", {
-                              deviceId: spotifySdkDeviceId,
-                              play: false,
-                            });
-                          }
-                        }
-                      >
-                        Play here
-                      </button>
-                    </div>
-                  ) : null}
-
-                  <button
-                    type="button"
-                    className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-600 bg-gradient-to-r from-emerald-950/50 via-slate-950/60 to-sky-950/50 px-4 py-3 text-left transition hover:border-slate-400 hover:from-emerald-900/40 hover:to-sky-900/40"
-                    onClick={() => setSpotifyPickOpen(true)}
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-white sm:text-base">
-                        Search music
-                      </p>
-                      <p className="truncate text-xs text-slate-400 sm:text-sm">
-                        Tracks, albums, playlists — full search
-                      </p>
-                    </div>
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-slate-200"
-                      aria-hidden
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="h-5 w-5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M9 18V6l12 6-12 6z" />
-                      </svg>
-                    </span>
-                  </button>
-
                   <button
                     type="button"
                     disabled={busy === "spotify-disconnect"}
@@ -2467,15 +2505,23 @@ export function Board() {
 
             <div className="shrink-0 border-b border-slate-800 px-3 pb-2">
               <div className="flex gap-1 overflow-x-auto pb-1">
-                {(["tracks", "albums", "playlists"] as const).map((tab) => {
+                {(["recent", "tracks", "albums", "playlists"] as const).map((tab) => {
                   const count =
-                    tab === "tracks"
+                    tab === "recent"
+                      ? spotifyRecentItems.length
+                      : tab === "tracks"
                       ? spotifySearchResults.tracks.length
                       : tab === "albums"
                         ? spotifySearchResults.albums.length
                         : spotifySearchResults.playlists.length;
                   const label =
-                    tab === "tracks" ? "Songs" : tab === "albums" ? "Albums" : "Playlists";
+                    tab === "recent"
+                      ? "Recent"
+                      : tab === "tracks"
+                        ? "Songs"
+                        : tab === "albums"
+                          ? "Albums"
+                          : "Playlists";
                   return (
                     <button
                       key={tab}
@@ -2500,10 +2546,58 @@ export function Board() {
             </div>
 
             <div className="board-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-2">
-              {spotifyQuery.trim().length < 1 ? (
+              {spotifyResultTab !== "recent" && spotifyQuery.trim().length < 1 ? (
                 <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
                   Start typing to search Spotify.
                 </p>
+              ) : spotifyResultTab === "recent" ? (
+                spotifyRecentItems.length === 0 ? (
+                  <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
+                    Nothing recent yet.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-slate-800/90">
+                    {spotifyRecentItems.map((item) => (
+                      <li key={`rp-${item.kind}-${item.id}`} className="flex items-center gap-3 py-3">
+                        {item.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={item.imageUrl}
+                            alt=""
+                            className="h-14 w-14 shrink-0 rounded-md object-cover shadow-md"
+                          />
+                        ) : (
+                          <div className="h-14 w-14 shrink-0 rounded-md border border-slate-800 bg-slate-900" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-base font-medium text-white sm:text-lg">
+                            {item.name}
+                          </p>
+                          <p className="truncate text-sm text-slate-400">{item.subtitle}</p>
+                        </div>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20"
+                          onClick={() => {
+                            if (item.kind === "track") {
+                              void spotifyControl("play_track", {
+                                uri: item.uri,
+                                deviceId: spotifyEffectiveDeviceId || undefined,
+                              });
+                              return;
+                            }
+                            void spotifyControl("play_context", {
+                              uri: item.uri,
+                              deviceId: spotifyEffectiveDeviceId || undefined,
+                            });
+                          }}
+                        >
+                          Play
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )
               ) : spotifyResultTab === "tracks" ? (
                 spotifySearchResults.tracks.length === 0 ? (
                   <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
@@ -2571,7 +2665,21 @@ export function Board() {
                                   uri: t.uri,
                                   deviceId: spotifyEffectiveDeviceId || undefined,
                                 });
-                                if (ok) setSpotifyPickOpen(false);
+                                if (ok) {
+                                  addSpotifyRecentItem({
+                                    kind: "track",
+                                    id: t.id ?? t.uri ?? t.name ?? String(Date.now()),
+                                    name: t.name ?? "Unknown track",
+                                    subtitle:
+                                      t.artists
+                                        ?.map((a) => a.name)
+                                        .filter(Boolean)
+                                        .join(", ") ?? "Unknown artist",
+                                    imageUrl: t.album?.images?.[0]?.url,
+                                    uri: t.uri,
+                                  });
+                                  setSpotifyPickOpen(false);
+                                }
                               })()
                             }
                           >
@@ -2633,6 +2741,19 @@ export function Board() {
                                 uri: spotifyContextUri("album", a.id, a.uri),
                                 deviceId: spotifyEffectiveDeviceId || undefined,
                               });
+                              addSpotifyRecentItem({
+                                kind: "album",
+                                id: a.id ?? a.uri ?? a.name ?? String(Date.now()),
+                                name: a.name ?? "Unknown album",
+                                subtitle: `Album · ${
+                                  a.artists
+                                    ?.map((x) => x.name)
+                                    .filter(Boolean)
+                                    .join(", ") ?? "Unknown artist"
+                                }`,
+                                imageUrl: a.images?.[0]?.url,
+                                uri: spotifyContextUri("album", a.id, a.uri),
+                              });
                             }}
                           >
                             Play
@@ -2679,6 +2800,14 @@ export function Board() {
                             void spotifyControl("play_context", {
                               uri: spotifyContextUri("playlist", p.id, p.uri),
                               deviceId: spotifyEffectiveDeviceId || undefined,
+                            });
+                            addSpotifyRecentItem({
+                              kind: "playlist",
+                              id: p.id ?? p.uri ?? p.name ?? String(Date.now()),
+                              name: p.name ?? "Unknown playlist",
+                              subtitle: `Playlist · by ${p.owner?.display_name ?? "Unknown"}`,
+                              imageUrl: p.images?.[0]?.url,
+                              uri: spotifyContextUri("playlist", p.id, p.uri),
                             });
                           }}
                         >
