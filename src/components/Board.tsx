@@ -2318,7 +2318,7 @@ export function Board() {
                       </button>
                       </div>
                     </div>
-                    <label className="flex w-14 shrink-0 flex-col items-center justify-center gap-2 rounded-lg border border-slate-800 bg-slate-950/35 px-1 py-2 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                    <label className="flex w-14 shrink-0 flex-col items-center justify-end gap-2 self-end rounded-lg border border-slate-800 bg-slate-950/35 px-1 py-2 text-[10px] font-medium uppercase tracking-wide text-slate-400">
                       <span className="tabular-nums text-slate-300">
                         {Math.round(spotifyActiveDevice?.volume_percent ?? 0)}%
                       </span>
@@ -2328,7 +2328,7 @@ export function Board() {
                         max={100}
                         value={Math.round(spotifyActiveDevice?.volume_percent ?? 0)}
                         disabled={!spotifyActiveDevice}
-                        className="h-40 w-4 accent-sky-500 disabled:opacity-40"
+                        className="h-28 w-4 accent-sky-500 disabled:opacity-40"
                         style={{ writingMode: "vertical-lr", direction: "rtl" }}
                         onChange={(e) =>
                           void spotifyControl("set_volume", {
