@@ -1124,6 +1124,15 @@ export function Board() {
       typeof extra?.deviceId === "string" && extra.deviceId.trim()
         ? extra.deviceId
         : null;
+    const requestedDeviceIsSelectable = requestedDeviceId
+      ? requestedDeviceId === spotifySdkDeviceId || spotifyLiveDeviceIds.has(requestedDeviceId)
+      : true;
+    if (bodyActionNeedsLiveDevice(action) && requestedDeviceId && !requestedDeviceIsSelectable) {
+      setSpotifyNotice(
+        "Selected device is not currently online in Spotify. Open Spotify on that device first, then refresh devices.",
+      );
+      return false;
+    }
     const intendedDeviceId = requestedDeviceId || spotifyEffectiveDeviceId || null;
     if (
       (action === "play" || action === "play_track" || action === "play_context") &&
@@ -1155,6 +1164,14 @@ export function Board() {
     setBusy(`spotify-${action}`);
     setMessage(null);
     const payload: Record<string, unknown> = { action, ...(extra ?? {}) };
+    if (
+      typeof payload.deviceId === "string" &&
+      payload.deviceId &&
+      payload.deviceId !== spotifySdkDeviceId &&
+      !spotifyLiveDeviceIds.has(payload.deviceId)
+    ) {
+      delete payload.deviceId;
+    }
     if (
       (action === "play_track" || action === "play_context" || action === "queue_track") &&
       !payload.deviceId
@@ -1209,6 +1226,22 @@ export function Board() {
       }
     }
     return true;
+  }
+
+  function bodyActionNeedsLiveDevice(
+    action:
+      | "play"
+      | "pause"
+      | "next"
+      | "previous"
+      | "set_volume"
+      | "set_device"
+      | "seek"
+      | "play_track"
+      | "play_context"
+      | "queue_track",
+  ): boolean {
+    return action === "set_device" || action === "play" || action === "play_track" || action === "play_context" || action === "queue_track";
   }
 
   async function commitSpotifySeek() {
@@ -1386,9 +1419,8 @@ export function Board() {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [areas, pinnedHueIds],
   );
-  const spotifyLiveDeviceIds = useMemo(
-    () => new Set(spotifyDevices.map((d) => d.id).filter((id): id is string => Boolean(id))),
-    [spotifyDevices],
+  const spotifyLiveDeviceIds = new Set(
+    spotifyDevices.map((d) => d.id).filter((id): id is string => Boolean(id)),
   );
   const spotifyDeviceOptions = useMemo(() => {
     const live = mergeSpotifyDevices(spotifyDevices, []);
@@ -2310,11 +2342,11 @@ export function Board() {
                         value={spotifyEffectiveDeviceId}
                         onChange={(e) => {
                           const nextDeviceId = e.target.value;
-                          setSpotifySelectedDeviceId(nextDeviceId);
                           if (
                             nextDeviceId === spotifySdkDeviceId ||
                             spotifyLiveDeviceIds.has(nextDeviceId)
                           ) {
+                            setSpotifySelectedDeviceId(nextDeviceId);
                             void spotifyControl("set_device", { deviceId: nextDeviceId });
                           } else {
                             setSpotifyNotice(
