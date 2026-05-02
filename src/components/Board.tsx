@@ -293,6 +293,8 @@ export function Board() {
       return [];
     }
   });
+  const [spotifyRecentSource, setSpotifyRecentSource] = useState<"local" | "account">("local");
+  const [spotifyRecentError, setSpotifyRecentError] = useState<string | null>(null);
   const [spotifyPickOpen, setSpotifyPickOpen] = useState(false);
   const spotifyPickInputRef = useRef<HTMLInputElement | null>(null);
   const spotifySearchSeq = useRef(0);
@@ -775,19 +777,25 @@ export function Board() {
   }
 
   const refreshSpotifyAccountRecent = useCallback(async () => {
+    setSpotifyRecentError(null);
     const res = await fetch("/api/spotify/recent?limit=20");
     if (!res.ok) {
+      setSpotifyRecentSource("local");
       if (res.status === 403) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
-        setSpotifyNotice(
+        const msg =
           j.error ??
-            "Recent playback scope missing. Re-link Spotify to enable account recent history.",
-        );
+          "Recent playback scope missing. Re-link Spotify to enable account recent history.";
+        setSpotifyNotice(msg);
+        setSpotifyRecentError(msg);
+      } else {
+        setSpotifyRecentError("Could not load Spotify account recent history.");
       }
       return;
     }
     const data = (await res.json()) as { recent?: SpotifyRecentItem[] };
     const recent = data.recent ?? [];
+    if (recent.length > 0) setSpotifyRecentSource("account");
     setSpotifyRecentItems((prev) => mergeSpotifyRecentItems(recent, prev));
   }, []);
 
@@ -2173,24 +2181,26 @@ export function Board() {
                         </div>
                       </div>
                       {spotifyDurationMs > 0 ? (
-                        <div className="mt-3">
+                        <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400 sm:text-xs">
+                          <span className="w-10 shrink-0 text-right tabular-nums">
+                            {formatMsClock(spotifyProgressMs)}
+                          </span>
                           <input
                             type="range"
                             min={0}
                             max={spotifyDurationMs}
                             step={1000}
                             value={spotifyProgressMs}
-                            className="w-full accent-sky-500"
+                            className="min-w-0 flex-1 accent-sky-500"
                             onChange={(e) =>
                               setSpotifySeekDraft(Number(e.currentTarget.value))
                             }
                             onMouseUp={() => void commitSpotifySeek()}
                             onTouchEnd={() => void commitSpotifySeek()}
                           />
-                          <div className="mt-1 flex items-center justify-between text-xs text-slate-400 sm:text-sm">
-                            <span>{formatMsClock(spotifyProgressMs)}</span>
-                            <span>{formatMsClock(spotifyDurationMs)}</span>
-                          </div>
+                          <span className="w-10 shrink-0 tabular-nums">
+                            {formatMsClock(spotifyDurationMs)}
+                          </span>
                         </div>
                       ) : null}
                     </div>
@@ -2593,53 +2603,75 @@ export function Board() {
                   Start typing to search Spotify.
                 </p>
               ) : spotifyResultTab === "recent" ? (
-                spotifyRecentItems.length === 0 ? (
-                  <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
-                    Nothing recent yet.
-                  </p>
-                ) : (
-                  <ul className="divide-y divide-slate-800/90">
-                    {spotifyRecentItems.map((item) => (
-                      <li key={`rp-${item.kind}-${item.id}`} className="flex items-center gap-3 py-3">
-                        {item.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={item.imageUrl}
-                            alt=""
-                            className="h-14 w-14 shrink-0 rounded-md object-cover shadow-md"
-                          />
-                        ) : (
-                          <div className="h-14 w-14 shrink-0 rounded-md border border-slate-800 bg-slate-900" />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-base font-medium text-white sm:text-lg">
-                            {item.name}
-                          </p>
-                          <p className="truncate text-sm text-slate-400">{item.subtitle}</p>
-                        </div>
-                        <button
-                          type="button"
-                          className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20"
-                          onClick={() => {
-                            if (item.kind === "track") {
-                              void spotifyControl("play_track", {
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between px-1">
+                    <p className="text-xs text-slate-500 sm:text-sm">
+                      Source:{" "}
+                      <span className="font-medium text-slate-300">
+                        {spotifyRecentSource === "account" ? "Spotify account" : "FamilyBoard local"}
+                      </span>
+                    </p>
+                    <button
+                      type="button"
+                      className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-300 hover:border-slate-500"
+                      onClick={() => void refreshSpotifyAccountRecent()}
+                    >
+                      Refresh recent
+                    </button>
+                  </div>
+                  {spotifyRecentError ? (
+                    <p className="rounded-md border border-amber-700/60 bg-amber-950/30 px-2 py-1 text-xs text-amber-200">
+                      {spotifyRecentError}
+                    </p>
+                  ) : null}
+                  {spotifyRecentItems.length === 0 ? (
+                    <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
+                      Nothing recent yet.
+                    </p>
+                  ) : (
+                    <ul className="divide-y divide-slate-800/90">
+                      {spotifyRecentItems.map((item) => (
+                        <li key={`rp-${item.kind}-${item.id}`} className="flex items-center gap-3 py-3">
+                          {item.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={item.imageUrl}
+                              alt=""
+                              className="h-14 w-14 shrink-0 rounded-md object-cover shadow-md"
+                            />
+                          ) : (
+                            <div className="h-14 w-14 shrink-0 rounded-md border border-slate-800 bg-slate-900" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-base font-medium text-white sm:text-lg">
+                              {item.name}
+                            </p>
+                            <p className="truncate text-sm text-slate-400">{item.subtitle}</p>
+                          </div>
+                          <button
+                            type="button"
+                            className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20"
+                            onClick={() => {
+                              if (item.kind === "track") {
+                                void spotifyControl("play_track", {
+                                  uri: item.uri,
+                                  deviceId: spotifyEffectiveDeviceId || undefined,
+                                });
+                                return;
+                              }
+                              void spotifyControl("play_context", {
                                 uri: item.uri,
                                 deviceId: spotifyEffectiveDeviceId || undefined,
                               });
-                              return;
-                            }
-                            void spotifyControl("play_context", {
-                              uri: item.uri,
-                              deviceId: spotifyEffectiveDeviceId || undefined,
-                            });
-                          }}
-                        >
-                          Play
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )
+                            }}
+                          >
+                            Play
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               ) : spotifyResultTab === "tracks" ? (
                 spotifySearchResults.tracks.length === 0 ? (
                   <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
