@@ -206,20 +206,23 @@ function mergeSpotifyDevices(
   primary: SpotifyDevice[],
   secondary: SpotifyDevice[],
 ): SpotifyDevice[] {
-  const byId = new Map<string, SpotifyDevice>();
   const byName = new Map<string, SpotifyDevice>();
+  const byId = new Map<string, SpotifyDevice>();
   for (const d of [...primary, ...secondary]) {
     const id = (d.id ?? "").trim();
     const name = (d.name ?? "").trim().toLowerCase();
-    if (id && !byId.has(id)) {
-      byId.set(id, d);
+    if (name) {
+      const existing = byName.get(name);
+      if (!existing || (!existing.is_active && Boolean(d.is_active))) {
+        byName.set(name, d);
+      }
       continue;
     }
-    if (!id && name && !byName.has(name)) {
-      byName.set(name, d);
+    if (id && !byId.has(id)) {
+      byId.set(id, d);
     }
   }
-  return [...byId.values(), ...byName.values()];
+  return [...byName.values(), ...byId.values()];
 }
 
 function markCalendarExplicitlyChosen() {
@@ -1383,10 +1386,15 @@ export function Board() {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [areas, pinnedHueIds],
   );
-  const spotifyDeviceOptions = useMemo(
-    () => mergeSpotifyDevices(spotifyDevices, spotifyKnownDevices),
-    [spotifyDevices, spotifyKnownDevices],
+  const spotifyLiveDeviceIds = useMemo(
+    () => new Set(spotifyDevices.map((d) => d.id).filter((id): id is string => Boolean(id))),
+    [spotifyDevices],
   );
+  const spotifyDeviceOptions = useMemo(() => {
+    const live = mergeSpotifyDevices(spotifyDevices, []);
+    if (live.length > 0) return live;
+    return mergeSpotifyDevices(spotifyKnownDevices, []).slice(0, 8);
+  }, [spotifyDevices, spotifyKnownDevices]);
   const spotifyDurationMs = Math.max(0, Number(spotifyTrack?.duration_ms ?? 0));
   const spotifyProgressBaseMs =
     spotifySeekDraft !== null
@@ -2301,8 +2309,18 @@ export function Board() {
                         className="w-full min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
                         value={spotifyEffectiveDeviceId}
                         onChange={(e) => {
-                          setSpotifySelectedDeviceId(e.target.value);
-                          void spotifyControl("set_device", { deviceId: e.target.value });
+                          const nextDeviceId = e.target.value;
+                          setSpotifySelectedDeviceId(nextDeviceId);
+                          if (
+                            nextDeviceId === spotifySdkDeviceId ||
+                            spotifyLiveDeviceIds.has(nextDeviceId)
+                          ) {
+                            void spotifyControl("set_device", { deviceId: nextDeviceId });
+                          } else {
+                            setSpotifyNotice(
+                              "Selected device is last seen only. Open Spotify on that device first, then refresh devices.",
+                            );
+                          }
                         }}
                       >
                         {spotifySdkDeviceId && !spotifySdkInDeviceList ? (
