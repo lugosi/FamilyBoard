@@ -119,7 +119,7 @@ const HUE_THEME_OPTIONS: Array<{ key: HueThemeKey; label: string }> = [
 ];
 
 type RightWidgetKey = "clock" | "weather" | "hue" | "spotify";
-type SpotifyResultTab = "recent" | "tracks" | "albums" | "playlists";
+type SpotifyResultTab = "recent" | "featured" | "tracks" | "albums" | "playlists";
 
 type SpotifyWebPlaybackPlayer = {
   addListener: (event: string, cb: (arg: unknown) => void) => boolean;
@@ -298,6 +298,11 @@ export function Board() {
   });
   const [spotifyRecentSource, setSpotifyRecentSource] = useState<"local" | "account">("local");
   const [spotifyRecentError, setSpotifyRecentError] = useState<string | null>(null);
+  const [spotifyFeaturedPlaylists, setSpotifyFeaturedPlaylists] = useState<SpotifySearchPlaylist[]>(
+    [],
+  );
+  const [spotifyFeaturedLoading, setSpotifyFeaturedLoading] = useState(false);
+  const [spotifyFeaturedError, setSpotifyFeaturedError] = useState<string | null>(null);
   const [spotifyPickOpen, setSpotifyPickOpen] = useState(false);
   const spotifyPickInputRef = useRef<HTMLInputElement | null>(null);
   const spotifySearchSeq = useRef(0);
@@ -800,6 +805,23 @@ export function Board() {
     const recent = data.recent ?? [];
     if (recent.length > 0) setSpotifyRecentSource("account");
     setSpotifyRecentItems((prev) => mergeSpotifyRecentItems(recent, prev));
+  }, []);
+
+  const refreshSpotifyFeatured = useCallback(async () => {
+    setSpotifyFeaturedError(null);
+    setSpotifyFeaturedLoading(true);
+    try {
+      const res = await fetch("/api/spotify/featured?limit=20");
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        setSpotifyFeaturedError(j.error || "Could not load featured playlists.");
+        return;
+      }
+      const data = (await res.json()) as { playlists?: SpotifySearchPlaylist[] };
+      setSpotifyFeaturedPlaylists(data.playlists ?? []);
+    } finally {
+      setSpotifyFeaturedLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -1350,6 +1372,15 @@ export function Board() {
     });
   }, [spotifyPickOpen, spotifyResultTab, refreshSpotifyAccountRecent]);
 
+  useEffect(() => {
+    if (!spotifyPickOpen) return;
+    if (spotifyResultTab !== "featured") return;
+    if (spotifyFeaturedPlaylists.length > 0) return;
+    queueMicrotask(() => {
+      void refreshSpotifyFeatured();
+    });
+  }, [spotifyPickOpen, spotifyResultTab, spotifyFeaturedPlaylists.length, refreshSpotifyFeatured]);
+
   async function refreshSpotifyDevices() {
     setBusy("spotify-refresh-devices");
     setSpotifyNotice(null);
@@ -1491,7 +1522,9 @@ export function Board() {
           kind: "timed" as const,
           key: ev.id ?? `${ev.summary ?? "event"}-${b.start.toISOString()}`,
           startMs: start.getTime(),
-          label: `${fmt(start)}-${fmt(end)} ${ev.summary || "(No title)"}`,
+          startLabel: fmt(start),
+          endLabel: fmt(end),
+          summary: ev.summary || "(No title)",
           event: ev,
         };
       })
@@ -1500,13 +1533,20 @@ export function Board() {
           kind: "timed";
           key: string;
           startMs: number;
-          label: string;
+          startLabel: string;
+          endLabel: string;
+          summary: string;
           event: CalendarEvent;
         } => Boolean(x),
       )
       .sort((a, b) => a.startMs - b.startMs)
       .slice(0, 20);
   }, [todayEvents]);
+  const todayAllDayGlance = todayAllDayStrip.slice(0, 3);
+  const todayTimedGlance = todayTimedStrip.slice(0, 5);
+  const todayHiddenCount =
+    Math.max(0, todayAllDayStrip.length - todayAllDayGlance.length) +
+    Math.max(0, todayTimedStrip.length - todayTimedGlance.length);
 
   return (
     <>
@@ -1534,38 +1574,44 @@ export function Board() {
 
         <div className="board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overflow-x-hidden sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
           <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
-            <div className="mb-3 flex min-w-0 shrink-0 items-center gap-3 rounded-xl border border-slate-500/70 bg-slate-500/90 px-4 py-3 shadow-md shadow-slate-950/30 sm:mb-4 sm:gap-4 sm:px-5 sm:py-3.5 md:py-4 md:shadow-lg">
-              <span className="shrink-0 text-base font-semibold tracking-tight text-slate-950 sm:text-lg">
-                Today 8am-8pm
+            <div className="mb-3 flex min-w-0 shrink-0 items-start gap-3 rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 sm:mb-4 sm:gap-4 sm:px-4 sm:py-3">
+              <span className="shrink-0 pt-0.5 text-sm font-semibold tracking-tight text-white sm:text-base">
+                Today
               </span>
-              <div className="board-scrollbar min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-0.5 text-base text-slate-900 sm:text-lg">
+              <div className="min-w-0 flex-1">
                 {todayAllDayStrip.length === 0 && todayTimedStrip.length === 0 ? (
-                  <span className="text-slate-800 sm:text-base">No events in this window.</span>
+                  <span className="text-sm text-slate-400 sm:text-base">No events 8am-8pm.</span>
                 ) : (
-                  <>
-                    {todayAllDayStrip.map((item) => (
+                  <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                    {todayAllDayGlance.map((item) => (
                       <button
                         key={item.key}
                         type="button"
                         onClick={() => openEdit(item.event)}
-                        className="mr-2 inline-flex max-w-[15rem] items-center truncate rounded-full border border-violet-600/80 bg-violet-300/95 px-3 py-1.5 text-left text-sm font-medium text-violet-950 hover:border-violet-700 hover:bg-violet-300 sm:mr-3 sm:max-w-[20rem] sm:px-3.5 sm:py-2 sm:text-base"
+                        className="inline-flex max-w-[15rem] items-center truncate rounded-md border border-violet-500/70 bg-violet-500/20 px-2 py-1 text-left text-xs font-medium text-violet-100 hover:border-violet-400 sm:max-w-[18rem] sm:text-sm"
                         title={item.summary}
                       >
-                        {item.summary}
+                        All day - {item.summary}
                       </button>
                     ))}
-                    {todayTimedStrip.map((item) => (
+                    {todayTimedGlance.map((item) => (
                       <button
                         key={item.key}
                         type="button"
                         onClick={() => openEdit(item.event)}
-                        className="mr-2 inline-flex max-w-full items-center rounded-full border border-slate-600/90 bg-slate-200/95 px-3 py-1.5 text-left text-sm font-medium text-slate-900 shadow-sm hover:border-slate-700 hover:bg-slate-100 sm:mr-3 sm:px-3.5 sm:py-2 sm:text-base"
-                        title={item.label}
+                        className="inline-flex max-w-full items-center gap-1 truncate rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-left text-xs text-slate-100 hover:border-slate-500 sm:text-sm"
+                        title={`${item.startLabel}-${item.endLabel} ${item.summary}`}
                       >
-                        {item.label}
+                        <span className="font-semibold tabular-nums text-sky-300">{item.startLabel}</span>
+                        <span className="truncate">{item.summary}</span>
                       </button>
                     ))}
-                  </>
+                    {todayHiddenCount > 0 ? (
+                      <span className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-400 sm:text-sm">
+                        +{todayHiddenCount} more
+                      </span>
+                    ) : null}
+                  </div>
                 )}
               </div>
             </div>
@@ -2318,7 +2364,7 @@ export function Board() {
                       </button>
                       </div>
                     </div>
-                    <label className="flex w-14 shrink-0 flex-col items-center justify-end gap-2 self-end rounded-lg border border-slate-800 bg-slate-950/35 px-1 py-2 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                    <label className="flex w-14 shrink-0 flex-col items-center justify-start gap-2 self-start rounded-lg border border-slate-800 bg-slate-950/35 px-1 py-2 text-[10px] font-medium uppercase tracking-wide text-slate-400">
                       <span className="tabular-nums text-slate-300">
                         {Math.round(spotifyActiveDevice?.volume_percent ?? 0)}%
                       </span>
@@ -2382,10 +2428,24 @@ export function Board() {
                       <button
                         type="button"
                         disabled={busy === "spotify-refresh-devices"}
-                        className="shrink-0 rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:border-slate-400 disabled:opacity-50"
+                        className="shrink-0 rounded-full border border-slate-600 p-2 text-slate-100 hover:border-slate-400 disabled:opacity-50"
                         onClick={() => void refreshSpotifyDevices()}
+                        aria-label="Refresh devices"
+                        title="Refresh devices"
                       >
-                        {busy === "spotify-refresh-devices" ? "Refreshing..." : "Refresh devices"}
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className={`h-4 w-4 ${busy === "spotify-refresh-devices" ? "animate-spin" : ""}`}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                          <path d="M21 3v6h-6" />
+                        </svg>
                       </button>
                     </div>
                   </label>
@@ -2620,10 +2680,12 @@ export function Board() {
 
             <div className="shrink-0 border-b border-slate-800 px-3 pb-2">
               <div className="flex gap-1 overflow-x-auto pb-1">
-                {(["recent", "tracks", "albums", "playlists"] as const).map((tab) => {
+                {(["recent", "featured", "tracks", "albums", "playlists"] as const).map((tab) => {
                   const count =
                     tab === "recent"
                       ? spotifyRecentItems.length
+                      : tab === "featured"
+                        ? spotifyFeaturedPlaylists.length
                       : tab === "tracks"
                       ? spotifySearchResults.tracks.length
                       : tab === "albums"
@@ -2632,6 +2694,8 @@ export function Board() {
                   const label =
                     tab === "recent"
                       ? "Recent"
+                      : tab === "featured"
+                        ? "Featured"
                       : tab === "tracks"
                         ? "Songs"
                         : tab === "albums"
@@ -2661,7 +2725,9 @@ export function Board() {
             </div>
 
             <div className="board-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-2">
-              {spotifyResultTab !== "recent" && spotifyQuery.trim().length < 1 ? (
+              {spotifyResultTab !== "recent" &&
+              spotifyResultTab !== "featured" &&
+              spotifyQuery.trim().length < 1 ? (
                 <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
                   Start typing to search Spotify.
                 </p>
@@ -2738,6 +2804,80 @@ export function Board() {
                     </ul>
                   )}
                 </div>
+              ) : spotifyResultTab === "featured" ? (
+                spotifyFeaturedLoading ? (
+                  <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
+                    Loading featured playlists…
+                  </p>
+                ) : spotifyFeaturedError ? (
+                  <div className="space-y-3">
+                    <p className="rounded-md border border-amber-700/60 bg-amber-950/30 px-2 py-1 text-xs text-amber-200">
+                      {spotifyFeaturedError}
+                    </p>
+                    <button
+                      type="button"
+                      className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:border-slate-500"
+                      onClick={() => void refreshSpotifyFeatured()}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : spotifyFeaturedPlaylists.length === 0 ? (
+                  <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
+                    No featured playlists right now.
+                  </p>
+                ) : (
+                  <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {spotifyFeaturedPlaylists.slice(0, 20).map((p) => (
+                      <li
+                        key={`fp-${p.id ?? p.uri ?? p.name}`}
+                        className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 hover:bg-slate-900/80"
+                      >
+                        {p.images?.[0]?.url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={p.images[0].url}
+                            alt=""
+                            className="h-14 w-14 shrink-0 rounded-md object-cover shadow-md"
+                          />
+                        ) : (
+                          <div className="h-14 w-14 shrink-0 rounded-md border border-slate-800 bg-slate-900" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-base font-medium text-white sm:text-lg">
+                            {p.name ?? "Unknown playlist"}
+                          </p>
+                          <p className="truncate text-sm text-slate-400">
+                            Featured playlist
+                            {p.owner?.display_name ? ` · by ${p.owner.display_name}` : ""}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void spotifyControl("play_context", {
+                              uri: spotifyContextUri("playlist", p.id, p.uri),
+                              deviceId: spotifyEffectiveDeviceId || undefined,
+                            });
+                            addSpotifyRecentItem({
+                              kind: "playlist",
+                              id: p.id ?? p.uri ?? p.name ?? String(Date.now()),
+                              name: p.name ?? "Unknown playlist",
+                              subtitle: `Featured playlist${p.owner?.display_name ? ` · by ${p.owner.display_name}` : ""}`,
+                              imageUrl: p.images?.[0]?.url,
+                              uri: spotifyContextUri("playlist", p.id, p.uri),
+                            });
+                          }}
+                        >
+                          Play
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )
               ) : spotifyResultTab === "tracks" ? (
                 spotifySearchResults.tracks.length === 0 ? (
                   <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
