@@ -1383,6 +1383,10 @@ export function Board() {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [areas, pinnedHueIds],
   );
+  const spotifyDeviceOptions = useMemo(
+    () => mergeSpotifyDevices(spotifyDevices, spotifyKnownDevices),
+    [spotifyDevices, spotifyKnownDevices],
+  );
   const spotifyDurationMs = Math.max(0, Number(spotifyTrack?.duration_ms ?? 0));
   const spotifyProgressBaseMs =
     spotifySeekDraft !== null
@@ -2306,12 +2310,17 @@ export function Board() {
                             FamilyBoard Web Player {spotifyActiveDevice?.id === spotifySdkDeviceId ? "• active" : ""}
                           </option>
                         ) : null}
-                        {spotifyDevices.length === 0 ? (
+                        {spotifyDeviceOptions.length === 0 ? (
                           <option value="">No devices found</option>
                         ) : (
-                          spotifyDevices.map((d) => (
+                          spotifyDeviceOptions.map((d) => (
                             <option key={d.id} value={d.id}>
-                              {d.name ?? "Unknown"} {d.is_active ? "• active" : ""}
+                              {d.name ?? "Unknown"}{" "}
+                              {d.is_active
+                                ? "• active"
+                                : spotifyDevices.some((live) => live.id === d.id)
+                                  ? ""
+                                  : "• last seen"}
                             </option>
                           ))
                         )}
