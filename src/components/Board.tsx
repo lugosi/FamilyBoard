@@ -2199,8 +2199,10 @@ export function Board() {
                       {spotifyNotice}
                     </p>
                   ) : null}
-                  {spotifyTrack ? (
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
+                  <div className="flex items-stretch gap-3">
+                    <div className="min-w-0 flex-1 space-y-3">
+                      {spotifyTrack ? (
+                        <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
                       <div className="flex items-center gap-3">
                         {spotifyCover ? (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -2247,15 +2249,14 @@ export function Board() {
                           </span>
                         </div>
                       ) : null}
-                    </div>
-                  ) : (
-                    <p className="text-base text-slate-400 sm:text-lg">
-                      Nothing is currently playing.
-                    </p>
-                  )}
+                        </div>
+                      ) : (
+                        <p className="text-base text-slate-400 sm:text-lg">
+                          Nothing is currently playing.
+                        </p>
+                      )}
 
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2">
                       <button
                         type="button"
                         disabled={busy === "spotify-previous"}
@@ -2315,17 +2316,20 @@ export function Board() {
                           <path d="M20 20l-3.5-3.5" />
                         </svg>
                       </button>
+                      </div>
                     </div>
-
-                    <label className="w-36 shrink-0 text-right text-xs font-medium uppercase tracking-wide text-slate-400 sm:w-44 sm:text-sm">
-                      Vol {Math.round(spotifyActiveDevice?.volume_percent ?? 0)}%
+                    <label className="flex w-14 shrink-0 flex-col items-center justify-center gap-2 rounded-lg border border-slate-800 bg-slate-950/35 px-1 py-2 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                      <span className="tabular-nums text-slate-300">
+                        {Math.round(spotifyActiveDevice?.volume_percent ?? 0)}%
+                      </span>
                       <input
                         type="range"
                         min={0}
                         max={100}
                         value={Math.round(spotifyActiveDevice?.volume_percent ?? 0)}
                         disabled={!spotifyActiveDevice}
-                        className="mt-1 w-full accent-sky-500 disabled:opacity-40"
+                        className="h-40 w-4 accent-sky-500 disabled:opacity-40"
+                        style={{ writingMode: "vertical-lr", direction: "rtl" }}
                         onChange={(e) =>
                           void spotifyControl("set_volume", {
                             volumePercent: Number(e.target.value),
@@ -2688,9 +2692,12 @@ export function Board() {
                       Nothing recent yet.
                     </p>
                   ) : (
-                    <ul className="divide-y divide-slate-800/90">
+                    <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {spotifyRecentItems.map((item) => (
-                        <li key={`rp-${item.kind}-${item.id}`} className="flex items-center gap-3 py-3">
+                        <li
+                          key={`rp-${item.kind}-${item.id}`}
+                          className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5"
+                        >
                           {item.imageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -2737,9 +2744,12 @@ export function Board() {
                     No songs found.
                   </p>
                 ) : (
-                  <ul className="divide-y divide-slate-800/90">
+                  <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {spotifySearchResults.tracks.slice(0, 20).map((t) => (
-                      <li key={`tp-${t.id}`} className="flex items-center gap-3 py-3">
+                      <li
+                        key={`tp-${t.id}`}
+                        className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5"
+                      >
                         {t.album?.images?.[0]?.url ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -2836,11 +2846,11 @@ export function Board() {
                     No albums found.
                   </p>
                 ) : (
-                  <ul className="divide-y divide-slate-800/90">
+                  <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {spotifySearchResults.albums.slice(0, 20).map((a) => (
                       <li
                         key={`ap-${a.id}`}
-                        className="flex items-center gap-3 rounded-xl py-3 hover:bg-slate-900/80"
+                        className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 hover:bg-slate-900/80"
                       >
                           {a.images?.[0]?.url ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -2900,11 +2910,11 @@ export function Board() {
                   No playlists found.
                 </p>
               ) : (
-                <ul className="divide-y divide-slate-800/90">
+                <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {spotifySearchResults.playlists.slice(0, 20).map((p) => (
                     <li
                       key={`pp-${p.id}`}
-                      className="flex items-center gap-3 rounded-xl py-3 hover:bg-slate-900/80"
+                      className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 hover:bg-slate-900/80"
                     >
                         {p.images?.[0]?.url ? (
                           // eslint-disable-next-line @next/next/no-img-element
