@@ -13,6 +13,10 @@ type FeaturedPlaylist = {
   owner?: { display_name?: string };
 };
 
+type SpotifyUserProfile = {
+  country?: string;
+};
+
 function spotifyDetailMessage(detail: unknown): string | null {
   if (!detail || typeof detail !== "object") return null;
   const root = detail as {
@@ -50,18 +54,31 @@ export async function GET(request: Request) {
   const countryParam = country ? `&country=${encodeURIComponent(country)}` : "";
 
   try {
-    const endpoint = `/browse/featured-playlists?limit=${limit}&market=from_token${countryParam}`;
-    let out = await spotifyApiFetch<{
-      playlists?: { items?: FeaturedPlaylist[] };
-      message?: string;
-    }>(endpoint);
-    if (out.status === 403) {
-      // Some accounts/markets reject `market=from_token` on browse endpoints.
-      const fallbackEndpoint = `/browse/featured-playlists?limit=${limit}${countryParam}`;
-      out = await spotifyApiFetch<{
+    const requestFeatured = (endpoint: string) =>
+      spotifyApiFetch<{
         playlists?: { items?: FeaturedPlaylist[] };
         message?: string;
-      }>(fallbackEndpoint);
+      }>(endpoint);
+    let out = await requestFeatured(
+      `/browse/featured-playlists?limit=${limit}&market=from_token${countryParam}`,
+    );
+    if (out.status === 403) {
+      // Some accounts/markets reject `market=from_token` on browse endpoints.
+      out = await requestFeatured(`/browse/featured-playlists?limit=${limit}${countryParam}`);
+    }
+    if (out.status === 403 && !country) {
+      // Fallback: resolve account country and retry with explicit country.
+      const me = await spotifyApiFetch<SpotifyUserProfile>("/me");
+      const profileCountry = (me.data?.country ?? "").trim().toUpperCase();
+      if (profileCountry) {
+        out = await requestFeatured(
+          `/browse/featured-playlists?limit=${limit}&country=${encodeURIComponent(profileCountry)}`,
+        );
+      }
+    }
+    if (out.status === 403) {
+      // Last fallback: known-safe default country.
+      out = await requestFeatured(`/browse/featured-playlists?limit=${limit}&country=US`);
     }
     if (out.status === 401) {
       return NextResponse.json({ error: "Spotify link expired" }, { status: 401 });
