@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getGoogleRedirectUri } from "@/lib/app-url";
 import { getNestProjectId, getOAuth2WithRefresh, requireGoogleOAuthEnv } from "@/lib/google";
 
-const NEST_INDOOR_API_VERSION = 3;
+const NEST_INDOOR_API_VERSION = 4;
 
 type NestDevice = {
   name?: string;
@@ -156,11 +156,11 @@ export async function GET(request: Request) {
       const types = Array.from(new Set(devices.map((d) => d.type ?? "?")));
       const scopeHint =
         hasSdmScope === false
-          ? " Your Google token is missing https://www.googleapis.com/auth/sdm.service — disconnect Google in FamilyBoard and link again (OAuth consent must include Nest)."
+          ? " Your Google token is missing https://www.googleapis.com/auth/sdm.service - disconnect Google in FamilyBoard and link again (OAuth consent must include Nest)."
           : "";
       const structureHint =
         structures.length === 0 && devices.length === 0
-          ? " Nest SDM returned zero structures and zero devices — usually wrong GOOGLE_NEST_PROJECT_ID, wrong Google Cloud project linked to Device Access, or the linked Google account is not authorized for this Device Access project."
+          ? " Nest SDM returned zero structures and zero devices - usually wrong GOOGLE_NEST_PROJECT_ID, wrong Google Cloud project linked to Device Access, or the linked Google account is not authorized for this Device Access project."
           : "";
       const hint =
         devices.length === 0
@@ -174,6 +174,7 @@ export async function GET(request: Request) {
           hasData: false,
           error: `No Nest thermostat climate data found.${hint}`,
           diagnostic: {
+            enterpriseId: projectId,
             structureCount: structures.length,
             deviceCount: devices.length,
             hasSdmScope,
