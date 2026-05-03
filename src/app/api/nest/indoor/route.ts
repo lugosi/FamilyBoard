@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getGoogleRedirectUri } from "@/lib/app-url";
 import { getNestProjectId, getOAuth2WithRefresh, requireGoogleOAuthEnv } from "@/lib/google";
 
-const NEST_INDOOR_API_VERSION = 2;
+const NEST_INDOOR_API_VERSION = 3;
 
 type NestDevice = {
   name?: string;
@@ -44,35 +44,35 @@ async function readGoogleTokenScopes(accessToken: string): Promise<string[] | nu
   }
 }
 
-async function listAllNestStructures(
+type SdmErrorBody = { error?: { message?: string; status?: string } };
+
+async function fetchSdmJson<T>(url: string, accessToken: string): Promise<{
+  ok: boolean;
+  status: number;
+  data: (T & SdmErrorBody) | null;
+}> {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  const text = await res.text().catch(() => "");
+  if (!text) return { ok: res.ok, status: res.status, data: null };
+  try {
+    return { ok: res.ok, status: res.status, data: JSON.parse(text) as T & SdmErrorBody };
+  } catch {
+    return { ok: res.ok, status: res.status, data: null };
+  }
+}
+
+/** Device Access list endpoints: call without pagination params (some enterprises reject `pageSize`). */
+async function listNestStructures(
   accessToken: string,
   enterpriseId: string,
 ): Promise<Array<{ name?: string }>> {
-  const structures: Array<{ name?: string }> = [];
-  let pageToken: string | undefined;
-  do {
-    const qs = new URLSearchParams();
-    qs.set("pageSize", "100");
-    if (pageToken) qs.set("pageToken", pageToken);
-    const res = await fetch(
-      `https://smartdevicemanagement.googleapis.com/v1/enterprises/${encodeURIComponent(enterpriseId)}/structures?${qs.toString()}`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-        cache: "no-store",
-      },
-    );
-    const text = await res.text().catch(() => "");
-    let pageData = {} as NestStructuresResponse & { error?: { message?: string } };
-    try {
-      pageData = text ? (JSON.parse(text) as typeof pageData) : {};
-    } catch {
-      return structures;
-    }
-    if (!res.ok) return structures;
-    structures.push(...(pageData.structures ?? []));
-    pageToken = pageData.nextPageToken;
-  } while (pageToken && structures.length < 500);
-  return structures;
+  const base = `https://smartdevicemanagement.googleapis.com/v1/enterprises/${encodeURIComponent(enterpriseId)}/structures`;
+  const out = await fetchSdmJson<NestStructuresResponse>(base, accessToken);
+  if (!out.ok) return [];
+  return out.data?.structures ?? [];
 }
 
 export async function GET(request: Request) {
@@ -106,68 +106,40 @@ export async function GET(request: Request) {
     const scopes = await readGoogleTokenScopes(token);
     const hasSdmScope = scopes?.includes("https://www.googleapis.com/auth/sdm.service") ?? null;
 
-    const structures = (await listAllNestStructures(token, projectId)) ?? [];
+    const structures = await listNestStructures(token, projectId);
 
-    const devices: NestDevice[] = [];
-    let pageToken: string | undefined;
-    let parseError: string | null = null;
-    do {
-      const qs = new URLSearchParams();
-      qs.set("pageSize", "100");
-      if (pageToken) qs.set("pageToken", pageToken);
-      const res = await fetch(
-        `https://smartdevicemanagement.googleapis.com/v1/enterprises/${encodeURIComponent(projectId)}/devices?${qs.toString()}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        },
-      );
-      const text = await res.text().catch(() => "");
-      let pageData = {} as NestDevicesResponse & { error?: { message?: string } };
-      try {
-        pageData = text ? (JSON.parse(text) as typeof pageData) : {};
-      } catch {
-        parseError = "invalid_json_response";
-        break;
-      }
-      if (res.status === 401) {
-        return NextResponse.json(
-          { error: "Google link expired. Re-link Google.", apiVersion: NEST_INDOOR_API_VERSION },
-          { status: 401 },
-        );
-      }
-      if (res.status === 403) {
-        return NextResponse.json(
-          {
-            error:
-              "Nest access forbidden. Confirm Device Access is enabled and re-link Google to grant thermostat scope.",
-            detail: pageData?.error?.message ?? null,
-            apiVersion: NEST_INDOOR_API_VERSION,
-          },
-          { status: 403 },
-        );
-      }
-      if (!res.ok) {
-        return NextResponse.json(
-          {
-            error: "Failed to read Nest devices",
-            detail: pageData?.error?.message ?? null,
-            apiVersion: NEST_INDOOR_API_VERSION,
-          },
-          { status: 502 },
-        );
-      }
+    const devicesUrl = `https://smartdevicemanagement.googleapis.com/v1/enterprises/${encodeURIComponent(projectId)}/devices`;
+    const devicesResult = await fetchSdmJson<NestDevicesResponse>(devicesUrl, token);
 
-      devices.push(...(pageData.devices ?? []));
-      pageToken = pageData.nextPageToken;
-    } while (pageToken && devices.length < 500);
-
-    if (parseError) {
+    if (devicesResult.status === 401) {
       return NextResponse.json(
-        { error: "Failed to parse Nest API response", apiVersion: NEST_INDOOR_API_VERSION },
+        { error: "Google link expired. Re-link Google.", apiVersion: NEST_INDOOR_API_VERSION },
+        { status: 401 },
+      );
+    }
+    if (devicesResult.status === 403) {
+      return NextResponse.json(
+        {
+          error:
+            "Nest access forbidden. Confirm Device Access is enabled and re-link Google to grant thermostat scope.",
+          detail: devicesResult.data?.error?.message ?? null,
+          apiVersion: NEST_INDOOR_API_VERSION,
+        },
+        { status: 403 },
+      );
+    }
+    if (!devicesResult.ok) {
+      return NextResponse.json(
+        {
+          error: "Failed to read Nest devices",
+          detail: devicesResult.data?.error?.message ?? null,
+          apiVersion: NEST_INDOOR_API_VERSION,
+        },
         { status: 502 },
       );
     }
+
+    const devices = devicesResult.data?.devices ?? [];
 
     function pickClimateDevice(list: NestDevice[]): NestDevice | null {
       const withClimate = list.filter((d) => {
