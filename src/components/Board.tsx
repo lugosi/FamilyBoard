@@ -20,7 +20,7 @@ import {
 } from "@/lib/calendar-layout";
 import { OnekoCat } from "@/components/OnekoCat";
 import { WeatherIcon } from "@/components/WeatherIcon";
-import { dailyForecastByDate } from "@/lib/weather";
+import { dailyForecastByDate, type DailyForecast } from "@/lib/weather";
 import type { NestDiagnostic } from "@/lib/nest-sdm";
 
 type HueArea = {
@@ -1487,9 +1487,7 @@ export function Board() {
   const current = weather?.current as
     | { temperatureF?: number; humidity?: number; code?: number; windMph?: number }
     | undefined;
-  const daily = weather?.daily as
-    | Array<{ date?: string; maxF?: number; minF?: number; code?: number }>
-    | undefined;
+  const daily = weather?.daily as DailyForecast[] | undefined;
   const calendarDailyForecast = useMemo(
     () => dailyForecastByDate(daily),
     [daily],

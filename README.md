@@ -17,6 +17,27 @@ Open [http://localhost:3000](http://localhost:3000), then use **Link Google** an
 
 See `.env.example`. Use a writable `DATA_DIR` in production so OAuth tokens and Hue pairing survive restarts.
 
+### Google Calendar + Nest (why a new OAuth client?)
+
+FamilyBoard uses **one** `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` for both Calendar and Nest. Nest is a separate env value:
+
+| Variable | What it is |
+| -------- | ---------- |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth **Web client** from [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials |
+| `GOOGLE_NEST_PROJECT_ID` | **Device Access enterprise UUID** from [Google Device Access](https://console.nest.google.com/device-access) (not the OAuth client id and not the numeric GCP project number) |
+
+[Nest Device Access](https://developers.google.com/nest/device-access/get-started) only works when a **Google Cloud project is linked** to your Device Access enterprise. Google expects the OAuth app (client id) to live in **that same linked GCP project**, with the **Smart Device Management API** enabled there.
+
+If Calendar was already set up under a different GCP project, enabling Nest often means:
+
+1. Creating (or choosing) a GCP project in the Device Access console and linking it.
+2. Enabling **Smart Device Management API** on that project.
+3. Creating a **new** OAuth Web client in that project’s Credentials page.
+4. Setting `GOOGLE_NEST_PROJECT_ID` to the enterprise UUID from Device Access.
+5. Replacing `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` with the new client, then **disconnecting and re-linking Google** in the app (tokens are bound to the client that issued them).
+
+The Indoor widget **Debug** button or `GET /api/nest/debug` helps verify enterprise id, `sdm.service` scope, and device list after re-linking.
+
 Spotify OAuth redirect URI must be added in your Spotify app settings:
 
 - `${PUBLIC_APP_URL}/api/auth/spotify/callback`
