@@ -1,8 +1,8 @@
 import { getGoogleRedirectUri } from "@/lib/app-url";
 import {
   GOOGLE_CALENDAR_SCOPES,
+  getGoogleAccessToken,
   getNestProjectId,
-  getOAuth2WithRefresh,
   readGoogleTokens,
   requireGoogleOAuthEnv,
 } from "@/lib/google";
@@ -55,6 +55,8 @@ export type NestDiagnostic = {
   config: {
     googleOAuthConfigured: boolean;
     nestProjectId: string | null;
+    /** Masked GOOGLE_CLIENT_ID — compare to OAuth Client ID in Device Access project settings. */
+    oauthClientIdMasked: string | null;
     googleLinked: boolean;
     hasRefreshToken: boolean;
     hasStoredAccessToken: boolean;
@@ -97,6 +99,13 @@ export type NestDiagnostic = {
 
 export function cToF(c: number): number {
   return c * (9 / 5) + 32;
+}
+
+function maskOAuthClientId(clientId: string | undefined): string | null {
+  const id = clientId?.trim();
+  if (!id) return null;
+  if (id.length <= 16) return "***";
+  return `${id.slice(0, 16)}…${id.slice(-12)}`;
 }
 
 export function mapGoogleOAuthError(e: unknown): string {
@@ -186,6 +195,16 @@ export function buildNestHints(input: {
   const hints: string[] = [];
   if (!input.nestProjectId) {
     hints.push("Set GOOGLE_NEST_PROJECT_ID to the Device Access enterprise UUID (not the GCP project number).");
+  } else if (/^\d+$/.test(input.nestProjectId)) {
+    hints.push(
+      "GOOGLE_NEST_PROJECT_ID looks like a numeric GCP project number. Replace it with the Device Access Project ID (UUID with dashes) from https://console.nest.google.com/device-access.",
+    );
+  } else if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.nestProjectId)
+  ) {
+    hints.push(
+      "GOOGLE_NEST_PROJECT_ID should be a UUID like xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx from the Device Access console.",
+    );
   }
   if (!input.googleLinked) {
     hints.push("Link Google via /api/auth/google (FamilyBoard → Link Google).");
@@ -206,6 +225,11 @@ export function buildNestHints(input: {
       "SDM returned 403 — enable Smart Device Management API, complete Device Access, and authorize the linked Google account for this enterprise.",
     );
   }
+  if (input.devicesStatus === 404) {
+    hints.push(
+      "SDM 404 Enterprise not found — your token is valid but this enterprise is not tied to GOOGLE_CLIENT_ID. In https://console.nest.google.com/device-access open THIS project (same UUID as GOOGLE_NEST_PROJECT_ID) → Project Information → OAuth Client ID must exactly match GOOGLE_CLIENT_ID in env (each Device Access project allows only one client id). If you created a new OAuth client in GCP, paste it into Device Access and re-link Google.",
+    );
+  }
   if (input.structuresError) {
     hints.push(`Structures: ${input.structuresError}`);
   }
@@ -216,10 +240,12 @@ export function buildNestHints(input: {
     input.structureCount === 0 &&
     input.deviceCount === 0 &&
     !input.oauthError &&
-    input.devicesStatus !== 403
+    input.devicesStatus !== 401 &&
+    input.devicesStatus !== 403 &&
+    input.devicesStatus !== 404
   ) {
     hints.push(
-      "Zero structures and zero devices — wrong GOOGLE_NEST_PROJECT_ID, GCP project not linked in Device Access, or this Google account lacks access to the enterprise.",
+      "Zero structures and zero devices with HTTP 200 — the linked Google account may not be invited to this Device Access project (OAuth consent test users), or the home has no devices in Google Home yet.",
     );
   }
   if (input.deviceCount > 0 && input.climateDeviceCount === 0) {
@@ -238,11 +264,8 @@ export function buildNestHints(input: {
 export async function getNestAccessToken(
   redirectUri: string,
 ): Promise<{ token: string; scopes: string[] | null; hasSdmScope: boolean | null }> {
-  const oauth2 = await getOAuth2WithRefresh(redirectUri);
   try {
-    const accessToken = await oauth2.getAccessToken();
-    const token = accessToken.token?.trim();
-    if (!token) throw new Error("Google token unavailable after refresh");
+    const token = await getGoogleAccessToken(redirectUri);
     const scopes = await readGoogleTokenScopes(token);
     return {
       token,
@@ -289,9 +312,11 @@ export async function runNestDiagnostics(request: Request): Promise<NestDiagnost
   }
 
   const stored = await readGoogleTokens();
+  const oauthClientIdMasked = maskOAuthClientId(process.env.GOOGLE_CLIENT_ID);
   const config = {
     googleOAuthConfigured,
     nestProjectId: projectId,
+    oauthClientIdMasked,
     googleLinked: Boolean(stored?.refresh_token),
     hasRefreshToken: Boolean(stored?.refresh_token),
     hasStoredAccessToken: Boolean(stored?.access_token),

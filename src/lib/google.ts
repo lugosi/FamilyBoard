@@ -74,6 +74,26 @@ export async function getOAuth2WithRefresh(redirectUri: string) {
   return oauth2;
 }
 
+/** Refresh access token; clears stored tokens on invalid_grant (stale/wrong OAuth client). */
+export async function getGoogleAccessToken(redirectUri: string): Promise<string> {
+  const oauth2 = await getOAuth2WithRefresh(redirectUri);
+  try {
+    const res = await oauth2.getAccessToken();
+    const token = res.token?.trim();
+    if (!token) throw new Error("Google token unavailable after refresh");
+    return token;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("invalid_grant")) {
+      await clearGoogleTokens();
+      throw new Error(
+        "Google refresh token rejected (invalid_grant). Disconnect Google in FamilyBoard and link again.",
+      );
+    }
+    throw e;
+  }
+}
+
 export function getCalendarClient(auth: ReturnType<typeof createOAuth2>) {
   return google.calendar({ version: "v3", auth });
 }

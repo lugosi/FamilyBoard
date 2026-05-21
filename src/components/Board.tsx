@@ -2201,6 +2201,10 @@ export function Board() {
                     <dd className="truncate font-mono text-[10px]">
                       {nestDebug.config.nestProjectId ?? "—"}
                     </dd>
+                    <dt className="text-slate-500">OAuth client</dt>
+                    <dd className="truncate font-mono text-[10px]">
+                      {nestDebug.config.oauthClientIdMasked ?? "—"}
+                    </dd>
                   </dl>
                   {nestDebug.sdm.deviceSummaries.length > 0 ? (
                     <ul className="mb-2 space-y-1 text-xs text-slate-400">
