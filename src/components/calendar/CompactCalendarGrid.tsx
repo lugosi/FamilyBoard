@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { WeatherIcon } from "@/components/WeatherIcon";
 import {
   addDays,
   allDayEventsForCompactDay,
@@ -12,6 +13,7 @@ import {
   timedEventsForCompactDay,
   type GEvent,
 } from "@/lib/calendar-layout";
+import type { DailyForecast } from "@/lib/weather";
 
 const WEEKDAY = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 const VISIBLE_TIMED = 4;
@@ -19,6 +21,8 @@ const VISIBLE_TIMED = 4;
 type Props = {
   weekStarts: Date[];
   events: GEvent[];
+  /** Local YYYY-MM-DD keys from Open-Meteo daily forecast. */
+  dailyForecastByDate?: Record<string, DailyForecast>;
   showCalendarSource?: boolean;
   /** Larger type and day cells when the layout has extra vertical room (e.g. alert dismissed). */
   comfortable?: boolean;
@@ -33,6 +37,7 @@ type SourceEvent = GEvent & {
 export function CompactCalendarGrid({
   weekStarts,
   events,
+  dailyForecastByDate,
   showCalendarSource = false,
   comfortable = false,
   onSelectEvent,
@@ -86,6 +91,7 @@ export function CompactCalendarGrid({
             <CompactWeekBlock
               weekStartMonday={ws}
               events={events}
+              dailyForecastByDate={dailyForecastByDate}
               visibleAllDayLimit={visibleAllDayLimit}
               showCalendarSource={showCalendarSource}
               comfortable={comfortable}
@@ -101,6 +107,7 @@ export function CompactCalendarGrid({
 function CompactWeekBlock({
   weekStartMonday,
   events,
+  dailyForecastByDate,
   visibleAllDayLimit,
   showCalendarSource,
   comfortable,
@@ -108,6 +115,7 @@ function CompactWeekBlock({
 }: {
   weekStartMonday: Date;
   events: GEvent[];
+  dailyForecastByDate?: Record<string, DailyForecast>;
   visibleAllDayLimit: number;
   showCalendarSource: boolean;
   comfortable: boolean;
@@ -132,10 +140,11 @@ function CompactWeekBlock({
             d.getDate() === 1
               ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
               : String(d.getDate());
+          const dayForecast = dailyForecastByDate?.[key];
 
           const dayMinH = comfortable
-            ? "min-h-[3.75rem] sm:min-h-[4rem]"
-            : "min-h-[3.25rem] sm:min-h-[3.5rem]";
+            ? "min-h-[4.5rem] sm:min-h-[4.75rem]"
+            : "min-h-[4rem] sm:min-h-[4.25rem]";
 
           return (
             <div
@@ -145,27 +154,51 @@ function CompactWeekBlock({
               }`}
             >
               <div
-                className={`flex shrink-0 items-start justify-center ${
-                  comfortable ? "h-8" : "h-7"
+                className={`flex shrink-0 flex-col items-center justify-center gap-0.5 ${
+                  comfortable ? "min-h-16 py-0.5" : "min-h-14 py-0.5"
                 }`}
               >
                 {today ? (
                   <span
-                    className={`flex items-center justify-center rounded-full bg-blue-600 px-0.5 font-medium text-white ${
+                    className={`flex items-center justify-center rounded-full bg-blue-600 px-0.5 font-semibold text-white ${
                       comfortable
-                        ? "h-7 min-w-[26px] text-base"
-                        : "h-6 min-w-[22px] text-sm"
+                        ? "h-9 min-w-[2.25rem] text-lg"
+                        : "h-8 min-w-[2rem] text-base"
                     }`}
                   >
                     {d.getDate()}
                   </span>
                 ) : (
                   <span
-                    className={`text-slate-400 ${comfortable ? "text-base" : "text-sm"}`}
+                    className={`font-medium leading-none text-slate-300 ${
+                      comfortable ? "text-lg" : "text-base"
+                    }`}
                   >
                     {dayLabel}
                   </span>
                 )}
+                {dayForecast ? (
+                  <div
+                    className="flex items-center justify-center gap-0.5 leading-none"
+                    title={`High ${Math.round(dayForecast.maxF)}° / low ${Math.round(dayForecast.minF)}°`}
+                  >
+                    <WeatherIcon
+                      code={dayForecast.code}
+                      className={comfortable ? "h-3.5 w-3.5 shrink-0" : "h-3 w-3 shrink-0"}
+                    />
+                    <span
+                      className={`whitespace-nowrap tabular-nums ${
+                        comfortable ? "text-[11px]" : "text-[10px]"
+                      }`}
+                    >
+                      <span className="font-medium text-slate-200">
+                        {Math.round(dayForecast.maxF)}°
+                      </span>
+                      <span className="text-slate-500">/</span>
+                      <span className="text-slate-400">{Math.round(dayForecast.minF)}°</span>
+                    </span>
+                  </div>
+                ) : null}
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-px">
                 {visibleAllDay.map((ev) => (

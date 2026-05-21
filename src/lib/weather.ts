@@ -1,3 +1,13 @@
+/** Open-Meteo standard forecast API maximum (days). */
+export const WEATHER_FORECAST_DAYS = 16;
+
+export type DailyForecast = {
+  date: string;
+  maxF: number;
+  minF: number;
+  code: number;
+};
+
 export type WeatherSnapshot = {
   latitude: number;
   longitude: number;
@@ -8,12 +18,7 @@ export type WeatherSnapshot = {
     code: number;
     windMph: number;
   };
-  daily: Array<{
-    date: string;
-    maxF: number;
-    minF: number;
-    code: number;
-  }>;
+  daily: DailyForecast[];
   hourlyToday: Array<{
     time: string;
     temperatureF: number;
@@ -46,7 +51,7 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
     daily: "weather_code,temperature_2m_max,temperature_2m_min",
     hourly: "temperature_2m,weather_code",
     timezone: process.env.WEATHER_TIMEZONE?.trim() || "auto",
-    forecast_days: "5",
+    forecast_days: String(WEATHER_FORECAST_DAYS),
   });
 
   const res = await fetch(
@@ -122,4 +127,14 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
     daily,
     hourlyToday,
   };
+}
+
+export function dailyForecastByDate(
+  daily: DailyForecast[] | undefined,
+): Record<string, DailyForecast> {
+  const out: Record<string, DailyForecast> = {};
+  for (const row of daily ?? []) {
+    if (row.date) out[row.date] = row;
+  }
+  return out;
 }

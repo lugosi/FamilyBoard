@@ -20,6 +20,8 @@ import {
 } from "@/lib/calendar-layout";
 import { OnekoCat } from "@/components/OnekoCat";
 import { WeatherIcon } from "@/components/WeatherIcon";
+import { dailyForecastByDate } from "@/lib/weather";
+import type { NestDiagnostic } from "@/lib/nest-sdm";
 
 type HueArea = {
   id: string;
@@ -61,6 +63,15 @@ type IndoorClimate = {
   deviceName?: string | null;
   hasData?: boolean;
   error?: string;
+  diagnostic?: {
+    enterpriseId?: string;
+    structureCount?: number;
+    deviceCount?: number;
+    hasSdmScope?: boolean | null;
+    deviceTypes?: string[];
+  };
+  hints?: string[];
+  debugUrl?: string;
 };
 
 type SpotifyDevice = {
@@ -187,12 +198,6 @@ function dateKeyToDatetimeLocal(key: string, hour: number, minute: number): stri
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(hour)}:${pad(minute)}`;
 }
 
-function shortWeekdayFromForecastDate(dateStr: string): string {
-  const d = new Date(`${dateStr}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString(undefined, { weekday: "short" });
-}
-
 /** Prefer a calendar named "Berkeley" when picking a default from the list. */
 function pickDefaultCalendarId(options: CalendarOption[]): string {
   if (options.length === 0) return "primary";
@@ -210,6 +215,7 @@ function pickDefaultCalendarId(options: CalendarOption[]): string {
 const SESSION_EXPLICIT_CALENDAR = "familyboard_explicit_calendar";
 const SPOTIFY_KNOWN_DEVICES_KEY = "familyboard_spotify_known_devices";
 const SPOTIFY_RECENT_ITEMS_KEY = "familyboard_spotify_recent_items";
+const SPOTIFY_VOLUME_STEP = 5;
 
 function mergeSpotifyDevices(
   primary: SpotifyDevice[],
@@ -266,6 +272,9 @@ export function Board() {
   const [areas, setAreas] = useState<HueArea[]>([]);
   const [weather, setWeather] = useState<Record<string, unknown> | null>(null);
   const [indoorClimate, setIndoorClimate] = useState<IndoorClimate | null>(null);
+  const [nestDebug, setNestDebug] = useState<NestDiagnostic | null>(null);
+  const [nestDebugLoading, setNestDebugLoading] = useState(false);
+  const [nestDebugOpen, setNestDebugOpen] = useState(false);
   const [spotifyPlayback, setSpotifyPlayback] = useState<SpotifyPlayback | null>(
     null,
   );
@@ -571,19 +580,23 @@ export function Board() {
       if (s.googleLinked && s.nestConfigured) {
         const nRes = await fetch("/api/nest/indoor", { signal });
         if (signal?.aborted) return;
-        if (nRes.status === 401 || nRes.status === 403 || nRes.status === 501) {
-          const data = (await nRes.json().catch(() => ({}))) as { error?: string };
+        const data = (await nRes.json().catch(() => ({}))) as IndoorClimate & {
+          error?: string;
+        };
+        if (nRes.ok) {
+          setIndoorClimate(data);
+        } else {
           setIndoorClimate({
             hasData: false,
             error: data.error || "Nest indoor climate unavailable.",
+            diagnostic: data.diagnostic,
+            hints: data.hints,
+            debugUrl: data.debugUrl ?? "/api/nest/debug",
           });
-        } else if (nRes.ok) {
-          setIndoorClimate((await nRes.json()) as IndoorClimate);
-        } else {
-          setIndoorClimate({ hasData: false, error: "Nest indoor climate unavailable." });
         }
       } else {
         setIndoorClimate(null);
+        setNestDebug(null);
       }
     },
     [fetchIso.from, fetchIso.to, selectedCalendarId, fetchSpotifyDevices],
@@ -1135,6 +1148,26 @@ export function Board() {
     await fetchBoard();
   }
 
+  async function fetchNestDebug() {
+    setNestDebugLoading(true);
+    setNestDebugOpen(true);
+    try {
+      const res = await fetch("/api/nest/debug");
+      const data = (await res.json()) as NestDiagnostic & { error?: string };
+      if (data.apiVersion) {
+        setNestDebug(data);
+      } else {
+        setNestDebug(null);
+        setMessage(data.error ?? "Nest diagnostics failed");
+      }
+    } catch {
+      setNestDebug(null);
+      setMessage("Nest diagnostics request failed");
+    } finally {
+      setNestDebugLoading(false);
+    }
+  }
+
   async function logoutGoogle() {
     await fetch("/api/auth/logout", { method: "POST" });
     clearCalendarExplicitChoice();
@@ -1303,6 +1336,15 @@ export function Board() {
     await spotifyControl("seek", { positionMs: clamped });
   }
 
+  async function adjustSpotifyVolume(delta: number) {
+    const device = spotifyDevices.find((d) => d.is_active) ?? spotifyPlayback?.device;
+    if (!device) return;
+    const current = Math.round(device.volume_percent ?? 0);
+    const next = Math.max(0, Math.min(100, current + delta));
+    if (next === current) return;
+    await spotifyControl("set_volume", { volumePercent: next });
+  }
+
   function spotifyContextUri(
     kind: "album" | "playlist",
     id?: string,
@@ -1448,6 +1490,10 @@ export function Board() {
   const daily = weather?.daily as
     | Array<{ date?: string; maxF?: number; minF?: number; code?: number }>
     | undefined;
+  const calendarDailyForecast = useMemo(
+    () => dailyForecastByDate(daily),
+    [daily],
+  );
   const hourlyToday = weather?.hourlyToday as
     | Array<{ time?: string; temperatureF?: number; code?: number }>
     | undefined;
@@ -1456,6 +1502,8 @@ export function Board() {
   const spotifyArtist = spotifyTrack?.artists?.map((a) => a.name).filter(Boolean).join(", ");
   const spotifyActiveDevice =
     spotifyDevices.find((d) => d.is_active) ?? spotifyPlayback?.device ?? null;
+  const spotifyVolumePercent = Math.round(spotifyActiveDevice?.volume_percent ?? 0);
+  const spotifyVolumeBusy = busy === "spotify-set_volume";
   const spotifyEffectiveDeviceId =
     spotifySelectedDeviceId || spotifyActiveDevice?.id || spotifySdkDeviceId || "";
   const spotifySdkInDeviceList = Boolean(
@@ -1680,6 +1728,9 @@ export function Board() {
                       <CompactCalendarGrid
                         weekStarts={weekStarts}
                         events={events}
+                        dailyForecastByDate={
+                          status?.weatherConfigured ? calendarDailyForecast : undefined
+                        }
                         showCalendarSource={selectedCalendarId === "__all__"}
                         comfortable={calendarComfortable}
                         onSelectEvent={(ev) => openEdit(ev)}
@@ -1957,29 +2008,6 @@ export function Board() {
                       </div>
                     </div>
                   ) : null}
-                  {daily && daily.length > 0 ? (
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/50 px-1 py-1.5 sm:px-2">
-                      <div className="flex w-full flex-nowrap items-stretch justify-between gap-0.5">
-                        {daily.slice(0, 7).map((d) => (
-                          <div
-                            key={d.date}
-                            className="flex min-w-0 flex-1 flex-col items-center gap-0.5 text-center"
-                          >
-                            <span className="w-full truncate text-[10px] font-semibold uppercase leading-tight text-slate-400">
-                              {shortWeekdayFromForecastDate(d.date ?? "")}
-                            </span>
-                            <WeatherIcon
-                              code={Number(d.code ?? 0)}
-                              className="h-4 w-4 shrink-0"
-                            />
-                            <span className="w-full truncate text-[10px] font-medium leading-tight text-slate-200">
-                              {Math.round(d.minF ?? 0)}-{Math.round(d.maxF ?? 0)}°
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               ) : (
                 <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading weather…</p>
@@ -1990,6 +2018,17 @@ export function Board() {
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Indoor</h2>
                 <div className="flex items-center gap-3">
+                  {status?.googleLinked && status.nestConfigured ? (
+                    <button
+                      type="button"
+                      className="rounded-md px-2 py-1 text-xs font-medium text-slate-400 hover:bg-slate-800/70 hover:text-white sm:text-sm"
+                      onClick={() => void fetchNestDebug()}
+                      disabled={nestDebugLoading}
+                      title="Run full Nest / SDM diagnostics"
+                    >
+                      {nestDebugLoading ? "…" : "Debug"}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
@@ -2090,12 +2129,106 @@ export function Board() {
                   </div>
                 </div>
               ) : indoorClimate?.error ? (
-                <p className="mt-3 rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 sm:text-base">
-                  {indoorClimate.error}
-                </p>
+                <div className="mt-3 space-y-2">
+                  <p className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 sm:text-base">
+                    {indoorClimate.error}
+                  </p>
+                  {indoorClimate.hints && indoorClimate.hints.length > 0 ? (
+                    <ul className="list-inside list-disc space-y-1 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs text-slate-400 sm:text-sm">
+                      {indoorClimate.hints.map((h) => (
+                        <li key={h}>{h}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {indoorClimate.diagnostic ? (
+                    <pre className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/60 p-2 text-[10px] leading-snug text-slate-400 sm:text-xs">
+                      {JSON.stringify(indoorClimate.diagnostic, null, 2)}
+                    </pre>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="text-sm text-sky-400 hover:text-sky-300"
+                    onClick={() => void fetchNestDebug()}
+                    disabled={nestDebugLoading}
+                  >
+                    {nestDebugLoading ? "Running diagnostics…" : "Run full Nest diagnostics"}
+                  </button>
+                </div>
               ) : (
                 <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading indoor climate…</p>
               )}
+              {nestDebugOpen && nestDebug ? (
+                <div className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950/80 p-2">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Nest diagnostics
+                    </p>
+                    <button
+                      type="button"
+                      className="text-xs text-slate-500 hover:text-slate-300"
+                      onClick={() => setNestDebugOpen(false)}
+                    >
+                      Hide
+                    </button>
+                  </div>
+                  {nestDebug.hints.length > 0 ? (
+                    <ul className="mb-2 list-inside list-disc space-y-0.5 text-xs text-amber-200/90">
+                      {nestDebug.hints.map((h) => (
+                        <li key={h}>{h}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <dl className="mb-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs text-slate-300">
+                    <dt className="text-slate-500">OAuth</dt>
+                    <dd>{nestDebug.oauth.ok ? "ok" : nestDebug.oauth.error ?? "failed"}</dd>
+                    <dt className="text-slate-500">SDM scope</dt>
+                    <dd>
+                      {nestDebug.oauth.hasSdmScope === null
+                        ? "?"
+                        : nestDebug.oauth.hasSdmScope
+                          ? "yes"
+                          : "no"}
+                    </dd>
+                    <dt className="text-slate-500">Structures</dt>
+                    <dd>
+                      {nestDebug.sdm.structures.status} ({nestDebug.sdm.structures.count})
+                    </dd>
+                    <dt className="text-slate-500">Devices</dt>
+                    <dd>
+                      {nestDebug.sdm.devices.status} ({nestDebug.sdm.devices.count})
+                    </dd>
+                    <dt className="text-slate-500">Climate devices</dt>
+                    <dd>{nestDebug.sdm.climateDeviceCount}</dd>
+                    <dt className="text-slate-500">Enterprise</dt>
+                    <dd className="truncate font-mono text-[10px]">
+                      {nestDebug.config.nestProjectId ?? "—"}
+                    </dd>
+                  </dl>
+                  {nestDebug.sdm.deviceSummaries.length > 0 ? (
+                    <ul className="mb-2 space-y-1 text-xs text-slate-400">
+                      {nestDebug.sdm.deviceSummaries.map((d) => (
+                        <li key={d.name} className="truncate font-mono text-[10px]">
+                          {d.customName || d.type} · {d.type}
+                          {d.hasTemperature || d.hasHumidity
+                            ? ` · ${d.temperatureC ?? "?"}°C ${d.humidityPercent ?? "?"}%`
+                            : " · no climate traits"}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <pre className="overflow-x-auto text-[10px] leading-snug text-slate-500">
+                    {JSON.stringify(nestDebug, null, 2)}
+                  </pre>
+                  <a
+                    className="mt-2 inline-block text-xs text-sky-400 hover:text-sky-300"
+                    href="/api/nest/debug"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open /api/nest/debug
+                  </a>
+                </div>
+              ) : null}
             </section>
 
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
@@ -2514,25 +2647,35 @@ export function Board() {
                       </button>
                       </div>
                     </div>
-                    <label className="flex w-14 shrink-0 flex-col items-center justify-start gap-2 self-start rounded-lg border border-slate-800 bg-slate-950/35 px-1 py-2 text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                      <span className="tabular-nums text-slate-300">
-                        {Math.round(spotifyActiveDevice?.volume_percent ?? 0)}%
+                    <div
+                      className="flex w-[4.75rem] shrink-0 flex-col items-center gap-1.5 self-start rounded-lg border border-slate-800 bg-slate-950/35 px-2 py-2"
+                      aria-label="Volume"
+                    >
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                        Vol
                       </span>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={Math.round(spotifyActiveDevice?.volume_percent ?? 0)}
-                        disabled={!spotifyActiveDevice}
-                        className="h-28 w-4 accent-sky-500 disabled:opacity-40"
-                        style={{ writingMode: "vertical-lr", direction: "rtl" }}
-                        onChange={(e) =>
-                          void spotifyControl("set_volume", {
-                            volumePercent: Number(e.target.value),
-                          })
-                        }
-                      />
-                    </label>
+                      <button
+                        type="button"
+                        disabled={!spotifyActiveDevice || spotifyVolumeBusy || spotifyVolumePercent >= 100}
+                        className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-600 text-3xl leading-none text-slate-100 hover:border-sky-500 hover:bg-slate-800/80 disabled:opacity-40 sm:h-14 sm:w-14"
+                        aria-label="Volume up"
+                        onClick={() => void adjustSpotifyVolume(SPOTIFY_VOLUME_STEP)}
+                      >
+                        +
+                      </button>
+                      <span className="min-h-[2.25rem] tabular-nums text-2xl font-semibold leading-none text-white sm:text-3xl">
+                        {spotifyVolumePercent}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={!spotifyActiveDevice || spotifyVolumeBusy || spotifyVolumePercent <= 0}
+                        className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-600 text-3xl leading-none text-slate-100 hover:border-sky-500 hover:bg-slate-800/80 disabled:opacity-40 sm:h-14 sm:w-14"
+                        aria-label="Volume down"
+                        onClick={() => void adjustSpotifyVolume(-SPOTIFY_VOLUME_STEP)}
+                      >
+                        −
+                      </button>
+                    </div>
                   </div>
 
                   <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
