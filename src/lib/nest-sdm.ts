@@ -95,10 +95,28 @@ export type NestDiagnostic = {
     hasData: boolean;
   };
   hints: string[];
+  /** Open in browser to grant home/device access via Google Nest PCM (required for non-empty device list). */
+  partnerConnectionsAuthUrl: string | null;
 };
 
 export function cToF(c: number): number {
   return c * (9 / 5) + 32;
+}
+
+/** Google Nest Partner Connections Manager — grants home/device access for SDM. */
+export function buildNestPartnerConnectionsAuthUrl(
+  enterpriseId: string,
+  clientId: string,
+): string {
+  const params = new URLSearchParams({
+    redirect_uri: "https://www.google.com",
+    access_type: "offline",
+    prompt: "consent",
+    client_id: clientId,
+    response_type: "code",
+    scope: SDM_SCOPE,
+  });
+  return `https://nestservices.google.com/partnerconnections/${encodeURIComponent(enterpriseId)}/auth?${params.toString()}`;
 }
 
 function maskOAuthClientId(clientId: string | undefined): string | null {
@@ -245,7 +263,7 @@ export function buildNestHints(input: {
     input.devicesStatus !== 404
   ) {
     hints.push(
-      "Zero structures and zero devices with HTTP 200 — the linked Google account may not be invited to this Device Access project (OAuth consent test users), or the home has no devices in Google Home yet.",
+      "HTTP 200 but zero structures/devices — OAuth is wired correctly; Nest still needs Partner Connections (PCM). Link Google does not pick which home/devices to share. Open /api/auth/nest/pcm (or Authorize Nest devices in the Indoor widget), sign in with the same Google account, enable your home and thermostat on the Nest permissions screen, then refresh. If OAuth app is in Testing, add that account under GCP OAuth consent screen → Test users. Thermostat must be in Google Home (not legacy Nest app only).",
     );
   }
   if (input.deviceCount > 0 && input.climateDeviceCount === 0) {
@@ -303,6 +321,11 @@ export async function fetchNestSdmState(
 export async function runNestDiagnostics(request: Request): Promise<NestDiagnostic> {
   const timestamp = new Date().toISOString();
   const projectId = getNestProjectId();
+  const clientIdForPcm = process.env.GOOGLE_CLIENT_ID?.trim() ?? "";
+  const partnerConnectionsAuthUrl =
+    projectId && clientIdForPcm
+      ? buildNestPartnerConnectionsAuthUrl(projectId, clientIdForPcm)
+      : null;
   let googleOAuthConfigured = false;
   try {
     requireGoogleOAuthEnv();
@@ -353,6 +376,7 @@ export async function runNestDiagnostics(request: Request): Promise<NestDiagnost
       },
       climate: { deviceName: null, temperatureF: null, humidity: null, hasData: false },
       hints,
+      partnerConnectionsAuthUrl,
     };
   }
 
@@ -372,6 +396,7 @@ export async function runNestDiagnostics(request: Request): Promise<NestDiagnost
       },
       climate: { deviceName: null, temperatureF: null, humidity: null, hasData: false },
       hints,
+      partnerConnectionsAuthUrl: null,
     };
   }
 
@@ -406,6 +431,7 @@ export async function runNestDiagnostics(request: Request): Promise<NestDiagnost
       },
       climate: { deviceName: null, temperatureF: null, humidity: null, hasData: false },
       hints: linkHints,
+      partnerConnectionsAuthUrl,
     };
   }
 
@@ -450,6 +476,7 @@ export async function runNestDiagnostics(request: Request): Promise<NestDiagnost
       },
       climate: { deviceName: null, temperatureF: null, humidity: null, hasData: false },
       hints: oauthHints,
+      partnerConnectionsAuthUrl,
     };
   }
 
@@ -524,5 +551,6 @@ export async function runNestDiagnostics(request: Request): Promise<NestDiagnost
       hasData: Number.isFinite(tempC) || Number.isFinite(humidity),
     },
     hints: diagnosticHints,
+    partnerConnectionsAuthUrl,
   };
 }

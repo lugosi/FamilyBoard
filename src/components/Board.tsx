@@ -72,6 +72,8 @@ type IndoorClimate = {
   };
   hints?: string[];
   debugUrl?: string;
+  pcmAuthorizePath?: string;
+  partnerConnectionsAuthUrl?: string;
 };
 
 type SpotifyDevice = {
@@ -2143,14 +2145,22 @@ export function Board() {
                       {JSON.stringify(indoorClimate.diagnostic, null, 2)}
                     </pre>
                   ) : null}
-                  <button
-                    type="button"
-                    className="text-sm text-sky-400 hover:text-sky-300"
-                    onClick={() => void fetchNestDebug()}
-                    disabled={nestDebugLoading}
-                  >
-                    {nestDebugLoading ? "Running diagnostics…" : "Run full Nest diagnostics"}
-                  </button>
+                  <div className="flex flex-wrap gap-3">
+                    <a
+                      className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 sm:text-base"
+                      href="/api/auth/nest/pcm"
+                    >
+                      Authorize Nest devices
+                    </a>
+                    <button
+                      type="button"
+                      className="text-sm text-sky-400 hover:text-sky-300"
+                      onClick={() => void fetchNestDebug()}
+                      disabled={nestDebugLoading}
+                    >
+                      {nestDebugLoading ? "Running diagnostics…" : "Run full Nest diagnostics"}
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading indoor climate…</p>
@@ -2221,14 +2231,22 @@ export function Board() {
                   <pre className="overflow-x-auto text-[10px] leading-snug text-slate-500">
                     {JSON.stringify(nestDebug, null, 2)}
                   </pre>
-                  <a
-                    className="mt-2 inline-block text-xs text-sky-400 hover:text-sky-300"
-                    href="/api/nest/debug"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open /api/nest/debug
-                  </a>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    <a
+                      className="text-xs text-sky-400 hover:text-sky-300"
+                      href="/api/auth/nest/pcm"
+                    >
+                      Authorize Nest devices (PCM)
+                    </a>
+                    <a
+                      className="text-xs text-sky-400 hover:text-sky-300"
+                      href="/api/nest/debug"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open /api/nest/debug
+                    </a>
+                  </div>
                 </div>
               ) : null}
             </section>

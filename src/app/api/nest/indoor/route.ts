@@ -4,6 +4,7 @@ import { getNestProjectId, requireGoogleOAuthEnv } from "@/lib/google";
 import {
   NEST_API_VERSION,
   buildNestHints,
+  buildNestPartnerConnectionsAuthUrl,
   cToF,
   fetchNestSdmState,
   getNestAccessToken,
@@ -98,6 +99,11 @@ export async function GET(request: Request) {
             deviceTypes: types.slice(0, 12),
           },
           hints,
+          partnerConnectionsAuthUrl: buildNestPartnerConnectionsAuthUrl(
+            projectId,
+            requireGoogleOAuthEnv().clientId,
+          ),
+          pcmAuthorizePath: "/api/auth/nest/pcm",
           debugUrl: "/api/nest/debug",
           apiVersion: NEST_API_VERSION,
         },
