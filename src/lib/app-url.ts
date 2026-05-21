@@ -21,3 +21,13 @@ export function getAppOrigin(request: Request): string {
   if (base) return base;
   return new URL(request.url).origin;
 }
+
+/** Redirect URI for Nest Partner Connections Manager (must be on the OAuth Web client). */
+export function getNestPcmRedirectUri(request: Request): string {
+  const base = process.env.PUBLIC_APP_URL?.replace(/\/$/, "");
+  if (base) {
+    return `${base}/api/auth/nest/pcm/callback`;
+  }
+  const u = new URL(request.url);
+  return `${u.origin}/api/auth/nest/pcm/callback`;
+}

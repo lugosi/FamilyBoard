@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getGoogleRedirectUri } from "@/lib/app-url";
+import { getGoogleRedirectUri, getNestPcmRedirectUri } from "@/lib/app-url";
 import { getNestProjectId, requireGoogleOAuthEnv } from "@/lib/google";
 import {
   NEST_API_VERSION,
@@ -102,6 +102,7 @@ export async function GET(request: Request) {
           partnerConnectionsAuthUrl: buildNestPartnerConnectionsAuthUrl(
             projectId,
             requireGoogleOAuthEnv().clientId,
+            getNestPcmRedirectUri(request),
           ),
           pcmAuthorizePath: "/api/auth/nest/pcm",
           debugUrl: "/api/nest/debug",

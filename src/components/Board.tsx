@@ -398,6 +398,11 @@ export function Board() {
     const err = search.get("google_error");
     if (err) return `Google: ${err}`;
     if (search.get("google") === "linked") return "Google Calendar linked.";
+    const nestPcmErr = search.get("nest_pcm_error");
+    if (nestPcmErr) return `Nest authorize: ${nestPcmErr}`;
+    if (search.get("nest_pcm") === "linked") {
+      return "Nest home/devices authorized — indoor climate should update shortly.";
+    }
     const spotifyErr = search.get("spotify_error");
     if (spotifyErr) return `Spotify: ${spotifyErr}`;
     if (search.get("spotify") === "linked") return "Spotify linked.";

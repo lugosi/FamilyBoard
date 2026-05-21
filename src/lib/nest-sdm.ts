@@ -1,4 +1,4 @@
-import { getGoogleRedirectUri } from "@/lib/app-url";
+import { getGoogleRedirectUri, getNestPcmRedirectUri } from "@/lib/app-url";
 import {
   GOOGLE_CALENDAR_SCOPES,
   getGoogleAccessToken,
@@ -107,9 +107,10 @@ export function cToF(c: number): number {
 export function buildNestPartnerConnectionsAuthUrl(
   enterpriseId: string,
   clientId: string,
+  redirectUri: string,
 ): string {
   const params = new URLSearchParams({
-    redirect_uri: "https://www.google.com",
+    redirect_uri: redirectUri,
     access_type: "offline",
     prompt: "consent",
     client_id: clientId,
@@ -263,7 +264,7 @@ export function buildNestHints(input: {
     input.devicesStatus !== 404
   ) {
     hints.push(
-      "HTTP 200 but zero structures/devices — OAuth is wired correctly; Nest still needs Partner Connections (PCM). Link Google does not pick which home/devices to share. Open /api/auth/nest/pcm (or Authorize Nest devices in the Indoor widget), sign in with the same Google account, enable your home and thermostat on the Nest permissions screen, then refresh. If OAuth app is in Testing, add that account under GCP OAuth consent screen → Test users. Thermostat must be in Google Home (not legacy Nest app only).",
+      "HTTP 200 but zero structures/devices — complete Nest Partner Connections (PCM): open /api/auth/nest/pcm, use the SAME Google account as Link Google, turn ON your home and thermostat on the Nest permissions screen, then return to the board and refresh. Add {PUBLIC_APP_URL}/api/auth/nest/pcm/callback to OAuth redirect URIs. Thermostat must be in Google Home.",
     );
   }
   if (input.deviceCount > 0 && input.climateDeviceCount === 0) {
@@ -324,7 +325,11 @@ export async function runNestDiagnostics(request: Request): Promise<NestDiagnost
   const clientIdForPcm = process.env.GOOGLE_CLIENT_ID?.trim() ?? "";
   const partnerConnectionsAuthUrl =
     projectId && clientIdForPcm
-      ? buildNestPartnerConnectionsAuthUrl(projectId, clientIdForPcm)
+      ? buildNestPartnerConnectionsAuthUrl(
+          projectId,
+          clientIdForPcm,
+          getNestPcmRedirectUri(request),
+        )
       : null;
   let googleOAuthConfigured = false;
   try {

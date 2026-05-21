@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
+import { getNestPcmRedirectUri } from "@/lib/app-url";
 import { buildNestPartnerConnectionsAuthUrl } from "@/lib/nest-sdm";
 import { getNestProjectId, requireGoogleOAuthEnv } from "@/lib/google";
 
 /** Redirect to Google Nest Partner Connections Manager (grant home + device access). */
-export async function GET() {
+export async function GET(request: Request) {
   let clientId: string;
   try {
     ({ clientId } = requireGoogleOAuthEnv());
@@ -19,6 +20,10 @@ export async function GET() {
     return NextResponse.json({ error: "Set GOOGLE_NEST_PROJECT_ID" }, { status: 501 });
   }
 
-  const url = buildNestPartnerConnectionsAuthUrl(projectId, clientId);
+  const url = buildNestPartnerConnectionsAuthUrl(
+    projectId,
+    clientId,
+    getNestPcmRedirectUri(request),
+  );
   return NextResponse.redirect(url);
 }
