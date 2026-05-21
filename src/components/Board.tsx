@@ -21,7 +21,8 @@ import {
 import { OnekoCat } from "@/components/OnekoCat";
 import { WeatherIcon } from "@/components/WeatherIcon";
 import { dailyForecastByDate, type DailyForecast } from "@/lib/weather";
-import type { NestDiagnostic } from "@/lib/nest-sdm";
+import { IndoorClimateCharts } from "@/components/IndoorClimateCharts";
+import type { ClimateHistorySample } from "@/lib/nest-climate-history";
 
 type HueArea = {
   id: string;
@@ -63,17 +64,7 @@ type IndoorClimate = {
   deviceName?: string | null;
   hasData?: boolean;
   error?: string;
-  diagnostic?: {
-    enterpriseId?: string;
-    structureCount?: number;
-    deviceCount?: number;
-    hasSdmScope?: boolean | null;
-    deviceTypes?: string[];
-  };
-  hints?: string[];
-  debugUrl?: string;
-  pcmAuthorizePath?: string;
-  partnerConnectionsAuthUrl?: string;
+  history?: ClimateHistorySample[];
 };
 
 type SpotifyDevice = {
@@ -274,9 +265,6 @@ export function Board() {
   const [areas, setAreas] = useState<HueArea[]>([]);
   const [weather, setWeather] = useState<Record<string, unknown> | null>(null);
   const [indoorClimate, setIndoorClimate] = useState<IndoorClimate | null>(null);
-  const [nestDebug, setNestDebug] = useState<NestDiagnostic | null>(null);
-  const [nestDebugLoading, setNestDebugLoading] = useState(false);
-  const [nestDebugOpen, setNestDebugOpen] = useState(false);
   const [spotifyPlayback, setSpotifyPlayback] = useState<SpotifyPlayback | null>(
     null,
   );
@@ -596,14 +584,11 @@ export function Board() {
           setIndoorClimate({
             hasData: false,
             error: data.error || "Nest indoor climate unavailable.",
-            diagnostic: data.diagnostic,
-            hints: data.hints,
-            debugUrl: data.debugUrl ?? "/api/nest/debug",
+            history: data.history,
           });
         }
       } else {
         setIndoorClimate(null);
-        setNestDebug(null);
       }
     },
     [fetchIso.from, fetchIso.to, selectedCalendarId, fetchSpotifyDevices],
@@ -1153,26 +1138,6 @@ export function Board() {
     }
     setMessage("Hue bridge paired. Lights should appear shortly.");
     await fetchBoard();
-  }
-
-  async function fetchNestDebug() {
-    setNestDebugLoading(true);
-    setNestDebugOpen(true);
-    try {
-      const res = await fetch("/api/nest/debug");
-      const data = (await res.json()) as NestDiagnostic & { error?: string };
-      if (data.apiVersion) {
-        setNestDebug(data);
-      } else {
-        setNestDebug(null);
-        setMessage(data.error ?? "Nest diagnostics failed");
-      }
-    } catch {
-      setNestDebug(null);
-      setMessage("Nest diagnostics request failed");
-    } finally {
-      setNestDebugLoading(false);
-    }
   }
 
   async function logoutGoogle() {
@@ -2023,17 +1988,6 @@ export function Board() {
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Indoor</h2>
                 <div className="flex items-center gap-3">
-                  {status?.googleLinked && status.nestConfigured ? (
-                    <button
-                      type="button"
-                      className="rounded-md px-2 py-1 text-xs font-medium text-slate-400 hover:bg-slate-800/70 hover:text-white sm:text-sm"
-                      onClick={() => void fetchNestDebug()}
-                      disabled={nestDebugLoading}
-                      title="Run full Nest / SDM diagnostics"
-                    >
-                      {nestDebugLoading ? "…" : "Debug"}
-                    </button>
-                  ) : null}
                   <button
                     type="button"
                     className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
@@ -2114,146 +2068,46 @@ export function Board() {
                   to enable Nest indoor readings.
                 </p>
               ) : indoorClimate?.hasData ? (
-                <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
-                  <div className="flex items-end justify-between gap-3">
-                    <div>
-                      <p className="text-4xl font-semibold leading-none text-white sm:text-5xl">
-                        {Math.round(Number(indoorClimate.temperatureF ?? 0))}°
-                        <span className="text-base text-slate-400 sm:text-lg">F</span>
-                      </p>
-                      <p className="mt-1 text-sm text-slate-400 sm:text-base">
-                        {indoorClimate.deviceName || "Nest thermostat"}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Humidity</p>
-                      <p className="text-2xl font-semibold text-sky-300 sm:text-3xl">
-                        {Math.round(Number(indoorClimate.humidity ?? 0))}%
-                      </p>
+                <div className="mt-3 space-y-2">
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
+                    <div className="flex items-end justify-between gap-3">
+                      <div>
+                        <p className="text-4xl font-semibold leading-none text-white sm:text-5xl">
+                          {Math.round(Number(indoorClimate.temperatureF ?? 0))}°
+                          <span className="text-base text-slate-400 sm:text-lg">F</span>
+                        </p>
+                        <p className="mt-1 text-sm text-slate-400 sm:text-base">
+                          {indoorClimate.deviceName || "Nest thermostat"}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Humidity</p>
+                        <p className="text-2xl font-semibold text-sky-300 sm:text-3xl">
+                          {Math.round(Number(indoorClimate.humidity ?? 0))}%
+                        </p>
+                      </div>
                     </div>
                   </div>
+                  <IndoorClimateCharts history={indoorClimate.history ?? []} />
                 </div>
               ) : indoorClimate?.error ? (
                 <div className="mt-3 space-y-2">
                   <p className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 sm:text-base">
                     {indoorClimate.error}
                   </p>
-                  {indoorClimate.hints && indoorClimate.hints.length > 0 ? (
-                    <ul className="list-inside list-disc space-y-1 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs text-slate-400 sm:text-sm">
-                      {indoorClimate.hints.map((h) => (
-                        <li key={h}>{h}</li>
-                      ))}
-                    </ul>
+                  <a
+                    className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 sm:text-base"
+                    href="/api/auth/nest/pcm"
+                  >
+                    Authorize Nest devices
+                  </a>
+                  {indoorClimate.history && indoorClimate.history.length > 0 ? (
+                    <IndoorClimateCharts history={indoorClimate.history} />
                   ) : null}
-                  {indoorClimate.diagnostic ? (
-                    <pre className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/60 p-2 text-[10px] leading-snug text-slate-400 sm:text-xs">
-                      {JSON.stringify(indoorClimate.diagnostic, null, 2)}
-                    </pre>
-                  ) : null}
-                  <div className="flex flex-wrap gap-3">
-                    <a
-                      className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 sm:text-base"
-                      href="/api/auth/nest/pcm"
-                    >
-                      Authorize Nest devices
-                    </a>
-                    <button
-                      type="button"
-                      className="text-sm text-sky-400 hover:text-sky-300"
-                      onClick={() => void fetchNestDebug()}
-                      disabled={nestDebugLoading}
-                    >
-                      {nestDebugLoading ? "Running diagnostics…" : "Run full Nest diagnostics"}
-                    </button>
-                  </div>
                 </div>
               ) : (
                 <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading indoor climate…</p>
               )}
-              {nestDebugOpen && nestDebug ? (
-                <div className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950/80 p-2">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                      Nest diagnostics
-                    </p>
-                    <button
-                      type="button"
-                      className="text-xs text-slate-500 hover:text-slate-300"
-                      onClick={() => setNestDebugOpen(false)}
-                    >
-                      Hide
-                    </button>
-                  </div>
-                  {nestDebug.hints.length > 0 ? (
-                    <ul className="mb-2 list-inside list-disc space-y-0.5 text-xs text-amber-200/90">
-                      {nestDebug.hints.map((h) => (
-                        <li key={h}>{h}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <dl className="mb-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs text-slate-300">
-                    <dt className="text-slate-500">OAuth</dt>
-                    <dd>{nestDebug.oauth.ok ? "ok" : nestDebug.oauth.error ?? "failed"}</dd>
-                    <dt className="text-slate-500">SDM scope</dt>
-                    <dd>
-                      {nestDebug.oauth.hasSdmScope === null
-                        ? "?"
-                        : nestDebug.oauth.hasSdmScope
-                          ? "yes"
-                          : "no"}
-                    </dd>
-                    <dt className="text-slate-500">Structures</dt>
-                    <dd>
-                      {nestDebug.sdm.structures.status} ({nestDebug.sdm.structures.count})
-                    </dd>
-                    <dt className="text-slate-500">Devices</dt>
-                    <dd>
-                      {nestDebug.sdm.devices.status} ({nestDebug.sdm.devices.count})
-                    </dd>
-                    <dt className="text-slate-500">Climate devices</dt>
-                    <dd>{nestDebug.sdm.climateDeviceCount}</dd>
-                    <dt className="text-slate-500">Enterprise</dt>
-                    <dd className="truncate font-mono text-[10px]">
-                      {nestDebug.config.nestProjectId ?? "—"}
-                    </dd>
-                    <dt className="text-slate-500">OAuth client</dt>
-                    <dd className="truncate font-mono text-[10px]">
-                      {nestDebug.config.oauthClientIdMasked ?? "—"}
-                    </dd>
-                  </dl>
-                  {nestDebug.sdm.deviceSummaries.length > 0 ? (
-                    <ul className="mb-2 space-y-1 text-xs text-slate-400">
-                      {nestDebug.sdm.deviceSummaries.map((d) => (
-                        <li key={d.name} className="truncate font-mono text-[10px]">
-                          {d.customName || d.type} · {d.type}
-                          {d.hasTemperature || d.hasHumidity
-                            ? ` · ${d.temperatureC ?? "?"}°C ${d.humidityPercent ?? "?"}%`
-                            : " · no climate traits"}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <pre className="overflow-x-auto text-[10px] leading-snug text-slate-500">
-                    {JSON.stringify(nestDebug, null, 2)}
-                  </pre>
-                  <div className="mt-2 flex flex-wrap gap-3">
-                    <a
-                      className="text-xs text-sky-400 hover:text-sky-300"
-                      href="/api/auth/nest/pcm"
-                    >
-                      Authorize Nest devices (PCM)
-                    </a>
-                    <a
-                      className="text-xs text-sky-400 hover:text-sky-300"
-                      href="/api/nest/debug"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open /api/nest/debug
-                    </a>
-                  </div>
-                </div>
-              ) : null}
             </section>
 
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">

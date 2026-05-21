@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { getGoogleRedirectUri, getNestPcmRedirectUri } from "@/lib/app-url";
+import { getGoogleRedirectUri } from "@/lib/app-url";
 import { getNestProjectId, requireGoogleOAuthEnv } from "@/lib/google";
+import { appendClimateSample, getClimateHistory12h } from "@/lib/nest-climate-history";
 import {
   NEST_API_VERSION,
-  buildNestHints,
-  buildNestPartnerConnectionsAuthUrl,
   cToF,
   fetchNestSdmState,
   getNestAccessToken,
@@ -29,28 +28,24 @@ export async function GET(request: Request) {
     );
   }
 
+  const history = await getClimateHistory12h();
+
   try {
-    const { token, hasSdmScope } = await getNestAccessToken(getGoogleRedirectUri(request));
-    const { structures, devices, deviceList } = await fetchNestSdmState(token, projectId);
+    const token = await getNestAccessToken(getGoogleRedirectUri(request));
+    const { devices, deviceList } = await fetchNestSdmState(token, projectId);
 
     if (devices.status === 401) {
       return NextResponse.json(
-        {
-          error: "Google link expired. Re-link Google.",
-          apiVersion: NEST_API_VERSION,
-          debugUrl: "/api/nest/debug",
-        },
+        { error: "Google link expired. Re-link Google.", history, apiVersion: NEST_API_VERSION },
         { status: 401 },
       );
     }
     if (devices.status === 403) {
       return NextResponse.json(
         {
-          error:
-            "Nest access forbidden. Confirm Device Access is enabled and re-link Google to grant thermostat scope.",
-          detail: devices.data?.error?.message ?? null,
+          error: "Nest access forbidden. Re-link Google and authorize Nest devices.",
+          history,
           apiVersion: NEST_API_VERSION,
-          debugUrl: "/api/nest/debug",
         },
         { status: 403 },
       );
@@ -60,8 +55,8 @@ export async function GET(request: Request) {
         {
           error: "Failed to read Nest devices",
           detail: devices.data?.error?.message ?? null,
+          history,
           apiVersion: NEST_API_VERSION,
-          debugUrl: "/api/nest/debug",
         },
         { status: 502 },
       );
@@ -69,43 +64,15 @@ export async function GET(request: Request) {
 
     const withClimate = pickClimateDevice(deviceList);
     if (!withClimate) {
-      const types = Array.from(new Set(deviceList.map((d) => d.type ?? "?")));
-      const hints = buildNestHints({
-        hasSdmScope,
-        structureCount: structures.data?.structures?.length ?? 0,
-        deviceCount: deviceList.length,
-        climateDeviceCount: 0,
-        deviceTypes: types,
-        oauthError: null,
-        structuresError: structures.data?.error?.message ?? null,
-        devicesError: null,
-        devicesStatus: devices.status,
-        nestProjectId: projectId,
-        googleLinked: true,
-      });
-      const hint = hints[0] ?? "No Nest thermostat climate data found.";
       return NextResponse.json(
         {
           temperatureF: null,
           humidity: null,
           deviceName: null,
           hasData: false,
-          error: hint,
-          diagnostic: {
-            enterpriseId: projectId,
-            structureCount: structures.data?.structures?.length ?? 0,
-            deviceCount: deviceList.length,
-            hasSdmScope,
-            deviceTypes: types.slice(0, 12),
-          },
-          hints,
-          partnerConnectionsAuthUrl: buildNestPartnerConnectionsAuthUrl(
-            projectId,
-            requireGoogleOAuthEnv().clientId,
-            getNestPcmRedirectUri(request),
-          ),
-          pcmAuthorizePath: "/api/auth/nest/pcm",
-          debugUrl: "/api/nest/debug",
+          error:
+            "No thermostat climate data. If needed, authorize Nest devices via /api/auth/nest/pcm.",
+          history,
           apiVersion: NEST_API_VERSION,
         },
         { status: 200 },
@@ -123,18 +90,24 @@ export async function GET(request: Request) {
       withClimate.type ||
       "Nest device";
 
+    const temperatureF = Number.isFinite(tempC) ? Math.round(cToF(tempC) * 10) / 10 : null;
+    const humidityRounded = Number.isFinite(humidity) ? Math.round(humidity) : null;
+
+    await appendClimateSample({ temperatureF, humidity: humidityRounded });
+
     return NextResponse.json({
-      temperatureF: Number.isFinite(tempC) ? Math.round(cToF(tempC) * 10) / 10 : null,
-      humidity: Number.isFinite(humidity) ? Math.round(humidity) : null,
+      temperatureF,
+      humidity: humidityRounded,
       deviceName: name,
       hasData: Number.isFinite(tempC) || Number.isFinite(humidity),
+      history: await getClimateHistory12h(),
       apiVersion: NEST_API_VERSION,
     });
   } catch (e) {
     const message = mapGoogleOAuthError(e);
     const status = message.includes("not linked") || message.includes("invalid_grant") ? 401 : 500;
     return NextResponse.json(
-      { error: message, apiVersion: NEST_API_VERSION, debugUrl: "/api/nest/debug" },
+      { error: message, history, apiVersion: NEST_API_VERSION },
       { status },
     );
   }
