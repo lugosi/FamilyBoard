@@ -172,6 +172,78 @@ function formatMsClock(ms: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+const WIDGET_TITLE_ICON = "h-8 w-8 shrink-0 sm:h-9 sm:w-9";
+
+function HueBulbTitleIcon({ on }: { on: boolean }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      className={`${WIDGET_TITLE_ICON} ${on ? "text-amber-300" : "text-slate-500"}`}
+      fill={on ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth={on ? 0 : 1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {on ? (
+        <path d="M12 2a7 7 0 0 0-4 12.74V19a2 2 0 0 0 4 0v-4.26A7 7 0 0 0 12 2zm0 5a2 2 0 1 1 0 4 2 2 0 0 1 0-4z" />
+      ) : (
+        <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1-7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+      )}
+    </svg>
+  );
+}
+
+function SpotifyAlbumTitleIcon({ coverUrl }: { coverUrl?: string }) {
+  if (coverUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={coverUrl}
+        alt=""
+        className={`${WIDGET_TITLE_ICON} rounded object-cover shadow-sm ring-1 ring-slate-700/80`}
+      />
+    );
+  }
+  return (
+    <div
+      className={`${WIDGET_TITLE_ICON} flex items-center justify-center rounded bg-slate-800 text-slate-500 ring-1 ring-slate-700/80`}
+      aria-hidden
+    >
+      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M9 18V5l12-2v13" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="6" cy="18" r="3" />
+        <circle cx="18" cy="16" r="3" />
+      </svg>
+    </div>
+  );
+}
+
+function IndoorTempTitleIcon({ tempF }: { tempF: number | null }) {
+  const label =
+    tempF !== null && Number.isFinite(tempF) ? `${Math.round(tempF)}°` : "—";
+  return (
+    <span
+      className={`${WIDGET_TITLE_ICON} flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950/70 text-sm font-semibold tabular-nums text-white ring-1 ring-slate-700/80 sm:text-base`}
+      title={tempF !== null ? `Indoor ${Math.round(tempF)}°F` : "Indoor temperature"}
+    >
+      {label}
+    </span>
+  );
+}
+
+function ClockTimeTitleIcon({ time }: { time: string }) {
+  return (
+    <span
+      className="flex h-8 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-950/70 px-2 text-xs font-semibold leading-none whitespace-nowrap tabular-nums text-white ring-1 ring-slate-700/80 sm:h-9 sm:px-2.5 sm:text-sm"
+      title={time}
+    >
+      {time}
+    </span>
+  );
+}
+
 function toInputValue(isoOrDate: string): string {
   const d = new Date(isoOrDate);
   if (Number.isNaN(d.getTime())) return "";
@@ -1500,6 +1572,18 @@ export function Board() {
     spotifySdkDeviceId && spotifyDevices.some((d) => d.id === spotifySdkDeviceId),
   );
   const spotifyCover = spotifyTrack?.album?.images?.[0]?.url;
+  const hueAnyOn = areas.some((a) => a.on);
+  const indoorTitleTempF = useMemo(() => {
+    const direct = indoorClimate?.temperatureF;
+    if (direct != null && Number.isFinite(direct)) return direct;
+    const hist = indoorClimate?.history;
+    if (!hist?.length) return null;
+    for (let i = hist.length - 1; i >= 0; i--) {
+      const t = hist[i]?.temperatureF;
+      if (t != null && Number.isFinite(t)) return t;
+    }
+    return null;
+  }, [indoorClimate]);
   const pinnedHueAreas = useMemo(() => {
     const byName = new Map(
       areas.map((a) => [a.name.trim().toLowerCase(), a] as const),
@@ -1824,10 +1908,15 @@ export function Board() {
           <div className="board-scrollbar flex h-full max-h-full min-h-0 min-w-0 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-y-contain pb-2 sm:gap-4">
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xl font-medium text-white sm:text-2xl">Clock</h2>
+                <div className="flex min-w-0 items-center gap-2.5">
+                  {collapsedWidgets.clock ? (
+                    <ClockTimeTitleIcon time={clockTime} />
+                  ) : null}
+                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Clock</h2>
+                </div>
                 <button
                   type="button"
-                  className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                  className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
                   onClick={() => toggleWidgetCollapse("clock")}
                   aria-label={collapsedWidgets.clock ? "Expand clock" : "Collapse clock"}
                   title={collapsedWidgets.clock ? "Expand clock" : "Collapse clock"}
@@ -1851,20 +1940,20 @@ export function Board() {
                 </button>
               </div>
               {!collapsedWidgets.clock ? (
-                <div className="mt-3 flex min-h-[2.75rem] items-baseline justify-between gap-3 sm:min-h-[3rem]">
-                  <p className="shrink-0 text-3xl font-semibold leading-none text-white sm:text-4xl">
+                <div className="mt-3 flex min-h-[2.75rem] items-center justify-between gap-4 sm:min-h-[3rem]">
+                  <p className="shrink-0 text-3xl font-semibold leading-none tabular-nums text-white sm:text-4xl">
                     {clockTime}
                   </p>
-                  <div className="min-w-0 max-w-[55%] text-right leading-tight">
-                    <p className="truncate text-xs uppercase tracking-wide text-slate-400 sm:text-sm">
+                  <div className="flex min-w-0 flex-col items-end justify-center gap-1 text-right leading-tight">
+                    <p className="truncate text-sm uppercase tracking-wide text-slate-300 sm:text-base">
                       {clockDate}
                     </p>
-                    <p className="mt-0.5 flex h-[14px] items-center justify-end gap-2 text-[10px] tabular-nums text-slate-500 sm:text-[11px]">
-                      <span className="inline-flex items-center gap-0.5" title="Sunrise">
+                    <div className="flex items-center justify-end gap-3 tabular-nums text-sm font-medium text-slate-200 sm:gap-4 sm:text-base">
+                      <span className="inline-flex items-center gap-1.5" title="Sunrise">
                         <svg
                           aria-hidden
                           viewBox="0 0 24 24"
-                          className="h-3 w-3 text-amber-300/90"
+                          className="h-4 w-4 shrink-0 text-amber-300 sm:h-5 sm:w-5"
                           fill="none"
                           stroke="currentColor"
                           strokeWidth="2"
@@ -1876,11 +1965,11 @@ export function Board() {
                         </svg>
                         {clockSunrise}
                       </span>
-                      <span className="inline-flex items-center gap-0.5" title="Sunset">
+                      <span className="inline-flex items-center gap-1.5" title="Sunset">
                         <svg
                           aria-hidden
                           viewBox="0 0 24 24"
-                          className="h-3 w-3 text-indigo-300/90"
+                          className="h-4 w-4 shrink-0 text-indigo-300 sm:h-5 sm:w-5"
                           fill="none"
                           stroke="currentColor"
                           strokeWidth="2"
@@ -1892,15 +1981,30 @@ export function Board() {
                         </svg>
                         {clockSunset}
                       </span>
-                    </p>
+                    </div>
                   </div>
                 </div>
               ) : null}
             </section>
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xl font-medium text-white sm:text-2xl">Weather</h2>
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  {collapsedWidgets.weather ? (
+                    current ? (
+                      <WeatherIcon
+                        code={Number(current.code ?? 0)}
+                        className={`${WIDGET_TITLE_ICON} text-sky-300`}
+                      />
+                    ) : (
+                      <div
+                        className={`${WIDGET_TITLE_ICON} rounded-lg border border-slate-700/80 bg-slate-950/50`}
+                        aria-hidden
+                      />
+                    )
+                  ) : null}
+                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Weather</h2>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
                   <button
                     type="button"
                     className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
@@ -2039,8 +2143,13 @@ export function Board() {
 
             <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xl font-medium text-white sm:text-2xl">Spotify</h2>
-                <div className="flex items-center gap-2 sm:gap-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  {collapsedWidgets.spotify ? (
+                    <SpotifyAlbumTitleIcon coverUrl={spotifyCover} />
+                  ) : null}
+                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Spotify</h2>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
                   <button
                     type="button"
                     className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
@@ -2371,8 +2480,11 @@ export function Board() {
             </section>
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xl font-medium text-white sm:text-2xl">Hue</h2>
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  {collapsedWidgets.hue ? <HueBulbTitleIcon on={hueAnyOn} /> : null}
+                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Hue</h2>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
                   <button
                     type="button"
                     className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
@@ -2576,8 +2688,13 @@ export function Board() {
             </section>
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xl font-medium text-white sm:text-2xl">Indoor</h2>
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  {collapsedWidgets.nest ? (
+                    <IndoorTempTitleIcon tempF={indoorTitleTempF} />
+                  ) : null}
+                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Indoor</h2>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
                   <button
                     type="button"
                     className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
