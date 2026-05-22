@@ -2037,319 +2037,6 @@ export function Board() {
               )}
             </section>
 
-            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xl font-medium text-white sm:text-2xl">Indoor</h2>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => void fetchBoard()}
-                    aria-label="Refresh indoor climate"
-                    title="Refresh indoor climate"
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                      <path d="M21 3v6h-6" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => toggleWidgetCollapse("nest")}
-                    aria-label={collapsedWidgets.nest ? "Expand indoor" : "Collapse indoor"}
-                    title={collapsedWidgets.nest ? "Expand indoor" : "Collapse indoor"}
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      {collapsedWidgets.nest ? (
-                        <path d="M6 15l6-6 6 6" />
-                      ) : (
-                        <path d="M6 9l6 6 6-6" />
-                      )}
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              {collapsedWidgets.nest ? null : !status?.googleConfigured ? (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">
-                  Set{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    GOOGLE_CLIENT_ID
-                  </code>{" "}
-                  and{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    GOOGLE_CLIENT_SECRET
-                  </code>
-                  .
-                </p>
-              ) : !status.googleLinked ? (
-                <div className="mt-3 space-y-3">
-                  <p className="text-base text-slate-300 sm:text-lg">
-                    Link Google to read Nest indoor climate.
-                  </p>
-                  <a
-                    className="inline-flex rounded-full bg-white px-4 py-2 text-base font-medium text-slate-900 hover:bg-slate-100 sm:text-lg"
-                    href="/api/auth/google"
-                  >
-                    Link Google
-                  </a>
-                </div>
-              ) : !status.nestConfigured ? (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">
-                  Set{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    GOOGLE_NEST_PROJECT_ID
-                  </code>{" "}
-                  to enable Nest indoor readings.
-                </p>
-              ) : indoorClimate?.hasData ? (
-                <div className="mt-3">
-                  <IndoorClimateCharts history={indoorClimate.history ?? []} />
-                </div>
-              ) : indoorClimate?.error ? (
-                <div className="mt-3 space-y-2">
-                  <p className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 sm:text-base">
-                    {indoorClimate.error}
-                  </p>
-                  <a
-                    className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 sm:text-base"
-                    href="/api/auth/nest/pcm"
-                  >
-                    Authorize Nest devices
-                  </a>
-                  {indoorClimate.history && indoorClimate.history.length > 0 ? (
-                    <IndoorClimateCharts history={indoorClimate.history} />
-                  ) : null}
-                </div>
-              ) : (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading indoor climate…</p>
-              )}
-            </section>
-
-            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xl font-medium text-white sm:text-2xl">Hue</h2>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => void fetchBoard()}
-                    aria-label="Refresh hue"
-                    title="Refresh hue"
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                      <path d="M21 3v6h-6" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => toggleWidgetCollapse("hue")}
-                    aria-label={collapsedWidgets.hue ? "Expand hue" : "Collapse hue"}
-                    title={collapsedWidgets.hue ? "Expand hue" : "Collapse hue"}
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      {collapsedWidgets.hue ? (
-                        <path d="M6 15l6-6 6 6" />
-                      ) : (
-                        <path d="M6 9l6 6 6-6" />
-                      )}
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              {collapsedWidgets.hue ? null : !status?.hueBridgeIp ? (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">
-                  Set{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    HUE_BRIDGE_IP
-                  </code>{" "}
-                  on the server.
-                </p>
-              ) : !status.huePaired ? (
-                <div className="mt-3 space-y-3 text-base text-slate-300 sm:text-lg">
-                  <p>
-                    Press the{" "}
-                    <span className="font-medium text-white">link</span> button on
-                    the bridge, then pair within about 30 seconds.
-                  </p>
-                  <button
-                    type="button"
-                    disabled={busy === "pair"}
-                    onClick={() => void pairHue()}
-                    className="w-full rounded-full bg-amber-500 px-4 py-2.5 text-base font-medium text-slate-950 hover:bg-amber-400 disabled:opacity-50 sm:text-lg"
-                  >
-                    {busy === "pair" ? "Pairing…" : "Pair bridge"}
-                  </button>
-                </div>
-              ) : areas.length === 0 ? (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">
-                  No rooms or zones found.
-                </p>
-              ) : (
-                <div className="mt-2.5 space-y-2.5">
-                  <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                    {pinnedHueAreas.map((area) => (
-                      <li
-                        key={area.id}
-                        className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
-                      >
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <p className="min-w-0 truncate text-xs font-medium text-slate-200 sm:text-sm">
-                            {area.name}
-                          </p>
-                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">
-                            {area.type}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <select
-                            className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
-                            value={hueThemeByArea[area.id] ?? "relax"}
-                            onChange={(e) => {
-                              const theme = e.target.value as HueThemeKey;
-                              setHueThemeByArea((prev) => ({
-                                ...prev,
-                                [area.id]: theme,
-                              }));
-                              void applyHueTheme(area.id, theme);
-                            }}
-                            disabled={busy === `hue-theme-${area.id}`}
-                          >
-                            {HUE_THEME_OPTIONS.map((opt) => (
-                              <option key={opt.key} value={opt.key}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            disabled={busy === `hue-${area.id}`}
-                            onClick={() => void toggleArea(area.id, !area.on)}
-                            className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
-                              area.on
-                                ? "bg-amber-300 text-slate-900"
-                                : "bg-slate-800 text-slate-200"
-                            } disabled:opacity-40`}
-                          >
-                            {area.on ? "On" : "Off"}
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                  {otherHueAreas.length > 0 ? (
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/20">
-                      <button
-                        type="button"
-                        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-slate-300 hover:text-white sm:text-base"
-                        onClick={() => setShowOtherHueAreas((v) => !v)}
-                      >
-                        <span>Other rooms and zones ({otherHueAreas.length})</span>
-                        <span className="text-xs text-slate-500">
-                          {showOtherHueAreas ? "Hide" : "Show"}
-                        </span>
-                      </button>
-                      {showOtherHueAreas ? (
-                        <ul className="grid grid-cols-1 gap-1.5 border-t border-slate-800 p-2 sm:grid-cols-2">
-                          {otherHueAreas.map((area) => (
-                            <li
-                              key={area.id}
-                              className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
-                            >
-                              <div className="mb-1 flex items-center justify-between gap-2">
-                                <p className="min-w-0 truncate text-xs font-medium text-slate-200 sm:text-sm">
-                                  {area.name}
-                                </p>
-                                <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">
-                                  {area.type}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <select
-                                  className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
-                                  value={hueThemeByArea[area.id] ?? "relax"}
-                                  onChange={(e) => {
-                                    const theme = e.target.value as HueThemeKey;
-                                    setHueThemeByArea((prev) => ({
-                                      ...prev,
-                                      [area.id]: theme,
-                                    }));
-                                    void applyHueTheme(area.id, theme);
-                                  }}
-                                  disabled={busy === `hue-theme-${area.id}`}
-                                >
-                                  {HUE_THEME_OPTIONS.map((opt) => (
-                                    <option key={opt.key} value={opt.key}>
-                                      {opt.label}
-                                    </option>
-                                  ))}
-                                </select>
-                                <button
-                                  type="button"
-                                  disabled={busy === `hue-${area.id}`}
-                                  onClick={() => void toggleArea(area.id, !area.on)}
-                                  className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
-                                    area.on
-                                      ? "bg-amber-300 text-slate-900"
-                                      : "bg-slate-800 text-slate-200"
-                                  } disabled:opacity-40`}
-                                >
-                                  {area.on ? "On" : "Off"}
-                                </button>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {pinnedHueAreas.length === 0 ? (
-                    <p className="text-xs text-slate-500 sm:text-sm">
-                      Pinned rooms (TV, Living Room, Caro, Office) are not available on this bridge.
-                    </p>
-                  ) : null}
-                </div>
-              )}
-            </section>
-
             <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Spotify</h2>
@@ -2680,6 +2367,317 @@ export function Board() {
                     </div>
                   </div>
                 </div>
+              )}
+            </section>
+            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-xl font-medium text-white sm:text-2xl">Hue</h2>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                    onClick={() => void fetchBoard()}
+                    aria-label="Refresh hue"
+                    title="Refresh hue"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                      <path d="M21 3v6h-6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                    onClick={() => toggleWidgetCollapse("hue")}
+                    aria-label={collapsedWidgets.hue ? "Expand hue" : "Collapse hue"}
+                    title={collapsedWidgets.hue ? "Expand hue" : "Collapse hue"}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      {collapsedWidgets.hue ? (
+                        <path d="M6 15l6-6 6 6" />
+                      ) : (
+                        <path d="M6 9l6 6 6-6" />
+                      )}
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              {collapsedWidgets.hue ? null : !status?.hueBridgeIp ? (
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                  Set{" "}
+                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                    HUE_BRIDGE_IP
+                  </code>{" "}
+                  on the server.
+                </p>
+              ) : !status.huePaired ? (
+                <div className="mt-3 space-y-3 text-base text-slate-300 sm:text-lg">
+                  <p>
+                    Press the{" "}
+                    <span className="font-medium text-white">link</span> button on
+                    the bridge, then pair within about 30 seconds.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={busy === "pair"}
+                    onClick={() => void pairHue()}
+                    className="w-full rounded-full bg-amber-500 px-4 py-2.5 text-base font-medium text-slate-950 hover:bg-amber-400 disabled:opacity-50 sm:text-lg"
+                  >
+                    {busy === "pair" ? "Pairing…" : "Pair bridge"}
+                  </button>
+                </div>
+              ) : areas.length === 0 ? (
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                  No rooms or zones found.
+                </p>
+              ) : (
+                <div className="mt-2.5 space-y-2.5">
+                  <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                    {pinnedHueAreas.map((area) => (
+                      <li
+                        key={area.id}
+                        className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
+                      >
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <p className="min-w-0 truncate text-xs font-medium text-slate-200 sm:text-sm">
+                            {area.name}
+                          </p>
+                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">
+                            {area.type}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <select
+                            className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
+                            value={hueThemeByArea[area.id] ?? "relax"}
+                            onChange={(e) => {
+                              const theme = e.target.value as HueThemeKey;
+                              setHueThemeByArea((prev) => ({
+                                ...prev,
+                                [area.id]: theme,
+                              }));
+                              void applyHueTheme(area.id, theme);
+                            }}
+                            disabled={busy === `hue-theme-${area.id}`}
+                          >
+                            {HUE_THEME_OPTIONS.map((opt) => (
+                              <option key={opt.key} value={opt.key}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            disabled={busy === `hue-${area.id}`}
+                            onClick={() => void toggleArea(area.id, !area.on)}
+                            className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
+                              area.on
+                                ? "bg-amber-300 text-slate-900"
+                                : "bg-slate-800 text-slate-200"
+                            } disabled:opacity-40`}
+                          >
+                            {area.on ? "On" : "Off"}
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  {otherHueAreas.length > 0 ? (
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/20">
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-slate-300 hover:text-white sm:text-base"
+                        onClick={() => setShowOtherHueAreas((v) => !v)}
+                      >
+                        <span>Other rooms and zones ({otherHueAreas.length})</span>
+                        <span className="text-xs text-slate-500">
+                          {showOtherHueAreas ? "Hide" : "Show"}
+                        </span>
+                      </button>
+                      {showOtherHueAreas ? (
+                        <ul className="grid grid-cols-1 gap-1.5 border-t border-slate-800 p-2 sm:grid-cols-2">
+                          {otherHueAreas.map((area) => (
+                            <li
+                              key={area.id}
+                              className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
+                            >
+                              <div className="mb-1 flex items-center justify-between gap-2">
+                                <p className="min-w-0 truncate text-xs font-medium text-slate-200 sm:text-sm">
+                                  {area.name}
+                                </p>
+                                <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">
+                                  {area.type}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <select
+                                  className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
+                                  value={hueThemeByArea[area.id] ?? "relax"}
+                                  onChange={(e) => {
+                                    const theme = e.target.value as HueThemeKey;
+                                    setHueThemeByArea((prev) => ({
+                                      ...prev,
+                                      [area.id]: theme,
+                                    }));
+                                    void applyHueTheme(area.id, theme);
+                                  }}
+                                  disabled={busy === `hue-theme-${area.id}`}
+                                >
+                                  {HUE_THEME_OPTIONS.map((opt) => (
+                                    <option key={opt.key} value={opt.key}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  disabled={busy === `hue-${area.id}`}
+                                  onClick={() => void toggleArea(area.id, !area.on)}
+                                  className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
+                                    area.on
+                                      ? "bg-amber-300 text-slate-900"
+                                      : "bg-slate-800 text-slate-200"
+                                  } disabled:opacity-40`}
+                                >
+                                  {area.on ? "On" : "Off"}
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {pinnedHueAreas.length === 0 ? (
+                    <p className="text-xs text-slate-500 sm:text-sm">
+                      Pinned rooms (TV, Living Room, Caro, Office) are not available on this bridge.
+                    </p>
+                  ) : null}
+                </div>
+              )}
+            </section>
+            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-xl font-medium text-white sm:text-2xl">Indoor</h2>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                    onClick={() => void fetchBoard()}
+                    aria-label="Refresh indoor climate"
+                    title="Refresh indoor climate"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                      <path d="M21 3v6h-6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                    onClick={() => toggleWidgetCollapse("nest")}
+                    aria-label={collapsedWidgets.nest ? "Expand indoor" : "Collapse indoor"}
+                    title={collapsedWidgets.nest ? "Expand indoor" : "Collapse indoor"}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      {collapsedWidgets.nest ? (
+                        <path d="M6 15l6-6 6 6" />
+                      ) : (
+                        <path d="M6 9l6 6 6-6" />
+                      )}
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              {collapsedWidgets.nest ? null : !status?.googleConfigured ? (
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                  Set{" "}
+                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                    GOOGLE_CLIENT_ID
+                  </code>{" "}
+                  and{" "}
+                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                    GOOGLE_CLIENT_SECRET
+                  </code>
+                  .
+                </p>
+              ) : !status.googleLinked ? (
+                <div className="mt-3 space-y-3">
+                  <p className="text-base text-slate-300 sm:text-lg">
+                    Link Google to read Nest indoor climate.
+                  </p>
+                  <a
+                    className="inline-flex rounded-full bg-white px-4 py-2 text-base font-medium text-slate-900 hover:bg-slate-100 sm:text-lg"
+                    href="/api/auth/google"
+                  >
+                    Link Google
+                  </a>
+                </div>
+              ) : !status.nestConfigured ? (
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                  Set{" "}
+                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                    GOOGLE_NEST_PROJECT_ID
+                  </code>{" "}
+                  to enable Nest indoor readings.
+                </p>
+              ) : indoorClimate?.hasData ? (
+                <div className="mt-3">
+                  <IndoorClimateCharts history={indoorClimate.history ?? []} />
+                </div>
+              ) : indoorClimate?.error ? (
+                <div className="mt-3 space-y-2">
+                  <p className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 sm:text-base">
+                    {indoorClimate.error}
+                  </p>
+                  <a
+                    className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 sm:text-base"
+                    href="/api/auth/nest/pcm"
+                  >
+                    Authorize Nest devices
+                  </a>
+                  {indoorClimate.history && indoorClimate.history.length > 0 ? (
+                    <IndoorClimateCharts history={indoorClimate.history} />
+                  ) : null}
+                </div>
+              ) : (
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading indoor climate…</p>
               )}
             </section>
           </div>
