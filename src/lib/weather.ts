@@ -103,6 +103,10 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
   const hourlyTemps = data.hourly?.temperature_2m ?? [];
   const hourlyCodes = data.hourly?.weather_code ?? [];
   const now = Date.now();
+  const todayDate =
+    hourlyTimes.find((t) => new Date(t).getTime() >= now)?.slice(0, 10) ??
+    hourlyTimes[0]?.slice(0, 10) ??
+    "";
   const hourlyToday = hourlyTimes
     .map((time, i) => ({
       time,
@@ -110,8 +114,7 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
       code: hourlyCodes[i] ?? 0,
       ts: new Date(time).getTime(),
     }))
-    .filter((h) => Number.isFinite(h.ts) && h.ts >= now - 60 * 60 * 1000)
-    .slice(0, 12)
+    .filter((h) => todayDate && h.time.startsWith(todayDate))
     .map(({ time, temperatureF, code }) => ({ time, temperatureF, code }));
 
   return {

@@ -20,6 +20,10 @@ import {
   type GEvent,
 } from "@/lib/calendar-layout";
 import { OnekoCat } from "@/components/OnekoCat";
+import {
+  WeatherHourlyChart,
+  type WeatherHourlyPoint,
+} from "@/components/WeatherHourlyChart";
 import { WeatherIcon } from "@/components/WeatherIcon";
 import { dailyForecastByDate, type DailyForecast } from "@/lib/weather";
 import { IndoorClimateCharts } from "@/components/IndoorClimateCharts";
@@ -1464,9 +1468,7 @@ export function Board() {
     () => dailyForecastByDate(daily),
     [daily],
   );
-  const hourlyToday = weather?.hourlyToday as
-    | Array<{ time?: string; temperatureF?: number; code?: number }>
-    | undefined;
+  const hourlyToday = weather?.hourlyToday as WeatherHourlyPoint[] | undefined;
   const todayForecast = daily?.[0];
   const spotifyTrack = spotifyPlayback?.item;
   const spotifyArtist = spotifyTrack?.artists?.map((a) => a.name).filter(Boolean).join(", ");
@@ -1961,33 +1963,7 @@ export function Board() {
                     </div>
                   </div>
                   {hourlyToday && hourlyToday.length > 0 ? (
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/50 px-1 py-1.5 sm:px-2">
-                      <div className="flex w-full flex-nowrap items-stretch justify-between gap-0.5">
-                        {hourlyToday.slice(0, 8).map((h) => {
-                          const d = new Date(h.time ?? "");
-                          const label = Number.isNaN(d.getTime())
-                            ? (h.time ?? "").slice(11, 16)
-                            : d.toLocaleTimeString([], { hour: "numeric" });
-                          return (
-                            <div
-                              key={h.time}
-                              className="flex min-w-0 flex-1 flex-col items-center gap-0.5 text-center"
-                            >
-                              <span className="w-full truncate text-[10px] leading-tight text-slate-400">
-                                {label}
-                              </span>
-                              <WeatherIcon
-                                code={Number(h.code ?? 0)}
-                                className="h-4 w-4 shrink-0"
-                              />
-                              <span className="w-full truncate text-[10px] font-medium leading-tight text-slate-200">
-                                {Math.round(h.temperatureF ?? 0)}°
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <WeatherHourlyChart hours={hourlyToday} />
                   ) : null}
                 </div>
               ) : (
@@ -2308,7 +2284,7 @@ export function Board() {
               )}
             </section>
 
-            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+            <section className="min-w-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Spotify</h2>
                 <div className="flex items-center gap-2 sm:gap-3">
@@ -2337,12 +2313,25 @@ export function Board() {
                     <button
                       type="button"
                       disabled={busy === "spotify-disconnect"}
-                      className="rounded-md px-2 py-1 text-xs font-semibold text-rose-300 hover:bg-slate-800/70 hover:text-rose-100 disabled:opacity-50 sm:text-sm"
+                      className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-rose-200 disabled:opacity-50"
                       onClick={() => void disconnectSpotify()}
                       aria-label="Log out of Spotify"
                       title="Log out"
                     >
-                      {busy === "spotify-disconnect" ? "…" : "Log out"}
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        className={`h-5 w-5 ${busy === "spotify-disconnect" ? "animate-pulse" : ""}`}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <path d="M16 17l5-5-5-5" />
+                        <path d="M21 12H9" />
+                      </svg>
                     </button>
                   ) : null}
                   <button
@@ -2396,14 +2385,14 @@ export function Board() {
                   </a>
                 </div>
               ) : (
-                <div className="mt-3 space-y-3">
+                <div className="mt-3 min-w-0 space-y-3 overflow-hidden">
                   {spotifyNotice ? (
                     <p className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 sm:text-base">
                       {spotifyNotice}
                     </p>
                   ) : null}
-                  <div className="flex items-end gap-3">
-                    <div className="min-w-0 flex-1 space-y-3">
+                  <div className="flex min-w-0 items-end gap-3">
+                    <div className="min-w-0 flex-1 space-y-2.5">
                       <div className="min-h-[6.75rem] rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
                         <div className="flex items-center gap-3">
                           {spotifyCover ? (
@@ -2468,72 +2457,71 @@ export function Board() {
                         )}
                       </div>
 
-                      <div className="flex flex-wrap items-end gap-2">
-                        <div className="flex min-w-0 flex-1 items-center gap-2">
-                          <select
-                            className="w-full min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
-                            aria-label="Playback device"
-                            value={spotifyEffectiveDeviceId}
-                            onChange={(e) => {
-                              const nextDeviceId = e.target.value;
-                              if (
-                                nextDeviceId === spotifySdkDeviceId ||
-                                spotifyLiveDeviceIds.has(nextDeviceId)
-                              ) {
-                                setSpotifySelectedDeviceId(nextDeviceId);
-                                void spotifyControl("set_device", { deviceId: nextDeviceId });
-                              } else {
-                                setSpotifyNotice(
-                                  "Selected device is last seen only. Open Spotify on that device first, then refresh devices.",
-                                );
-                              }
-                            }}
-                          >
-                            {spotifySdkDeviceId && !spotifySdkInDeviceList ? (
-                              <option value={spotifySdkDeviceId}>
-                                FamilyBoard Web Player{" "}
-                                {spotifyActiveDevice?.id === spotifySdkDeviceId ? "• active" : ""}
+                      <div className="flex min-w-0 items-center gap-2">
+                        <select
+                          className="max-w-full min-w-0 flex-1 truncate rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-sky-500 sm:px-3 sm:text-base"
+                          aria-label="Playback device"
+                          value={spotifyEffectiveDeviceId}
+                          onChange={(e) => {
+                            const nextDeviceId = e.target.value;
+                            if (
+                              nextDeviceId === spotifySdkDeviceId ||
+                              spotifyLiveDeviceIds.has(nextDeviceId)
+                            ) {
+                              setSpotifySelectedDeviceId(nextDeviceId);
+                              void spotifyControl("set_device", { deviceId: nextDeviceId });
+                            } else {
+                              setSpotifyNotice(
+                                "Selected device is last seen only. Open Spotify on that device first, then refresh devices.",
+                              );
+                            }
+                          }}
+                        >
+                          {spotifySdkDeviceId && !spotifySdkInDeviceList ? (
+                            <option value={spotifySdkDeviceId}>
+                              FamilyBoard Web Player{" "}
+                              {spotifyActiveDevice?.id === spotifySdkDeviceId ? "• active" : ""}
+                            </option>
+                          ) : null}
+                          {spotifyDeviceOptions.length === 0 ? (
+                            <option value="">No devices found</option>
+                          ) : (
+                            spotifyDeviceOptions.map((d) => (
+                              <option key={d.id} value={d.id}>
+                                {d.name ?? "Unknown"}{" "}
+                                {d.is_active
+                                  ? "• active"
+                                  : spotifyDevices.some((live) => live.id === d.id)
+                                    ? ""
+                                    : "• last seen"}
                               </option>
-                            ) : null}
-                            {spotifyDeviceOptions.length === 0 ? (
-                              <option value="">No devices found</option>
-                            ) : (
-                              spotifyDeviceOptions.map((d) => (
-                                <option key={d.id} value={d.id}>
-                                  {d.name ?? "Unknown"}{" "}
-                                  {d.is_active
-                                    ? "• active"
-                                    : spotifyDevices.some((live) => live.id === d.id)
-                                      ? ""
-                                      : "• last seen"}
-                                </option>
-                              ))
-                            )}
-                          </select>
-                          <button
-                            type="button"
-                            disabled={busy === "spotify-refresh-devices"}
-                            className="flex h-[2.75rem] w-[2.75rem] shrink-0 items-center justify-center rounded-full border border-slate-600 text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:h-11 sm:w-11"
-                            onClick={() => void refreshSpotifyDevices()}
-                            aria-label="Refresh devices"
-                            title="Refresh devices"
+                            ))
+                          )}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={busy === "spotify-refresh-devices"}
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-600 text-slate-100 hover:border-slate-400 disabled:opacity-50"
+                          onClick={() => void refreshSpotifyDevices()}
+                          aria-label="Refresh devices"
+                          title="Refresh devices"
+                        >
+                          <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                            className={`h-4 w-4 ${busy === "spotify-refresh-devices" ? "animate-spin" : ""}`}
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
                           >
-                            <svg
-                              aria-hidden="true"
-                              viewBox="0 0 24 24"
-                              className={`h-4 w-4 sm:h-5 sm:w-5 ${busy === "spotify-refresh-devices" ? "animate-spin" : ""}`}
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.8"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                              <path d="M21 3v6h-6" />
-                            </svg>
-                          </button>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
+                            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                            <path d="M21 3v6h-6" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
                           <button
                             type="button"
                             disabled={busy === "spotify-previous"}
@@ -2593,7 +2581,6 @@ export function Board() {
                               <path d="M20 20l-3.5-3.5" />
                             </svg>
                           </button>
-                        </div>
                       </div>
                     </div>
                     <div
