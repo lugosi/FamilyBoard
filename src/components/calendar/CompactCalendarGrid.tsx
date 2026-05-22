@@ -154,24 +154,24 @@ function CompactWeekBlock({
               }`}
             >
               <div
-                className={`flex shrink-0 flex-col items-center justify-center gap-0.5 ${
+                className={`flex shrink-0 items-center justify-center gap-1.5 ${
                   comfortable ? "min-h-16 py-0.5" : "min-h-14 py-0.5"
                 }`}
               >
                 {today ? (
                   <span
-                    className={`flex items-center justify-center rounded-full bg-blue-600 px-0.5 font-semibold text-white ${
+                    className={`flex shrink-0 items-center justify-center rounded-full bg-blue-600 font-semibold text-white ${
                       comfortable
-                        ? "h-9 min-w-[2.25rem] text-lg"
-                        : "h-8 min-w-[2rem] text-base"
+                        ? "h-9 w-9 text-lg"
+                        : "h-8 w-8 text-base"
                     }`}
                   >
                     {d.getDate()}
                   </span>
                 ) : (
                   <span
-                    className={`font-medium leading-none text-slate-300 ${
-                      comfortable ? "text-lg" : "text-base"
+                    className={`flex shrink-0 items-center justify-center font-medium leading-none text-slate-300 ${
+                      comfortable ? "h-9 min-w-[2.25rem] text-lg" : "h-8 min-w-[2rem] text-base"
                     }`}
                   >
                     {dayLabel}
@@ -179,15 +179,19 @@ function CompactWeekBlock({
                 )}
                 {dayForecast ? (
                   <div
-                    className="flex items-center justify-center gap-0.5 leading-none"
+                    className="flex shrink-0 flex-col items-center leading-none"
                     title={`High ${Math.round(dayForecast.maxF)}° / low ${Math.round(dayForecast.minF)}°`}
                   >
                     <WeatherIcon
                       code={dayForecast.code}
-                      className={comfortable ? "h-3.5 w-3.5 shrink-0" : "h-3 w-3 shrink-0"}
+                      className={
+                        comfortable
+                          ? "h-9 w-9 shrink-0 text-sky-300"
+                          : "h-8 w-8 shrink-0 text-sky-300"
+                      }
                     />
                     <span
-                      className={`whitespace-nowrap tabular-nums ${
+                      className={`mt-0.5 whitespace-nowrap tabular-nums ${
                         comfortable ? "text-[11px]" : "text-[10px]"
                       }`}
                     >
@@ -206,8 +210,14 @@ function CompactWeekBlock({
                     key={ev.id ?? `${key}-all-${ev.summary ?? "untitled"}`}
                     type="button"
                     onClick={() => onSelectEvent(ev)}
-                    className={`truncate rounded px-1 py-px text-left font-medium ${
-                      comfortable ? "text-[13px]" : "text-[12px]"
+                    className={`truncate rounded text-left font-semibold ${
+                      today
+                        ? comfortable
+                          ? "px-1.5 py-1 text-[15px]"
+                          : "px-1.5 py-0.5 text-[14px]"
+                        : comfortable
+                          ? "px-1 py-px text-[13px] font-medium"
+                          : "px-1 py-px text-[12px] font-medium"
                     } ${eventBarClass(ev.summary)}`}
                     style={
                       showCalendarSource

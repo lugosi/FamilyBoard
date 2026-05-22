@@ -9,6 +9,7 @@ import {
   DEFAULT_HOME_CALENDAR_WEEKS,
   defaultCalendarRangeKeys,
   enumerateWeekStarts,
+  eventBarClass,
   eventOverlapsLocalDay,
   getEventBounds,
   parseLocalDateKey,
@@ -132,7 +133,7 @@ const HUE_THEME_OPTIONS: Array<{ key: HueThemeKey; label: string }> = [
 ];
 
 type RightWidgetKey = "clock" | "weather" | "nest" | "hue" | "spotify";
-type SpotifyResultTab = "recent" | "featured" | "tracks" | "albums" | "playlists";
+type SpotifyResultTab = "recent" | "featured" | "results";
 
 type SpotifyWebPlaybackPlayer = {
   addListener: (event: string, cb: (arg: unknown) => void) => boolean;
@@ -1339,7 +1340,7 @@ export function Board() {
     setSpotifySearching(true);
     try {
       const res = await fetch(
-        `/api/spotify/search?q=${encodeURIComponent(q)}&limit=10`,
+        `/api/spotify/search?q=${encodeURIComponent(q)}&limit=8`,
       );
       if (seq !== spotifySearchSeq.current) return;
       if (!res.ok) {
@@ -1368,9 +1369,7 @@ export function Board() {
         playlists: data.playlists ?? [],
       };
       setSpotifySearchResults(next);
-      if (next.tracks.length > 0) setSpotifyResultTab("tracks");
-      else if (next.albums.length > 0) setSpotifyResultTab("albums");
-      else if (next.playlists.length > 0) setSpotifyResultTab("playlists");
+      setSpotifyResultTab("results");
     } finally {
       if (seq === spotifySearchSeq.current) {
         setSpotifySearching(false);
@@ -1389,6 +1388,7 @@ export function Board() {
       });
       return;
     }
+    setSpotifyResultTab("results");
     const id = window.setTimeout(() => void searchSpotify(), 420);
     return () => window.clearTimeout(id);
   }, [spotifyPickOpen, spotifyQuery, searchSpotify]);
@@ -1621,24 +1621,31 @@ export function Board() {
 
         <div className="board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overflow-x-hidden sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
           <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
-            <div className="mb-3 flex min-w-0 shrink-0 items-start gap-3 rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 sm:mb-4 sm:gap-4 sm:px-4 sm:py-3">
-              <span className="shrink-0 pt-0.5 text-sm font-semibold tracking-tight text-white sm:text-base">
+            <div className="mb-3 flex min-w-0 shrink-0 items-start gap-3 rounded-xl border border-slate-600 bg-slate-900 px-3 py-3 shadow-md shadow-black/30 sm:mb-4 sm:gap-4 sm:px-4 sm:py-3.5">
+              <span className="shrink-0 pt-1 text-lg font-bold tracking-tight text-white sm:text-xl">
                 Today
               </span>
               <div className="min-w-0 flex-1">
                 {todayAllDayStrip.length === 0 && todayTimedStrip.length === 0 ? (
-                  <span className="text-sm text-slate-400 sm:text-base">No events 8am-8pm.</span>
+                  <span className="pt-1 text-base text-slate-300 sm:text-lg">
+                    No events 8am–8pm.
+                  </span>
                 ) : (
-                  <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                  <div className="flex flex-wrap gap-2 sm:gap-2.5">
                     {todayAllDayGlance.map((item) => (
                       <button
                         key={item.key}
                         type="button"
                         onClick={() => openEdit(item.event)}
-                        className="inline-flex max-w-[15rem] items-center truncate rounded-md border border-violet-500/70 bg-violet-500/20 px-2 py-1 text-left text-xs font-medium text-violet-100 hover:border-violet-400 sm:max-w-[18rem] sm:text-sm"
+                        className={`inline-flex max-w-full items-center gap-2 rounded-lg px-3 py-2 text-left shadow-sm hover:brightness-110 sm:max-w-[22rem] sm:px-3.5 sm:py-2.5 ${eventBarClass(item.summary)}`}
                         title={item.summary}
                       >
-                        All day - {item.summary}
+                        <span className="shrink-0 text-sm font-bold uppercase tracking-wide opacity-90 sm:text-base">
+                          All day
+                        </span>
+                        <span className="truncate text-base font-semibold sm:text-lg">
+                          {item.summary}
+                        </span>
                       </button>
                     ))}
                     {todayTimedGlance.map((item) => (
@@ -1646,15 +1653,19 @@ export function Board() {
                         key={item.key}
                         type="button"
                         onClick={() => openEdit(item.event)}
-                        className="inline-flex max-w-full items-center gap-1 truncate rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-left text-xs text-slate-100 hover:border-slate-500 sm:text-sm"
-                        title={`${item.startLabel}-${item.endLabel} ${item.summary}`}
+                        className={`inline-flex max-w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left shadow-sm hover:brightness-110 sm:max-w-[26rem] sm:px-3.5 sm:py-2.5 ${eventBarClass(item.summary)}`}
+                        title={`${item.startLabel}–${item.endLabel} ${item.summary}`}
                       >
-                        <span className="font-semibold tabular-nums text-sky-300">{item.startLabel}</span>
-                        <span className="truncate">{item.summary}</span>
+                        <span className="shrink-0 text-base font-bold tabular-nums sm:text-lg">
+                          {item.startLabel}
+                        </span>
+                        <span className="truncate text-base font-semibold sm:text-lg">
+                          {item.summary}
+                        </span>
                       </button>
                     ))}
                     {todayHiddenCount > 0 ? (
-                      <span className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-400 sm:text-sm">
+                      <span className="inline-flex items-center rounded-lg border border-slate-500 bg-slate-800 px-3 py-2 text-base font-medium text-slate-200 sm:text-lg">
                         +{todayHiddenCount} more
                       </span>
                     ) : null}
@@ -2068,26 +2079,7 @@ export function Board() {
                   to enable Nest indoor readings.
                 </p>
               ) : indoorClimate?.hasData ? (
-                <div className="mt-3 space-y-2">
-                  <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
-                    <div className="flex items-end justify-between gap-3">
-                      <div>
-                        <p className="text-4xl font-semibold leading-none text-white sm:text-5xl">
-                          {Math.round(Number(indoorClimate.temperatureF ?? 0))}°
-                          <span className="text-base text-slate-400 sm:text-lg">F</span>
-                        </p>
-                        <p className="mt-1 text-sm text-slate-400 sm:text-base">
-                          {indoorClimate.deviceName || "Nest thermostat"}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs uppercase tracking-wide text-slate-500">Humidity</p>
-                        <p className="text-2xl font-semibold text-sky-300 sm:text-3xl">
-                          {Math.round(Number(indoorClimate.humidity ?? 0))}%
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                <div className="mt-3">
                   <IndoorClimateCharts history={indoorClimate.history ?? []} />
                 </div>
               ) : indoorClimate?.error ? (
@@ -2845,34 +2837,27 @@ export function Board() {
                 ) : null}
               </div>
               <p className="mt-2 text-xs text-slate-500 sm:text-sm">
-                Type at least 1 character — results update as you type. Press Enter to search
-                immediately.
+                Search playlists, albums, and songs. Results update as you type.
               </p>
             </div>
 
             <div className="shrink-0 border-b border-slate-800 px-3 pb-2">
               <div className="flex gap-1 overflow-x-auto pb-1">
-                {(["recent", "featured", "tracks", "albums", "playlists"] as const).map((tab) => {
+                {(["recent", "featured", "results"] as const).map((tab) => {
                   const count =
                     tab === "recent"
                       ? spotifyRecentItems.length
                       : tab === "featured"
                         ? spotifyFeaturedPlaylists.length
-                      : tab === "tracks"
-                      ? spotifySearchResults.tracks.length
-                      : tab === "albums"
-                        ? spotifySearchResults.albums.length
-                        : spotifySearchResults.playlists.length;
+                        : spotifySearchResults.tracks.length +
+                          spotifySearchResults.albums.length +
+                          spotifySearchResults.playlists.length;
                   const label =
                     tab === "recent"
                       ? "Recent"
                       : tab === "featured"
                         ? "Featured"
-                      : tab === "tracks"
-                        ? "Songs"
-                        : tab === "albums"
-                          ? "Albums"
-                          : "Playlists";
+                        : "Results";
                   return (
                     <button
                       key={tab}
@@ -2889,7 +2874,11 @@ export function Board() {
                       }}
                     >
                       {label}
-                      <span className="ml-1 tabular-nums opacity-70">{count}</span>
+                      {tab === "results" && spotifyQuery.trim().length > 0 ? (
+                        <span className="ml-1 tabular-nums opacity-70">{count}</span>
+                      ) : tab !== "results" ? (
+                        <span className="ml-1 tabular-nums opacity-70">{count}</span>
+                      ) : null}
                     </button>
                   );
                 })}
@@ -2897,11 +2886,9 @@ export function Board() {
             </div>
 
             <div className="board-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-2">
-              {spotifyResultTab !== "recent" &&
-              spotifyResultTab !== "featured" &&
-              spotifyQuery.trim().length < 1 ? (
+              {spotifyResultTab === "results" && spotifyQuery.trim().length < 1 ? (
                 <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
-                  Start typing to search Spotify.
+                  Start typing to search playlists, albums, and songs.
                 </p>
               ) : spotifyResultTab === "recent" ? (
                 <div className="space-y-2">
@@ -3050,14 +3037,156 @@ export function Board() {
                     ))}
                   </ul>
                 )
-              ) : spotifyResultTab === "tracks" ? (
-                spotifySearchResults.tracks.length === 0 ? (
+              ) : spotifyResultTab === "results" ? (
+                spotifySearching ? (
                   <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
-                    No songs found.
+                    Searching…
+                  </p>
+                ) : spotifySearchResults.tracks.length === 0 &&
+                  spotifySearchResults.albums.length === 0 &&
+                  spotifySearchResults.playlists.length === 0 ? (
+                  <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
+                    No playlists, albums, or songs found.
                   </p>
                 ) : (
-                  <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {spotifySearchResults.tracks.slice(0, 20).map((t) => (
+                  <div className="space-y-5">
+                    {spotifySearchResults.playlists.length > 0 ? (
+                      <section>
+                        <h4 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400 sm:text-sm">
+                          Playlists
+                        </h4>
+                        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {spotifySearchResults.playlists.map((p) => (
+                            <li
+                              key={`pp-${p.id}`}
+                              className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 hover:bg-slate-900/80"
+                            >
+                              {p.images?.[0]?.url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={p.images[0].url}
+                                  alt=""
+                                  className="h-14 w-14 shrink-0 rounded-md object-cover shadow-md"
+                                />
+                              ) : (
+                                <div className="h-14 w-14 shrink-0 rounded-md border border-slate-800 bg-slate-900" />
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-base font-medium text-white sm:text-lg">
+                                  {p.name ?? "Unknown playlist"}
+                                </p>
+                                <p className="truncate text-sm text-slate-400">
+                                  by {p.owner?.display_name ?? "Unknown"}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                className="shrink-0 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400 sm:text-sm"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  void (async () => {
+                                    const ok = await spotifyControl("play_context", {
+                                      uri: spotifyContextUri("playlist", p.id, p.uri),
+                                      deviceId: spotifyEffectiveDeviceId || undefined,
+                                    });
+                                    if (ok) {
+                                      addSpotifyRecentItem({
+                                        kind: "playlist",
+                                        id: p.id ?? p.uri ?? p.name ?? String(Date.now()),
+                                        name: p.name ?? "Unknown playlist",
+                                        subtitle: `Playlist · by ${p.owner?.display_name ?? "Unknown"}`,
+                                        imageUrl: p.images?.[0]?.url,
+                                        uri: spotifyContextUri("playlist", p.id, p.uri),
+                                      });
+                                      setSpotifyPickOpen(false);
+                                    }
+                                  })();
+                                }}
+                              >
+                                Play
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+                    {spotifySearchResults.albums.length > 0 ? (
+                      <section>
+                        <h4 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400 sm:text-sm">
+                          Albums
+                        </h4>
+                        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {spotifySearchResults.albums.map((a) => (
+                            <li
+                              key={`ap-${a.id}`}
+                              className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 hover:bg-slate-900/80"
+                            >
+                              {a.images?.[0]?.url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={a.images[0].url}
+                                  alt=""
+                                  className="h-14 w-14 shrink-0 rounded-md object-cover shadow-md"
+                                />
+                              ) : (
+                                <div className="h-14 w-14 shrink-0 rounded-md border border-slate-800 bg-slate-900" />
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-base font-medium text-white sm:text-lg">
+                                  {a.name ?? "Unknown album"}
+                                </p>
+                                <p className="truncate text-sm text-slate-400">
+                                  {a.artists
+                                    ?.map((x) => x.name)
+                                    .filter(Boolean)
+                                    .join(", ") ?? "Unknown artist"}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                className="shrink-0 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400 sm:text-sm"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  void (async () => {
+                                    const ok = await spotifyControl("play_context", {
+                                      uri: spotifyContextUri("album", a.id, a.uri),
+                                      deviceId: spotifyEffectiveDeviceId || undefined,
+                                    });
+                                    if (ok) {
+                                      addSpotifyRecentItem({
+                                        kind: "album",
+                                        id: a.id ?? a.uri ?? a.name ?? String(Date.now()),
+                                        name: a.name ?? "Unknown album",
+                                        subtitle: `Album · ${
+                                          a.artists
+                                            ?.map((x) => x.name)
+                                            .filter(Boolean)
+                                            .join(", ") ?? "Unknown artist"
+                                        }`,
+                                        imageUrl: a.images?.[0]?.url,
+                                        uri: spotifyContextUri("album", a.id, a.uri),
+                                      });
+                                      setSpotifyPickOpen(false);
+                                    }
+                                  })();
+                                }}
+                              >
+                                Play
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+                    {spotifySearchResults.tracks.length > 0 ? (
+                      <section>
+                        <h4 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400 sm:text-sm">
+                          Songs
+                        </h4>
+                        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {spotifySearchResults.tracks.map((t) => (
                       <li
                         key={`tp-${t.id}`}
                         className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5"
@@ -3149,129 +3278,13 @@ export function Board() {
                           </button>
                         </div>
                       </li>
-                    ))}
-                  </ul>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+                  </div>
                 )
-              ) : spotifyResultTab === "albums" ? (
-                spotifySearchResults.albums.length === 0 ? (
-                  <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
-                    No albums found.
-                  </p>
-                ) : (
-                  <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {spotifySearchResults.albums.slice(0, 20).map((a) => (
-                      <li
-                        key={`ap-${a.id}`}
-                        className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 hover:bg-slate-900/80"
-                      >
-                          {a.images?.[0]?.url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={a.images[0].url}
-                              alt=""
-                              className="h-14 w-14 shrink-0 rounded-md object-cover shadow-md"
-                            />
-                          ) : (
-                            <div className="h-14 w-14 shrink-0 rounded-md border border-slate-800 bg-slate-900" />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-base font-medium text-white sm:text-lg">
-                              {a.name ?? "Unknown album"}
-                            </p>
-                            <p className="truncate text-sm text-slate-400">
-                              Album ·{" "}
-                              {a.artists
-                                ?.map((x) => x.name)
-                                .filter(Boolean)
-                                .join(", ") ?? "Unknown artist"}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              void spotifyControl("play_context", {
-                                uri: spotifyContextUri("album", a.id, a.uri),
-                                deviceId: spotifyEffectiveDeviceId || undefined,
-                              });
-                              addSpotifyRecentItem({
-                                kind: "album",
-                                id: a.id ?? a.uri ?? a.name ?? String(Date.now()),
-                                name: a.name ?? "Unknown album",
-                                subtitle: `Album · ${
-                                  a.artists
-                                    ?.map((x) => x.name)
-                                    .filter(Boolean)
-                                    .join(", ") ?? "Unknown artist"
-                                }`,
-                                imageUrl: a.images?.[0]?.url,
-                                uri: spotifyContextUri("album", a.id, a.uri),
-                              });
-                            }}
-                          >
-                            Play
-                          </button>
-                      </li>
-                    ))}
-                  </ul>
-                )
-              ) : spotifySearchResults.playlists.length === 0 ? (
-                <p className="px-1 py-8 text-center text-sm text-slate-500 sm:text-base">
-                  No playlists found.
-                </p>
-              ) : (
-                <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {spotifySearchResults.playlists.slice(0, 20).map((p) => (
-                    <li
-                      key={`pp-${p.id}`}
-                      className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 hover:bg-slate-900/80"
-                    >
-                        {p.images?.[0]?.url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={p.images[0].url}
-                            alt=""
-                            className="h-14 w-14 shrink-0 rounded-md object-cover shadow-md"
-                          />
-                        ) : (
-                          <div className="h-14 w-14 shrink-0 rounded-md border border-slate-800 bg-slate-900" />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-base font-medium text-white sm:text-lg">
-                            {p.name ?? "Unknown playlist"}
-                          </p>
-                          <p className="truncate text-sm text-slate-400">
-                            Playlist · by {p.owner?.display_name ?? "Unknown"}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            void spotifyControl("play_context", {
-                              uri: spotifyContextUri("playlist", p.id, p.uri),
-                              deviceId: spotifyEffectiveDeviceId || undefined,
-                            });
-                            addSpotifyRecentItem({
-                              kind: "playlist",
-                              id: p.id ?? p.uri ?? p.name ?? String(Date.now()),
-                              name: p.name ?? "Unknown playlist",
-                              subtitle: `Playlist · by ${p.owner?.display_name ?? "Unknown"}`,
-                              imageUrl: p.images?.[0]?.url,
-                              uri: spotifyContextUri("playlist", p.id, p.uri),
-                            });
-                          }}
-                        >
-                          Play
-                        </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              ) : null}
             </div>
           </div>
         </div>

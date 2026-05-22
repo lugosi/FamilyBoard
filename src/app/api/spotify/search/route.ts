@@ -67,7 +67,7 @@ export async function GET(request: Request) {
   const q = url.searchParams.get("q")?.trim() ?? "";
   const limit = Math.max(
     1,
-    Math.min(10, Number.parseInt(url.searchParams.get("limit") ?? "10", 10) || 10),
+    Math.min(20, Number.parseInt(url.searchParams.get("limit") ?? "8", 10) || 8),
   );
   if (!q) {
     return NextResponse.json({ tracks: [], albums: [], playlists: [] });
@@ -95,11 +95,16 @@ export async function GET(request: Request) {
         { status: 502 },
       );
     }
-    return NextResponse.json({
-      tracks: out.data?.tracks?.items ?? [],
-      albums: out.data?.albums?.items ?? [],
-      playlists: out.data?.playlists?.items ?? [],
-    });
+    const tracks = (out.data?.tracks?.items ?? []).filter(
+      (t): t is SearchTrack => t != null && typeof t === "object",
+    );
+    const albums = (out.data?.albums?.items ?? []).filter(
+      (a): a is SearchAlbum => a != null && typeof a === "object",
+    );
+    const playlists = (out.data?.playlists?.items ?? []).filter(
+      (p): p is SearchPlaylist => p != null && typeof p === "object",
+    );
+    return NextResponse.json({ tracks, albums, playlists });
   } catch (e) {
     const message = e instanceof Error ? e.message : "spotify_error";
     const status = message.includes("not linked") ? 401 : 500;
