@@ -2311,7 +2311,7 @@ export function Board() {
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Spotify</h2>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
                   <button
                     type="button"
                     className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
@@ -2333,6 +2333,18 @@ export function Board() {
                       <path d="M21 3v6h-6" />
                     </svg>
                   </button>
+                  {status?.spotifyConfigured && status.spotifyLinked ? (
+                    <button
+                      type="button"
+                      disabled={busy === "spotify-disconnect"}
+                      className="rounded-md px-2 py-1 text-xs font-semibold text-rose-300 hover:bg-slate-800/70 hover:text-rose-100 disabled:opacity-50 sm:text-sm"
+                      onClick={() => void disconnectSpotify()}
+                      aria-label="Log out of Spotify"
+                      title="Log out"
+                    >
+                      {busy === "spotify-disconnect" ? "…" : "Log out"}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
@@ -2390,7 +2402,7 @@ export function Board() {
                       {spotifyNotice}
                     </p>
                   ) : null}
-                  <div className="flex items-stretch gap-3">
+                  <div className="flex items-end gap-3">
                     <div className="min-w-0 flex-1 space-y-3">
                       <div className="min-h-[6.75rem] rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
                         <div className="flex items-center gap-3">
@@ -2456,70 +2468,136 @@ export function Board() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={busy === "spotify-previous"}
-                        className="rounded-full border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
-                        onClick={() => void spotifyControl("previous")}
-                      >
-                        Prev
-                      </button>
-                      {spotifyPlayback?.is_playing ? (
-                        <button
-                          type="button"
-                          disabled={busy === "spotify-pause"}
-                          className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
-                          onClick={() => void spotifyControl("pause")}
-                        >
-                          Pause
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={busy === "spotify-play"}
-                          className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
-                          onClick={() =>
-                            void spotifyControl("play", {
-                              deviceId: spotifyEffectiveDeviceId || undefined,
-                            })
-                          }
-                        >
-                          Play
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        disabled={busy === "spotify-next"}
-                        className="rounded-full border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
-                        onClick={() => void spotifyControl("next")}
-                      >
-                        Next
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-full border border-slate-600 p-2 text-slate-100 hover:border-slate-400"
-                        onClick={() => setSpotifyPickOpen(true)}
-                        aria-label="Search music"
-                        title="Search music"
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          className="h-4 w-4"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <circle cx="11" cy="11" r="7" />
-                          <path d="M20 20l-3.5-3.5" />
-                        </svg>
-                      </button>
+                      <div className="flex flex-wrap items-end gap-2">
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                          <select
+                            className="w-full min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
+                            aria-label="Playback device"
+                            value={spotifyEffectiveDeviceId}
+                            onChange={(e) => {
+                              const nextDeviceId = e.target.value;
+                              if (
+                                nextDeviceId === spotifySdkDeviceId ||
+                                spotifyLiveDeviceIds.has(nextDeviceId)
+                              ) {
+                                setSpotifySelectedDeviceId(nextDeviceId);
+                                void spotifyControl("set_device", { deviceId: nextDeviceId });
+                              } else {
+                                setSpotifyNotice(
+                                  "Selected device is last seen only. Open Spotify on that device first, then refresh devices.",
+                                );
+                              }
+                            }}
+                          >
+                            {spotifySdkDeviceId && !spotifySdkInDeviceList ? (
+                              <option value={spotifySdkDeviceId}>
+                                FamilyBoard Web Player{" "}
+                                {spotifyActiveDevice?.id === spotifySdkDeviceId ? "• active" : ""}
+                              </option>
+                            ) : null}
+                            {spotifyDeviceOptions.length === 0 ? (
+                              <option value="">No devices found</option>
+                            ) : (
+                              spotifyDeviceOptions.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                  {d.name ?? "Unknown"}{" "}
+                                  {d.is_active
+                                    ? "• active"
+                                    : spotifyDevices.some((live) => live.id === d.id)
+                                      ? ""
+                                      : "• last seen"}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                          <button
+                            type="button"
+                            disabled={busy === "spotify-refresh-devices"}
+                            className="flex h-[2.75rem] w-[2.75rem] shrink-0 items-center justify-center rounded-full border border-slate-600 text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:h-11 sm:w-11"
+                            onClick={() => void refreshSpotifyDevices()}
+                            aria-label="Refresh devices"
+                            title="Refresh devices"
+                          >
+                            <svg
+                              aria-hidden="true"
+                              viewBox="0 0 24 24"
+                              className={`h-4 w-4 sm:h-5 sm:w-5 ${busy === "spotify-refresh-devices" ? "animate-spin" : ""}`}
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                              <path d="M21 3v6h-6" />
+                            </svg>
+                          </button>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={busy === "spotify-previous"}
+                            className="rounded-full border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
+                            onClick={() => void spotifyControl("previous")}
+                          >
+                            Prev
+                          </button>
+                          {spotifyPlayback?.is_playing ? (
+                            <button
+                              type="button"
+                              disabled={busy === "spotify-pause"}
+                              className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
+                              onClick={() => void spotifyControl("pause")}
+                            >
+                              Pause
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={busy === "spotify-play"}
+                              className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
+                              onClick={() =>
+                                void spotifyControl("play", {
+                                  deviceId: spotifyEffectiveDeviceId || undefined,
+                                })
+                              }
+                            >
+                              Play
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={busy === "spotify-next"}
+                            className="rounded-full border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
+                            onClick={() => void spotifyControl("next")}
+                          >
+                            Next
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-full border border-slate-600 p-2 text-slate-100 hover:border-slate-400"
+                            onClick={() => setSpotifyPickOpen(true)}
+                            aria-label="Search music"
+                            title="Search music"
+                          >
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <circle cx="11" cy="11" r="7" />
+                              <path d="M20 20l-3.5-3.5" />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <div
-                      className="flex w-[4.75rem] shrink-0 flex-col items-center gap-1.5 self-start rounded-lg border border-slate-800 bg-slate-950/35 px-2 py-2"
+                      className="flex w-[4.75rem] shrink-0 flex-col items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950/35 px-2 py-2"
                       aria-label="Volume"
                     >
                       <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
@@ -2548,79 +2626,6 @@ export function Board() {
                       </button>
                     </div>
                   </div>
-
-                  <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
-                    <div className="flex items-center gap-2">
-                      <select
-                        className="w-full min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
-                        value={spotifyEffectiveDeviceId}
-                        onChange={(e) => {
-                          const nextDeviceId = e.target.value;
-                          if (
-                            nextDeviceId === spotifySdkDeviceId ||
-                            spotifyLiveDeviceIds.has(nextDeviceId)
-                          ) {
-                            setSpotifySelectedDeviceId(nextDeviceId);
-                            void spotifyControl("set_device", { deviceId: nextDeviceId });
-                          } else {
-                            setSpotifyNotice(
-                              "Selected device is last seen only. Open Spotify on that device first, then refresh devices.",
-                            );
-                          }
-                        }}
-                      >
-                        {spotifySdkDeviceId && !spotifySdkInDeviceList ? (
-                          <option value={spotifySdkDeviceId}>
-                            FamilyBoard Web Player {spotifyActiveDevice?.id === spotifySdkDeviceId ? "• active" : ""}
-                          </option>
-                        ) : null}
-                        {spotifyDeviceOptions.length === 0 ? (
-                          <option value="">No devices found</option>
-                        ) : (
-                          spotifyDeviceOptions.map((d) => (
-                            <option key={d.id} value={d.id}>
-                              {d.name ?? "Unknown"}{" "}
-                              {d.is_active
-                                ? "• active"
-                                : spotifyDevices.some((live) => live.id === d.id)
-                                  ? ""
-                                  : "• last seen"}
-                            </option>
-                          ))
-                        )}
-                      </select>
-                      <button
-                        type="button"
-                        disabled={busy === "spotify-refresh-devices"}
-                        className="shrink-0 rounded-full border border-slate-600 p-2 text-slate-100 hover:border-slate-400 disabled:opacity-50"
-                        onClick={() => void refreshSpotifyDevices()}
-                        aria-label="Refresh devices"
-                        title="Refresh devices"
-                      >
-                        <svg
-                          aria-hidden="true"
-                          viewBox="0 0 24 24"
-                          className={`h-4 w-4 ${busy === "spotify-refresh-devices" ? "animate-spin" : ""}`}
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                          <path d="M21 3v6h-6" />
-                        </svg>
-                      </button>
-                    </div>
-                  </label>
-                  <button
-                    type="button"
-                    disabled={busy === "spotify-disconnect"}
-                    className="rounded-full border border-rose-900/60 px-4 py-2 text-base text-rose-100 hover:border-rose-700 disabled:opacity-50 sm:text-lg"
-                    onClick={() => void disconnectSpotify()}
-                  >
-                    Disconnect Spotify
-                  </button>
                 </div>
               )}
             </section>

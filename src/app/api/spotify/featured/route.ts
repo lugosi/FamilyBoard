@@ -48,8 +48,10 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const limit = Math.max(
     1,
-    Math.min(20, Number.parseInt(url.searchParams.get("limit") ?? "20", 10) || 20),
+    Math.min(50, Number.parseInt(url.searchParams.get("limit") ?? "20", 10) || 20),
   );
+  /** Spotify Search API allows max 10 per type (browse featured allows up to 50). */
+  const searchLimit = Math.min(limit, 10);
   const country = (url.searchParams.get("country") ?? "").trim().toUpperCase();
   const countryParam = country ? `&country=${encodeURIComponent(country)}` : "";
 
@@ -86,11 +88,14 @@ export async function GET(request: Request) {
       const fallbackSearch = await spotifyApiFetch<{
         playlists?: { items?: FeaturedPlaylist[] };
       }>(
-        `/search?q=${encodeURIComponent("top hits")}&type=playlist&market=from_token&limit=${limit}`,
+        `/search?q=${encodeURIComponent("top hits")}&type=playlist&market=from_token&limit=${searchLimit}`,
       );
       if (fallbackSearch.status >= 200 && fallbackSearch.status < 300) {
+        const playlists = (fallbackSearch.data?.playlists?.items ?? []).filter(
+          (p): p is FeaturedPlaylist => p != null && typeof p === "object",
+        );
         return NextResponse.json({
-          playlists: fallbackSearch.data?.playlists?.items ?? [],
+          playlists,
           message: "Fallback playlists shown because featured endpoint is restricted on this account.",
           source: "search_fallback",
         });
@@ -112,8 +117,11 @@ export async function GET(request: Request) {
         { status: 502 },
       );
     }
+    const playlists = (out.data?.playlists?.items ?? []).filter(
+      (p): p is FeaturedPlaylist => p != null && typeof p === "object",
+    );
     return NextResponse.json({
-      playlists: out.data?.playlists?.items ?? [],
+      playlists,
       message: out.data?.message ?? null,
     });
   } catch (e) {
