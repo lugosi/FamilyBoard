@@ -16,11 +16,13 @@ type Props = {
 
 const HOUR_COUNT = 12;
 const SLOT_W = 40;
-const ICON_H = 26;
-const PLOT_H = 72;
+const ICON_SIZE = 20;
+const ICON_GAP = 5;
+const PLOT_H = 88;
 const LABEL_H = 16;
 const YLAB_W = 34;
-const PAD_TOP = 4;
+/** Space above the warmest point so icons sit above dots without clipping. */
+const PAD_TOP = ICON_SIZE + ICON_GAP + 6;
 const PAD_BOTTOM = 2;
 
 function hourLabel(time: string): string {
@@ -32,7 +34,7 @@ function hourLabel(time: string): string {
 function yForValue(value: number, yMin: number, yMax: number): number {
   const inner = PLOT_H - PAD_TOP - PAD_BOTTOM;
   const span = Math.max(yMax - yMin, 1);
-  return ICON_H + PAD_TOP + inner - ((value - yMin) / span) * inner;
+  return PAD_TOP + inner - ((value - yMin) / span) * inner;
 }
 
 function scaleTicks(minV: number, maxV: number, count = 3): number[] {
@@ -68,7 +70,7 @@ export function WeatherHourlyChart({ hours }: Props) {
   const n = displayHours.length;
   const plotW = Math.max(n * SLOT_W, SLOT_W * 2);
   const totalW = YLAB_W + plotW;
-  const totalH = ICON_H + PLOT_H + LABEL_H;
+  const totalH = PLOT_H + LABEL_H;
   const xAt = (i: number) => YLAB_W + SLOT_W / 2 + i * SLOT_W;
 
   const linePath = displayHours
@@ -79,7 +81,7 @@ export function WeatherHourlyChart({ hours }: Props) {
     })
     .join(" ");
 
-  const baselineY = ICON_H + PLOT_H - PAD_BOTTOM;
+  const baselineY = PLOT_H - PAD_BOTTOM;
   const areaPath =
     linePath +
     ` L${xAt(n - 1).toFixed(1)},${baselineY} L${xAt(0).toFixed(1)},${baselineY} Z`;
@@ -120,7 +122,7 @@ export function WeatherHourlyChart({ hours }: Props) {
             );
           })}
           <defs>
-            <linearGradient id="weatherTempFill" x1="0" y1={ICON_H} x2="0" y2={baselineY}>
+            <linearGradient id="weatherTempFill" x1="0" y1={PAD_TOP} x2="0" y2={baselineY}>
               <stop offset="0%" stopColor="#38bdf8" />
               <stop offset="100%" stopColor="#38bdf8" stopOpacity={0} />
             </linearGradient>
@@ -138,27 +140,31 @@ export function WeatherHourlyChart({ hours }: Props) {
             const x = xAt(i);
             const y = yForValue(h.temperatureF, scaleMin, scaleMax);
             const label = hourLabel(h.time);
+            const iconY = y - ICON_SIZE - ICON_GAP;
             return (
               <g key={h.time}>
                 <title>
                   {label} — {Math.round(h.temperatureF)}°F, {wmoLabel(h.code)}
                 </title>
+                <circle cx={x} cy={y} r={2.5} fill="#7dd3fc" stroke="#0ea5e9" strokeWidth={1} />
                 <foreignObject
-                  x={x - 12}
-                  y={2}
-                  width={24}
-                  height={24}
+                  x={x - ICON_SIZE / 2}
+                  y={iconY}
+                  width={ICON_SIZE}
+                  height={ICON_SIZE}
                   className="overflow-visible"
                 >
-                  <div className="flex h-6 w-6 items-center justify-center text-slate-200">
+                  <div
+                    className="flex items-center justify-center text-slate-200"
+                    style={{ width: ICON_SIZE, height: ICON_SIZE }}
+                  >
                     <WeatherIcon code={h.code} className="h-5 w-5" />
                   </div>
                 </foreignObject>
-                <circle cx={x} cy={y} r={2.5} fill="#7dd3fc" stroke="#0ea5e9" strokeWidth={1} />
                 {shouldShowHourLabel(i) ? (
                   <text
                     x={x}
-                    y={ICON_H + PLOT_H + 12}
+                    y={PLOT_H + 12}
                     textAnchor="middle"
                     className="fill-slate-500 text-[10px]"
                   >
