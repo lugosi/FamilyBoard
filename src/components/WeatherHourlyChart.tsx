@@ -17,11 +17,14 @@ type Props = {
 
 const HOUR_COUNT = 12;
 const ICON_SIZE = 20;
-const ICON_GAP = 5;
+const ICON_GAP = 4;
+const TEMP_LABEL_LINE = 11;
 const LABEL_H = 14;
-const YLAB_W = 32;
-const PAD_TOP = ICON_SIZE + ICON_GAP + 4;
+const YLAB_W = 30;
+const PAD_TOP = ICON_SIZE + ICON_GAP + TEMP_LABEL_LINE + 2;
 const PAD_BOTTOM = 4;
+const DOT_R = 3;
+const DOT_R_EXTREME = 4;
 
 function hourLabel(time: string): string {
   const d = new Date(time);
@@ -147,9 +150,10 @@ export function WeatherHourlyChart({ hours, className = "" }: Props) {
                 className={tick.kind === "high" ? "text-amber-400" : tick.kind === "low" ? "text-sky-400" : "text-slate-400"}
               />
               <text
-                x={plotLeft - 4}
-                y={y + 3}
+                x={plotLeft - 5}
+                y={y}
                 textAnchor="end"
+                dominantBaseline="middle"
                 className={
                   tick.kind === "high"
                     ? "fill-amber-200 text-[10px] font-bold"
@@ -185,20 +189,32 @@ export function WeatherHourlyChart({ hours, className = "" }: Props) {
           const isHigh = i === maxIdx;
           const isLow = i === minIdx;
           const isExtreme = isHigh || isLow;
+          const dotR = isExtreme ? DOT_R_EXTREME : DOT_R;
           const tempLabel = `${Math.round(h.temperatureF)}°`;
-          const iconY = Math.max(2, y - ICON_SIZE - ICON_GAP - (isExtreme ? 10 : 0));
-          const dotR = isExtreme ? 4.5 : 3;
+          const tempLabelY = y - dotR - ICON_GAP - TEMP_LABEL_LINE / 2;
+          const iconY = isExtreme
+            ? tempLabelY - TEMP_LABEL_LINE / 2 - ICON_GAP - ICON_SIZE
+            : y - dotR - ICON_GAP - ICON_SIZE;
           return (
             <g key={h.time}>
               <title>
                 {label} — {Math.round(h.temperatureF)}°F, {wmoLabel(h.code)}
                 {isHigh ? " (high)" : isLow ? " (low)" : ""}
               </title>
+              <circle
+                cx={x}
+                cy={y}
+                r={dotR}
+                fill={isHigh ? "#fbbf24" : isLow ? "#38bdf8" : "#7dd3fc"}
+                stroke={isHigh ? "#f59e0b" : isLow ? "#0ea5e9" : "#0284c7"}
+                strokeWidth={isExtreme ? 2 : 1}
+              />
               {isExtreme ? (
                 <text
                   x={x}
-                  y={Math.max(10, y - ICON_SIZE - ICON_GAP - 6)}
+                  y={tempLabelY}
                   textAnchor="middle"
+                  dominantBaseline="middle"
                   className={
                     isHigh
                       ? "fill-amber-100 text-[10px] font-bold"
@@ -208,17 +224,9 @@ export function WeatherHourlyChart({ hours, className = "" }: Props) {
                   {tempLabel}
                 </text>
               ) : null}
-              <circle
-                cx={x}
-                cy={y}
-                r={dotR}
-                fill={isHigh ? "#fbbf24" : isLow ? "#38bdf8" : "#7dd3fc"}
-                stroke={isHigh ? "#f59e0b" : isLow ? "#0ea5e9" : "#0284c7"}
-                strokeWidth={isExtreme ? 2 : 1}
-              />
               <foreignObject
                 x={x - ICON_SIZE / 2}
-                y={iconY}
+                y={Math.max(2, iconY)}
                 width={ICON_SIZE}
                 height={ICON_SIZE}
                 className="overflow-visible"
@@ -233,8 +241,9 @@ export function WeatherHourlyChart({ hours, className = "" }: Props) {
               {shouldShowHourLabel(i, n) ? (
                 <text
                   x={x}
-                  y={plotH + 12}
+                  y={plotH + LABEL_H / 2 + 1}
                   textAnchor="middle"
+                  dominantBaseline="middle"
                   className={`text-[10px] ${isExtreme ? "fill-slate-300 font-medium" : "fill-slate-500"}`}
                 >
                   {label}

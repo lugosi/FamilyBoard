@@ -174,23 +174,27 @@ function formatMsClock(ms: number): string {
 
 const WIDGET_TITLE_ICON = "h-8 w-8 shrink-0 sm:h-9 sm:w-9";
 
+const HUE_BULB_PATH =
+  "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z";
+
 function HueBulbTitleIcon({ on }: { on: boolean }) {
   return (
     <svg
       aria-hidden
       viewBox="0 0 24 24"
-      className={`${WIDGET_TITLE_ICON} ${on ? "text-amber-300" : "text-slate-500"}`}
+      className={`${WIDGET_TITLE_ICON} ${
+        on
+          ? "text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.55)]"
+          : "text-slate-400"
+      }`}
       fill={on ? "currentColor" : "none"}
+      fillOpacity={on ? 0.3 : 0}
       stroke="currentColor"
-      strokeWidth={on ? 0 : 1.8}
+      strokeWidth="1.75"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      {on ? (
-        <path d="M12 2a7 7 0 0 0-4 12.74V19a2 2 0 0 0 4 0v-4.26A7 7 0 0 0 12 2zm0 5a2 2 0 1 1 0 4 2 2 0 0 1 0-4z" />
-      ) : (
-        <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1-7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-      )}
+      <path d={HUE_BULB_PATH} />
     </svg>
   );
 }
@@ -351,6 +355,7 @@ export function Board() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [todayEvents, setTodayEvents] = useState<CalendarEvent[]>([]);
   const [areas, setAreas] = useState<HueArea[]>([]);
+  const [hueAnyLightOn, setHueAnyLightOn] = useState(false);
   const [weather, setWeather] = useState<Record<string, unknown> | null>(null);
   const [indoorClimate, setIndoorClimate] = useState<IndoorClimate | null>(null);
   const [spotifyPlayback, setSpotifyPlayback] = useState<SpotifyPlayback | null>(
@@ -620,7 +625,10 @@ export function Board() {
       }
 
       if (s.hueReady) {
-        const hRes = await fetch("/api/hue/areas", { signal });
+        const [hRes, lRes] = await Promise.all([
+          fetch("/api/hue/areas", { signal }),
+          fetch("/api/hue/lights", { signal }),
+        ]);
         if (signal?.aborted) return;
         if (hRes.status === 501) {
           setAreas([]);
@@ -628,8 +636,19 @@ export function Board() {
           const data = (await hRes.json()) as { areas: HueArea[] };
           setAreas(data.areas ?? []);
         }
+        if (lRes.ok) {
+          const lightData = (await lRes.json()) as {
+            lights?: { on?: boolean; reachable?: boolean }[];
+          };
+          setHueAnyLightOn(
+            lightData.lights?.some((l) => l.on && l.reachable !== false) ?? false,
+          );
+        } else {
+          setHueAnyLightOn(false);
+        }
       } else {
         setAreas([]);
+        setHueAnyLightOn(false);
       }
 
       if (s.spotifyConfigured && s.spotifyLinked) {
@@ -1572,7 +1591,7 @@ export function Board() {
     spotifySdkDeviceId && spotifyDevices.some((d) => d.id === spotifySdkDeviceId),
   );
   const spotifyCover = spotifyTrack?.album?.images?.[0]?.url;
-  const hueAnyOn = areas.some((a) => a.on);
+  const hueAnyOn = hueAnyLightOn || areas.some((a) => a.on);
   const indoorTitleTempF = useMemo(() => {
     const direct = indoorClimate?.temperatureF;
     if (direct != null && Number.isFinite(direct)) return direct;

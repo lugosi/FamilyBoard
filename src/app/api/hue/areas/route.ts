@@ -35,7 +35,7 @@ export async function GET() {
         id,
         name: g.name ?? `Area ${id}`,
         type: t,
-        on: Boolean(g.action?.on ?? g.state?.any_on),
+        on: Boolean(g.state?.any_on ?? g.action?.on),
       };
     })
     .filter((v): v is NonNullable<typeof v> => Boolean(v));
