@@ -27,6 +27,7 @@ type Props = {
   /** Larger type and day cells when the layout has extra vertical room (e.g. alert dismissed). */
   comfortable?: boolean;
   onSelectEvent: (ev: GEvent) => void;
+  onDoubleClickDay?: (day: Date) => void;
 };
 
 type SourceEvent = GEvent & {
@@ -41,6 +42,7 @@ export function CompactCalendarGrid({
   showCalendarSource = false,
   comfortable = false,
   onSelectEvent,
+  onDoubleClickDay,
 }: Props) {
   const [visibleAllDayLimit, setVisibleAllDayLimit] = useState(2);
 
@@ -96,6 +98,7 @@ export function CompactCalendarGrid({
               showCalendarSource={showCalendarSource}
               comfortable={comfortable}
               onSelectEvent={onSelectEvent}
+              onDoubleClickDay={onDoubleClickDay}
             />
           </div>
         ))}
@@ -112,6 +115,7 @@ function CompactWeekBlock({
   showCalendarSource,
   comfortable,
   onSelectEvent,
+  onDoubleClickDay,
 }: {
   weekStartMonday: Date;
   events: GEvent[];
@@ -120,6 +124,7 @@ function CompactWeekBlock({
   showCalendarSource: boolean;
   comfortable: boolean;
   onSelectEvent: (ev: GEvent) => void;
+  onDoubleClickDay?: (day: Date) => void;
 }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col border-b border-slate-800 last:border-b-0">
@@ -151,7 +156,14 @@ function CompactWeekBlock({
               key={key}
               className={`flex h-full min-h-0 min-w-0 flex-col gap-px p-0.5 ${dayMinH} ${
                 today ? "bg-slate-900/40" : weekend ? "bg-slate-900/25" : ""
-              }`}
+              } ${onDoubleClickDay ? "cursor-cell" : ""}`}
+              onDoubleClick={
+                onDoubleClickDay
+                  ? () => {
+                      onDoubleClickDay(d);
+                    }
+                  : undefined
+              }
             >
               <div
                 className={`flex shrink-0 items-center justify-center gap-1.5 ${
@@ -210,6 +222,7 @@ function CompactWeekBlock({
                     key={ev.id ?? `${key}-all-${ev.summary ?? "untitled"}`}
                     type="button"
                     onClick={() => onSelectEvent(ev)}
+                    onDoubleClick={(e) => e.stopPropagation()}
                     className={`truncate rounded text-left font-semibold ${
                       today
                         ? comfortable
@@ -246,6 +259,7 @@ function CompactWeekBlock({
                       key={ev.id ?? `${key}-${ev.start?.dateTime}`}
                       type="button"
                       onClick={() => onSelectEvent(ev)}
+                      onDoubleClick={(e) => e.stopPropagation()}
                       className="flex min-w-0 items-start gap-0.5 rounded px-px text-left hover:bg-white/5"
                     >
                       <span

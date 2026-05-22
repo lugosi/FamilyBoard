@@ -179,11 +179,18 @@ function toInputValue(isoOrDate: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function initialNewEventRange() {
-  const s = new Date();
-  s.setMinutes(Math.ceil(s.getMinutes() / 15) * 15, 0, 0);
-  const e = new Date(s.getTime() + 60 * 60 * 1000);
-  return { start: toInputValue(s.toISOString()), end: toInputValue(e.toISOString()) };
+function initialNewEventRange(forDay?: Date) {
+  const dayKey = dateKeyLocal(forDay ?? new Date());
+  if (dayKey === dateKeyLocal(new Date())) {
+    const s = new Date();
+    s.setMinutes(Math.ceil(s.getMinutes() / 15) * 15, 0, 0);
+    const e = new Date(s.getTime() + 60 * 60 * 1000);
+    return { start: toInputValue(s.toISOString()), end: toInputValue(e.toISOString()) };
+  }
+  return {
+    start: dateKeyToDatetimeLocal(dayKey, 9, 0),
+    end: dateKeyToDatetimeLocal(dayKey, 10, 0),
+  };
 }
 
 /** Google Calendar all-day `end.date` is exclusive; form uses inclusive last day. */
@@ -334,7 +341,7 @@ export function Board() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const [newSummary, setNewSummary] = useState("Family dinner");
+  const [newSummary, setNewSummary] = useState("");
   const [newTimes, setNewTimes] = useState(() => initialNewEventRange());
   const [newAllDay, setNewAllDay] = useState(false);
   const [newEventOpen, setNewEventOpen] = useState(false);
@@ -892,9 +899,10 @@ export function Board() {
     return () => window.clearInterval(id);
   }, [spotifyPlayback?.is_playing, spotifySeekDraft, spotifyProgressAnchorAtMs]);
 
-  function openNewEventModal() {
+  function openNewEventModal(forDay?: Date) {
+    setNewSummary("");
     setNewAllDay(false);
-    setNewTimes(initialNewEventRange());
+    setNewTimes(initialNewEventRange(forDay));
     setNewEventOpen(true);
   }
 
@@ -1735,6 +1743,7 @@ export function Board() {
                         showCalendarSource={selectedCalendarId === "__all__"}
                         comfortable={calendarComfortable}
                         onSelectEvent={(ev) => openEdit(ev)}
+                        onDoubleClickDay={(day) => openNewEventModal(day)}
                       />
                     </div>
                   )}
@@ -2693,6 +2702,8 @@ export function Board() {
                   className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
                   value={newSummary}
                   onChange={(e) => setNewSummary(e.target.value)}
+                  placeholder="Event title"
+                  autoFocus
                 />
               </label>
               <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5 text-base text-slate-200 sm:text-lg">
