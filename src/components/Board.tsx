@@ -1468,7 +1468,7 @@ export function Board() {
     () => dailyForecastByDate(daily),
     [daily],
   );
-  const hourlyToday = weather?.hourlyToday as WeatherHourlyPoint[] | undefined;
+  const hourlyNext12 = weather?.hourlyNext12 as WeatherHourlyPoint[] | undefined;
   const todayForecast = daily?.[0];
   const spotifyTrack = spotifyPlayback?.item;
   const spotifyArtist = spotifyTrack?.artists?.map((a) => a.name).filter(Boolean).join(", ");
@@ -1962,8 +1962,8 @@ export function Board() {
                       </div>
                     </div>
                   </div>
-                  {hourlyToday && hourlyToday.length > 0 ? (
-                    <WeatherHourlyChart hours={hourlyToday} />
+                  {hourlyNext12 && hourlyNext12.length > 0 ? (
+                    <WeatherHourlyChart hours={hourlyNext12} />
                   ) : null}
                 </div>
               ) : (

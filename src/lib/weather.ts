@@ -19,7 +19,8 @@ export type WeatherSnapshot = {
     windMph: number;
   };
   daily: DailyForecast[];
-  hourlyToday: Array<{
+  /** Next 12 clock hours from the current hour (rolling on each refresh). */
+  hourlyNext12: Array<{
     time: string;
     temperatureF: number;
     code: number;
@@ -103,19 +104,19 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
   const hourlyTemps = data.hourly?.temperature_2m ?? [];
   const hourlyCodes = data.hourly?.weather_code ?? [];
   const now = Date.now();
-  const todayDate =
-    hourlyTimes.find((t) => new Date(t).getTime() >= now)?.slice(0, 10) ??
-    hourlyTimes[0]?.slice(0, 10) ??
-    "";
-  const hourlyToday = hourlyTimes
+  const currentHourStart = new Date(now);
+  currentHourStart.setMinutes(0, 0, 0);
+  const startIdx = hourlyTimes.findIndex(
+    (t) => new Date(t).getTime() >= currentHourStart.getTime(),
+  );
+  const fromIdx = startIdx >= 0 ? startIdx : 0;
+  const hourlyNext12 = hourlyTimes
+    .slice(fromIdx, fromIdx + 12)
     .map((time, i) => ({
       time,
-      temperatureF: hourlyTemps[i] ?? 0,
-      code: hourlyCodes[i] ?? 0,
-      ts: new Date(time).getTime(),
-    }))
-    .filter((h) => todayDate && h.time.startsWith(todayDate))
-    .map(({ time, temperatureF, code }) => ({ time, temperatureF, code }));
+      temperatureF: hourlyTemps[fromIdx + i] ?? 0,
+      code: hourlyCodes[fromIdx + i] ?? 0,
+    }));
 
   return {
     latitude: coords.lat,
@@ -128,7 +129,7 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
       windMph: cur.wind_speed_10m ?? 0,
     },
     daily,
-    hourlyToday,
+    hourlyNext12,
   };
 }
 

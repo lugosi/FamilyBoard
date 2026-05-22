@@ -14,8 +14,8 @@ type Props = {
   hours: WeatherHourlyPoint[];
 };
 
-const MAX_POINTS = 10;
-const SLOT_W = 44;
+const HOUR_COUNT = 12;
+const SLOT_W = 40;
 const ICON_H = 26;
 const PLOT_H = 72;
 const LABEL_H = 16;
@@ -27,23 +27,6 @@ function hourLabel(time: string): string {
   const d = new Date(time);
   if (Number.isNaN(d.getTime())) return (time ?? "").slice(11, 16);
   return d.toLocaleTimeString([], { hour: "numeric" });
-}
-
-/** From current hour onward; evenly subsample so the chart stays readable in a narrow widget. */
-function hoursForDisplay(all: WeatherHourlyPoint[]): WeatherHourlyPoint[] {
-  if (all.length === 0) return [];
-  const now = Date.now();
-  const fromNow = all.filter((h) => new Date(h.time).getTime() >= now - 45 * 60 * 1000);
-  const pool = fromNow.length >= 2 ? fromNow : all;
-  if (pool.length <= MAX_POINTS) return pool;
-  const step = Math.ceil(pool.length / MAX_POINTS);
-  const picked: WeatherHourlyPoint[] = [];
-  for (let i = 0; i < pool.length; i += step) {
-    picked.push(pool[i]!);
-  }
-  const last = pool[pool.length - 1]!;
-  if (picked[picked.length - 1]?.time !== last.time) picked.push(last);
-  return picked.slice(0, MAX_POINTS);
 }
 
 function yForValue(value: number, yMin: number, yMax: number): number {
@@ -59,14 +42,12 @@ function scaleTicks(minV: number, maxV: number, count = 3): number[] {
   });
 }
 
-function shouldShowHourLabel(index: number, total: number): boolean {
-  if (total <= 6) return true;
-  if (index === 0 || index === total - 1) return true;
-  return index % 2 === 0;
+function shouldShowHourLabel(index: number): boolean {
+  return index === 0 || index === HOUR_COUNT - 1 || index % 2 === 0;
 }
 
 export function WeatherHourlyChart({ hours }: Props) {
-  const displayHours = useMemo(() => hoursForDisplay(hours), [hours]);
+  const displayHours = useMemo(() => hours.slice(0, HOUR_COUNT), [hours]);
 
   if (displayHours.length < 2) {
     return (
@@ -112,7 +93,7 @@ export function WeatherHourlyChart({ hours }: Props) {
           style={{ width: "100%", maxWidth: "100%" }}
           preserveAspectRatio="xMinYMid meet"
           role="img"
-          aria-label="Hourly temperature and conditions for the rest of today"
+          aria-label="Next 12 hours temperature and conditions"
         >
           {ticks.map((tick) => {
             const y = yForValue(tick, scaleMin, scaleMax);
@@ -174,7 +155,7 @@ export function WeatherHourlyChart({ hours }: Props) {
                   </div>
                 </foreignObject>
                 <circle cx={x} cy={y} r={2.5} fill="#7dd3fc" stroke="#0ea5e9" strokeWidth={1} />
-                {shouldShowHourLabel(i, n) ? (
+                {shouldShowHourLabel(i) ? (
                   <text
                     x={x}
                     y={ICON_H + PLOT_H + 12}
