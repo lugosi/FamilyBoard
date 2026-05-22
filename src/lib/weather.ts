@@ -25,7 +25,26 @@ export type WeatherSnapshot = {
     temperatureF: number;
     code: number;
   }>;
+  /** Today's sunrise/sunset in local forecast timezone (ISO strings). */
+  sunriseToday?: string;
+  sunsetToday?: string;
 };
+
+/** Greyscale night mode: from sunset until sunrise (fallback: 10pm–7am local). */
+export function isNightGreyscaleActive(
+  now: Date,
+  sunriseToday?: string,
+  sunsetToday?: string,
+): boolean {
+  const sunriseMs = sunriseToday ? new Date(sunriseToday).getTime() : NaN;
+  const sunsetMs = sunsetToday ? new Date(sunsetToday).getTime() : NaN;
+  if (Number.isFinite(sunriseMs) && Number.isFinite(sunsetMs)) {
+    const t = now.getTime();
+    return t < sunriseMs || t >= sunsetMs;
+  }
+  const h = now.getHours();
+  return h >= 22 || h < 7;
+}
 
 export function getWeatherCoordinates(): { lat: number; lon: number } | null {
   const lat = Number(process.env.WEATHER_LAT);
@@ -49,7 +68,7 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
       "weather_code",
       "wind_speed_10m",
     ].join(","),
-    daily: "weather_code,temperature_2m_max,temperature_2m_min",
+    daily: "weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset",
     hourly: "temperature_2m,weather_code",
     timezone: process.env.WEATHER_TIMEZONE?.trim() || "auto",
     forecast_days: String(WEATHER_FORECAST_DAYS),
@@ -75,6 +94,8 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
       weather_code?: number[];
       temperature_2m_max?: number[];
       temperature_2m_min?: number[];
+      sunrise?: string[];
+      sunset?: string[];
     };
     hourly?: {
       time?: string[];
@@ -118,6 +139,15 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
       code: hourlyCodes[fromIdx + i] ?? 0,
     }));
 
+  const dailySunrise = data.daily?.sunrise ?? [];
+  const dailySunset = data.daily?.sunset ?? [];
+  const todayDate =
+    hourlyTimes.find((t) => new Date(t).getTime() >= now)?.slice(0, 10) ??
+    times[0] ??
+    "";
+  const todayDailyIdx = todayDate ? times.indexOf(todayDate) : 0;
+  const dayIdx = todayDailyIdx >= 0 ? todayDailyIdx : 0;
+
   return {
     latitude: coords.lat,
     longitude: coords.lon,
@@ -130,6 +160,8 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
     },
     daily,
     hourlyNext12,
+    sunriseToday: dailySunrise[dayIdx],
+    sunsetToday: dailySunset[dayIdx],
   };
 }
 

@@ -25,7 +25,11 @@ import {
   type WeatherHourlyPoint,
 } from "@/components/WeatherHourlyChart";
 import { WeatherIcon } from "@/components/WeatherIcon";
-import { dailyForecastByDate, type DailyForecast } from "@/lib/weather";
+import {
+  dailyForecastByDate,
+  isNightGreyscaleActive,
+  type DailyForecast,
+} from "@/lib/weather";
 import { IndoorClimateCharts } from "@/components/IndoorClimateCharts";
 import type { ClimateHistorySample } from "@/lib/nest-climate-history";
 
@@ -367,16 +371,22 @@ export function Board() {
     spotify: false,
   });
 
+  const sunriseToday =
+    typeof weather?.sunriseToday === "string" ? weather.sunriseToday : undefined;
+  const sunsetToday =
+    typeof weather?.sunsetToday === "string" ? weather.sunsetToday : undefined;
+
   const [nightGreyscale, setNightGreyscale] = useState(false);
   useEffect(() => {
     function tickNight() {
-      const h = new Date().getHours();
-      setNightGreyscale(h >= 22 || h < 7);
+      setNightGreyscale(
+        isNightGreyscaleActive(new Date(), sunriseToday, sunsetToday),
+      );
     }
     tickNight();
     const nid = window.setInterval(tickNight, 60_000);
     return () => window.clearInterval(nid);
-  }, []);
+  }, [sunriseToday, sunsetToday]);
 
   useEffect(() => {
     const id = window.setInterval(() => setClockNow(new Date()), 1000);
@@ -1528,6 +1538,14 @@ export function Board() {
     hour: "numeric",
     minute: "2-digit",
   });
+  const formatSunClock = (iso?: string) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  };
+  const clockSunrise = formatSunClock(sunriseToday);
+  const clockSunset = formatSunClock(sunsetToday);
   const todayAllDayStrip = useMemo(() => {
     const today = new Date();
     return todayEvents
@@ -1824,13 +1842,49 @@ export function Board() {
                 </button>
               </div>
               {!collapsedWidgets.clock ? (
-                <div className="mt-3 flex items-baseline justify-between gap-3">
-                  <p className="text-3xl font-semibold leading-tight text-white sm:text-4xl">
+                <div className="mt-3 flex min-h-[2.75rem] items-baseline justify-between gap-3 sm:min-h-[3rem]">
+                  <p className="shrink-0 text-3xl font-semibold leading-none text-white sm:text-4xl">
                     {clockTime}
                   </p>
-                  <p className="truncate text-xs uppercase tracking-wide text-slate-400 sm:text-sm">
-                    {clockDate}
-                  </p>
+                  <div className="min-w-0 max-w-[55%] text-right leading-tight">
+                    <p className="truncate text-xs uppercase tracking-wide text-slate-400 sm:text-sm">
+                      {clockDate}
+                    </p>
+                    <p className="mt-0.5 flex h-[14px] items-center justify-end gap-2 text-[10px] tabular-nums text-slate-500 sm:text-[11px]">
+                      <span className="inline-flex items-center gap-0.5" title="Sunrise">
+                        <svg
+                          aria-hidden
+                          viewBox="0 0 24 24"
+                          className="h-3 w-3 text-amber-300/90"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M12 3v4M4.2 10.2l2.8 2.8M19.8 10.2l-2.8 2.8M3 17h18M8 21h8" />
+                          <circle cx="12" cy="14" r="4" />
+                        </svg>
+                        {clockSunrise}
+                      </span>
+                      <span className="inline-flex items-center gap-0.5" title="Sunset">
+                        <svg
+                          aria-hidden
+                          viewBox="0 0 24 24"
+                          className="h-3 w-3 text-indigo-300/90"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M17 18H7M12 9V3M4.2 15.8l2.8-2.8M19.8 15.8l-2.8-2.8" />
+                          <path d="M6 21h12" />
+                        </svg>
+                        {clockSunset}
+                      </span>
+                    </p>
+                  </div>
                 </div>
               ) : null}
             </section>

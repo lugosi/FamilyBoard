@@ -69,11 +69,24 @@ export function WeatherHourlyChart({ hours, className = "" }: Props) {
   const pad = Math.max((dataMax - dataMin) * 0.12, 2);
   const yMin = dataMin - pad;
   const yMax = dataMax + pad;
-  const ticks = [
-    yMin + pad,
-    yMin + (yMax - yMin) / 2,
-    yMax - pad,
+
+  let minIdx = 0;
+  let maxIdx = 0;
+  for (let i = 1; i < values.length; i++) {
+    if (values[i]! < values[minIdx]!) minIdx = i;
+    if (values[i]! > values[maxIdx]!) maxIdx = i;
+  }
+
+  const axisTicks: Array<{ value: number; kind: "high" | "low" | "mid" }> = [
+    { value: dataMax, kind: "high" },
+    { value: dataMin, kind: "low" },
   ];
+  if (dataMax - dataMin >= 6) {
+    axisTicks.splice(1, 0, {
+      value: dataMin + (dataMax - dataMin) / 2,
+      kind: "mid",
+    });
+  }
 
   const n = displayHours.length;
   const totalW = size.w;
@@ -118,26 +131,34 @@ export function WeatherHourlyChart({ hours, className = "" }: Props) {
         role="img"
         aria-label="Next 12 hours temperature and conditions"
       >
-        {ticks.map((tick) => {
-          const y = yForValue(tick);
+        {axisTicks.map((tick) => {
+          const y = yForValue(tick.value);
+          const isExtreme = tick.kind === "high" || tick.kind === "low";
           return (
-            <g key={tick}>
+            <g key={`${tick.kind}-${tick.value}`}>
               <line
                 x1={plotLeft}
                 y1={y}
                 x2={plotRight}
                 y2={y}
                 stroke="currentColor"
-                strokeOpacity={0.12}
-                className="text-slate-400"
+                strokeOpacity={isExtreme ? 0.22 : 0.1}
+                strokeWidth={isExtreme ? 1.25 : 1}
+                className={tick.kind === "high" ? "text-amber-400" : tick.kind === "low" ? "text-sky-400" : "text-slate-400"}
               />
               <text
                 x={plotLeft - 4}
                 y={y + 3}
                 textAnchor="end"
-                className="fill-slate-500 text-[9px]"
+                className={
+                  tick.kind === "high"
+                    ? "fill-amber-200 text-[10px] font-bold"
+                    : tick.kind === "low"
+                      ? "fill-sky-200 text-[10px] font-bold"
+                      : "fill-slate-500 text-[9px]"
+                }
               >
-                {Math.round(tick)}°
+                {Math.round(tick.value)}°
               </text>
             </g>
           );
@@ -161,13 +182,40 @@ export function WeatherHourlyChart({ hours, className = "" }: Props) {
           const x = xAt(i);
           const y = yForValue(h.temperatureF);
           const label = hourLabel(h.time);
-          const iconY = Math.max(2, y - ICON_SIZE - ICON_GAP);
+          const isHigh = i === maxIdx;
+          const isLow = i === minIdx;
+          const isExtreme = isHigh || isLow;
+          const tempLabel = `${Math.round(h.temperatureF)}°`;
+          const iconY = Math.max(2, y - ICON_SIZE - ICON_GAP - (isExtreme ? 10 : 0));
+          const dotR = isExtreme ? 4.5 : 3;
           return (
             <g key={h.time}>
               <title>
                 {label} — {Math.round(h.temperatureF)}°F, {wmoLabel(h.code)}
+                {isHigh ? " (high)" : isLow ? " (low)" : ""}
               </title>
-              <circle cx={x} cy={y} r={3} fill="#7dd3fc" stroke="#0ea5e9" strokeWidth={1} />
+              {isExtreme ? (
+                <text
+                  x={x}
+                  y={Math.max(10, y - ICON_SIZE - ICON_GAP - 6)}
+                  textAnchor="middle"
+                  className={
+                    isHigh
+                      ? "fill-amber-100 text-[10px] font-bold"
+                      : "fill-sky-100 text-[10px] font-bold"
+                  }
+                >
+                  {tempLabel}
+                </text>
+              ) : null}
+              <circle
+                cx={x}
+                cy={y}
+                r={dotR}
+                fill={isHigh ? "#fbbf24" : isLow ? "#38bdf8" : "#7dd3fc"}
+                stroke={isHigh ? "#f59e0b" : isLow ? "#0ea5e9" : "#0284c7"}
+                strokeWidth={isExtreme ? 2 : 1}
+              />
               <foreignObject
                 x={x - ICON_SIZE / 2}
                 y={iconY}
@@ -187,7 +235,7 @@ export function WeatherHourlyChart({ hours, className = "" }: Props) {
                   x={x}
                   y={plotH + 12}
                   textAnchor="middle"
-                  className="fill-slate-500 text-[10px]"
+                  className={`text-[10px] ${isExtreme ? "fill-slate-300 font-medium" : "fill-slate-500"}`}
                 >
                   {label}
                 </text>
