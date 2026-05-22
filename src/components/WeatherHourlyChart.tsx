@@ -18,8 +18,8 @@ const HOUR_COUNT = 12;
 const SLOT_W = 40;
 const ICON_SIZE = 18;
 const ICON_GAP = 4;
-const PLOT_H = 64;
-const LABEL_H = 12;
+const PLOT_H = 96;
+const LABEL_H = 14;
 const YLAB_W = 30;
 /** Space above the warmest point so icons sit above dots without clipping. */
 const PAD_TOP = ICON_SIZE + ICON_GAP + 2;
@@ -88,11 +88,11 @@ export function WeatherHourlyChart({ hours }: Props) {
 
   return (
     <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/50 px-1 py-1 sm:px-1.5">
-      <div className="overflow-x-auto">
+      <div className="h-[9.5rem] w-full overflow-x-auto sm:h-[10.5rem]">
         <svg
           viewBox={`0 0 ${totalW} ${totalH}`}
-          className="block h-[4.75rem] w-full min-w-full sm:h-[5rem]"
-          preserveAspectRatio="xMinYMin meet"
+          className="h-full min-w-full w-full"
+          preserveAspectRatio="none"
           role="img"
           aria-label="Next 12 hours temperature and conditions"
         >
@@ -163,7 +163,7 @@ export function WeatherHourlyChart({ hours }: Props) {
                 {shouldShowHourLabel(i) ? (
                   <text
                     x={x}
-                    y={PLOT_H + 10}
+                    y={PLOT_H + 11}
                     textAnchor="middle"
                     className="fill-slate-500 text-[10px]"
                   >

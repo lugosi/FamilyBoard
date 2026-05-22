@@ -1963,7 +1963,9 @@ export function Board() {
                     </div>
                   </div>
                   {hourlyNext12 && hourlyNext12.length > 0 ? (
-                    <WeatherHourlyChart hours={hourlyNext12} />
+                    <div className="min-h-[9.5rem] sm:min-h-[10.5rem]">
+                      <WeatherHourlyChart hours={hourlyNext12} />
+                    </div>
                   ) : null}
                 </div>
               ) : (
