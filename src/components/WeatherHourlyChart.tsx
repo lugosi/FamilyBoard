@@ -16,13 +16,13 @@ type Props = {
 
 const HOUR_COUNT = 12;
 const SLOT_W = 40;
-const ICON_SIZE = 20;
-const ICON_GAP = 5;
-const PLOT_H = 88;
-const LABEL_H = 16;
-const YLAB_W = 34;
+const ICON_SIZE = 18;
+const ICON_GAP = 4;
+const PLOT_H = 64;
+const LABEL_H = 12;
+const YLAB_W = 30;
 /** Space above the warmest point so icons sit above dots without clipping. */
-const PAD_TOP = ICON_SIZE + ICON_GAP + 6;
+const PAD_TOP = ICON_SIZE + ICON_GAP + 2;
 const PAD_BOTTOM = 2;
 
 function hourLabel(time: string): string {
@@ -87,13 +87,12 @@ export function WeatherHourlyChart({ hours }: Props) {
     ` L${xAt(n - 1).toFixed(1)},${baselineY} L${xAt(0).toFixed(1)},${baselineY} Z`;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/50 px-1 py-2 sm:px-2">
+    <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/50 px-1 py-1 sm:px-1.5">
       <div className="overflow-x-auto">
         <svg
           viewBox={`0 0 ${totalW} ${totalH}`}
-          className="h-[7.5rem] min-w-full"
-          style={{ width: "100%", maxWidth: "100%" }}
-          preserveAspectRatio="xMinYMid meet"
+          className="block h-[4.75rem] w-full min-w-full sm:h-[5rem]"
+          preserveAspectRatio="xMinYMin meet"
           role="img"
           aria-label="Next 12 hours temperature and conditions"
         >
@@ -158,13 +157,13 @@ export function WeatherHourlyChart({ hours }: Props) {
                     className="flex items-center justify-center text-slate-200"
                     style={{ width: ICON_SIZE, height: ICON_SIZE }}
                   >
-                    <WeatherIcon code={h.code} className="h-5 w-5" />
+                    <WeatherIcon code={h.code} className="h-4 w-4" />
                   </div>
                 </foreignObject>
                 {shouldShowHourLabel(i) ? (
                   <text
                     x={x}
-                    y={PLOT_H + 12}
+                    y={PLOT_H + 10}
                     textAnchor="middle"
                     className="fill-slate-500 text-[10px]"
                   >
