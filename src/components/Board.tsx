@@ -1621,7 +1621,7 @@ export function Board() {
           </div>
         ) : null}
 
-        <div className="board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overflow-x-hidden sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
+        <div className="board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-x-hidden overflow-y-auto sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
           <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
             <div className="mb-3 flex min-w-0 shrink-0 items-start gap-3 rounded-xl border border-slate-600 bg-slate-900 px-3 py-3 shadow-md shadow-black/30 sm:mb-4 sm:gap-4 sm:px-4 sm:py-3.5">
               <span className="shrink-0 pt-1 text-lg font-bold tracking-tight text-white sm:text-xl">
@@ -1794,7 +1794,7 @@ export function Board() {
             ) : null}
           </section>
 
-          <div className="board-scrollbar flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto sm:gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto">
+          <div className="board-scrollbar flex h-full max-h-full min-h-0 min-w-0 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-y-contain pb-2 sm:gap-4">
             <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Clock</h2>
@@ -1963,9 +1963,10 @@ export function Board() {
                     </div>
                   </div>
                   {hourlyNext12 && hourlyNext12.length > 0 ? (
-                    <div className="min-h-[9.5rem] sm:min-h-[10.5rem]">
-                      <WeatherHourlyChart hours={hourlyNext12} />
-                    </div>
+                    <WeatherHourlyChart
+                      hours={hourlyNext12}
+                      className="h-32 shrink-0 sm:h-36"
+                    />
                   ) : null}
                 </div>
               ) : (
@@ -2286,7 +2287,7 @@ export function Board() {
               )}
             </section>
 
-            <section className="min-w-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+            <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-medium text-white sm:text-2xl">Spotify</h2>
                 <div className="flex items-center gap-2 sm:gap-3">
