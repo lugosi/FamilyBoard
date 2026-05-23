@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CompactCalendarGrid } from "@/components/calendar/CompactCalendarGrid";
+import { EventDateTimePicker } from "@/components/calendar/EventDateTimePicker";
 import {
   addDays,
   dateKeyLocal,
@@ -374,6 +375,7 @@ export function Board() {
     }
   });
   const [spotifySeekDraft, setSpotifySeekDraft] = useState<number | null>(null);
+  const [spotifyVolumePending, setSpotifyVolumePending] = useState<number | null>(null);
   const [spotifyProgressAnchorMs, setSpotifyProgressAnchorMs] = useState(0);
   const [spotifyProgressAnchorAtMs, setSpotifyProgressAnchorAtMs] = useState(
     () => Date.now(),
@@ -990,6 +992,16 @@ export function Board() {
     return () => window.clearInterval(id);
   }, [spotifyPlayback?.is_playing, spotifySeekDraft, spotifyProgressAnchorAtMs]);
 
+  useEffect(() => {
+    if (spotifyVolumePending === null) return;
+    const device =
+      spotifyDevices.find((d) => d.is_active) ?? spotifyPlayback?.device ?? null;
+    const confirmed = Math.round(device?.volume_percent ?? -1);
+    if (confirmed === spotifyVolumePending) {
+      setSpotifyVolumePending(null);
+    }
+  }, [spotifyVolumePending, spotifyDevices, spotifyPlayback?.device]);
+
   function openNewEventModal(forDay?: Date) {
     setNewSummary("");
     setNewAllDay(false);
@@ -1425,10 +1437,13 @@ export function Board() {
   async function adjustSpotifyVolume(delta: number) {
     const device = spotifyDevices.find((d) => d.is_active) ?? spotifyPlayback?.device;
     if (!device) return;
-    const current = Math.round(device.volume_percent ?? 0);
+    const confirmed = Math.round(device.volume_percent ?? 0);
+    const current = spotifyVolumePending ?? confirmed;
     const next = Math.max(0, Math.min(100, current + delta));
-    if (next === current) return;
-    await spotifyControl("set_volume", { volumePercent: next });
+    if (next === confirmed && spotifyVolumePending === null) return;
+    setSpotifyVolumePending(next);
+    const ok = await spotifyControl("set_volume", { volumePercent: next });
+    if (!ok) setSpotifyVolumePending(null);
   }
 
   function spotifyContextUri(
@@ -1583,7 +1598,9 @@ export function Board() {
   const spotifyArtist = spotifyTrack?.artists?.map((a) => a.name).filter(Boolean).join(", ");
   const spotifyActiveDevice =
     spotifyDevices.find((d) => d.is_active) ?? spotifyPlayback?.device ?? null;
-  const spotifyVolumePercent = Math.round(spotifyActiveDevice?.volume_percent ?? 0);
+  const spotifyVolumeConfirmed = Math.round(spotifyActiveDevice?.volume_percent ?? 0);
+  const spotifyVolumeDisplay = spotifyVolumePending ?? spotifyVolumeConfirmed;
+  const spotifyVolumeIsPending = spotifyVolumePending !== null;
   const spotifyVolumeBusy = busy === "spotify-set_volume";
   const spotifyEffectiveDeviceId =
     spotifySelectedDeviceId || spotifyActiveDevice?.id || spotifySdkDeviceId || "";
@@ -2272,7 +2289,7 @@ export function Board() {
                       {spotifyNotice}
                     </p>
                   ) : null}
-                  <div className="flex min-w-0 items-end gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
                     <div className="min-w-0 flex-1 space-y-2.5">
                       <div className="min-h-[6.75rem] rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
                         <div className="flex items-center gap-3">
@@ -2465,27 +2482,36 @@ export function Board() {
                       </div>
                     </div>
                     <div
-                      className="flex w-[4.75rem] shrink-0 flex-col items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950/35 px-2 py-2"
+                      className="flex w-[4.75rem] shrink-0 flex-col items-center gap-1.5 self-start rounded-lg border border-slate-800 bg-slate-950/35 px-2 pb-2 pt-2.5"
                       aria-label="Volume"
                     >
-                      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                        Vol
-                      </span>
                       <button
                         type="button"
-                        disabled={!spotifyActiveDevice || spotifyVolumeBusy || spotifyVolumePercent >= 100}
+                        disabled={
+                          !spotifyActiveDevice ||
+                          spotifyVolumeBusy ||
+                          spotifyVolumeDisplay >= 100
+                        }
                         className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-600 text-3xl leading-none text-slate-100 hover:border-sky-500 hover:bg-slate-800/80 disabled:opacity-40 sm:h-14 sm:w-14"
                         aria-label="Volume up"
                         onClick={() => void adjustSpotifyVolume(SPOTIFY_VOLUME_STEP)}
                       >
                         +
                       </button>
-                      <span className="min-h-[2.25rem] tabular-nums text-2xl font-semibold leading-none text-white sm:text-3xl">
-                        {spotifyVolumePercent}
+                      <span
+                        className={`min-h-[2.25rem] tabular-nums text-2xl font-semibold leading-none transition-colors sm:text-3xl ${
+                          spotifyVolumeIsPending ? "text-slate-500" : "text-white"
+                        }`}
+                      >
+                        {spotifyVolumeDisplay}
                       </span>
                       <button
                         type="button"
-                        disabled={!spotifyActiveDevice || spotifyVolumeBusy || spotifyVolumePercent <= 0}
+                        disabled={
+                          !spotifyActiveDevice ||
+                          spotifyVolumeBusy ||
+                          spotifyVolumeDisplay <= 0
+                        }
                         className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-600 text-3xl leading-none text-slate-100 hover:border-sky-500 hover:bg-slate-800/80 disabled:opacity-40 sm:h-14 sm:w-14"
                         aria-label="Volume down"
                         onClick={() => void adjustSpotifyVolume(-SPOTIFY_VOLUME_STEP)}
@@ -2849,28 +2875,19 @@ export function Board() {
                 />
                 <span>All-day event</span>
               </label>
-              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
-                {newAllDay ? "Start date" : "Start"}
-                <input
-                  type={newAllDay ? "date" : "datetime-local"}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
-                  value={newTimes.start}
-                  onChange={(e) =>
-                    setNewTimes((t) => ({ ...t, start: e.target.value }))
-                  }
-                />
-              </label>
-              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
-                {newAllDay ? "End date (inclusive)" : "End"}
-                <input
-                  type={newAllDay ? "date" : "datetime-local"}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
-                  value={newTimes.end}
-                  onChange={(e) =>
-                    setNewTimes((t) => ({ ...t, end: e.target.value }))
-                  }
-                />
-              </label>
+              <EventDateTimePicker
+                label={newAllDay ? "Start date" : "Start"}
+                value={newTimes.start}
+                allDay={newAllDay}
+                onChange={(start) => setNewTimes((t) => ({ ...t, start }))}
+              />
+              <EventDateTimePicker
+                label={newAllDay ? "End date (inclusive)" : "End"}
+                value={newTimes.end}
+                allDay={newAllDay}
+                min={newTimes.start}
+                onChange={(end) => setNewTimes((t) => ({ ...t, end }))}
+              />
             </div>
             <div className="mt-5 flex flex-wrap gap-2">
               <button
@@ -2909,24 +2926,19 @@ export function Board() {
                   onChange={(e) => setEditSummary(e.target.value)}
                 />
               </label>
-              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
-                {editAllDay ? "Start date" : "Start"}
-                <input
-                  type={editAllDay ? "date" : "datetime-local"}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
-                  value={editStart}
-                  onChange={(e) => setEditStart(e.target.value)}
-                />
-              </label>
-              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
-                {editAllDay ? "End date (inclusive)" : "End"}
-                <input
-                  type={editAllDay ? "date" : "datetime-local"}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
-                  value={editEnd}
-                  onChange={(e) => setEditEnd(e.target.value)}
-                />
-              </label>
+              <EventDateTimePicker
+                label={editAllDay ? "Start date" : "Start"}
+                value={editStart}
+                allDay={editAllDay}
+                onChange={setEditStart}
+              />
+              <EventDateTimePicker
+                label={editAllDay ? "End date (inclusive)" : "End"}
+                value={editEnd}
+                allDay={editAllDay}
+                min={editStart}
+                onChange={setEditEnd}
+              />
             </div>
             <div className="mt-5 flex flex-wrap gap-2">
               <button
