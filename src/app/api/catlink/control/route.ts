@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  catlinkApiFetch,
+  executeCatlinkAction,
   getCatlinkConfig,
   type CatlinkAction,
 } from "@/lib/catlink";
@@ -12,7 +12,7 @@ type ControlBody = {
 export async function POST(request: Request) {
   if (!getCatlinkConfig()) {
     return NextResponse.json(
-      { error: "Set CATLINK_API_BASE_URL and CATLINK_API_TOKEN" },
+      { error: "Set CATLINK_PHONE and CATLINK_PASSWORD" },
       { status: 501 },
     );
   }
@@ -26,22 +26,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing action" }, { status: 400 });
   }
   try {
-    const out = await catlinkApiFetch<Record<string, unknown>>("/control", {
-      method: "POST",
-      body: JSON.stringify({ action: body.action }),
-    });
-    if (!out.ok) {
-      return NextResponse.json(
-        {
-          error: "Catlink control failed",
-          detail: out.data ?? out.text ?? null,
-        },
-        { status: out.status >= 400 && out.status < 600 ? out.status : 502 },
-      );
-    }
-    return NextResponse.json({ ok: true, result: out.data ?? null });
+    await executeCatlinkAction(body.action);
+    return NextResponse.json({ ok: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : "catlink_error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = message === "catlink_not_configured" ? 501 : 502;
+    return NextResponse.json({ error: message }, { status });
   }
 }

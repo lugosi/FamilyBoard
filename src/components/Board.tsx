@@ -2313,13 +2313,13 @@ export function Board() {
                 <p className="mt-3 text-base text-slate-400 sm:text-lg">
                   Set{" "}
                   <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    CATLINK_API_BASE_URL
+                    CATLINK_PHONE
                   </code>{" "}
                   and{" "}
                   <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    CATLINK_API_TOKEN
-                  </code>
-                  .
+                    CATLINK_PASSWORD
+                  </code>{" "}
+                  (CatLink app login).
                 </p>
               ) : catlink ? (
                 <div className="mt-3 space-y-3">

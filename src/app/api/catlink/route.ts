@@ -1,27 +1,19 @@
 import { NextResponse } from "next/server";
-import { catlinkApiFetch, getCatlinkConfig } from "@/lib/catlink";
+import { fetchCatlinkSnapshot, getCatlinkConfig } from "@/lib/catlink";
 
 export async function GET() {
   if (!getCatlinkConfig()) {
     return NextResponse.json(
-      { error: "Set CATLINK_API_BASE_URL and CATLINK_API_TOKEN" },
+      { error: "Set CATLINK_PHONE and CATLINK_PASSWORD" },
       { status: 501 },
     );
   }
   try {
-    const out = await catlinkApiFetch<Record<string, unknown>>("/stats");
-    if (!out.ok) {
-      return NextResponse.json(
-        {
-          error: "Catlink API request failed",
-          detail: out.data ?? out.text ?? null,
-        },
-        { status: out.status >= 400 && out.status < 600 ? out.status : 502 },
-      );
-    }
-    return NextResponse.json(out.data ?? {});
+    const snapshot = await fetchCatlinkSnapshot();
+    return NextResponse.json(snapshot);
   } catch (e) {
     const message = e instanceof Error ? e.message : "catlink_error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = message === "catlink_not_configured" ? 501 : 502;
+    return NextResponse.json({ error: message }, { status });
   }
 }

@@ -27,7 +27,7 @@ export async function GET() {
     weatherConfigured: Boolean(weather),
     nestConfigured: Boolean(nestProjectId),
     catlinkConfigured: Boolean(
-      process.env.CATLINK_API_BASE_URL && process.env.CATLINK_API_TOKEN,
+      process.env.CATLINK_PHONE && process.env.CATLINK_PASSWORD,
     ),
   });
 }
