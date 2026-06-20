@@ -51,6 +51,7 @@ type Status = {
   hueBridgeIp: string | null;
   huePaired: boolean;
   weatherConfigured: boolean;
+  catlinkConfigured?: boolean;
 };
 
 type CalendarOption = {
@@ -123,6 +124,23 @@ type SpotifySearchPlaylist = {
   owner?: { display_name?: string };
 };
 type HueThemeKey = "bright" | "relax" | "focus" | "nightlight";
+type CatlinkAction =
+  | "clean_now"
+  | "toggle_child_lock"
+  | "toggle_odor_control"
+  | "toggle_night_light";
+type CatlinkSnapshot = {
+  online?: boolean;
+  litterLevelPercent?: number;
+  weightKg?: number;
+  cleanCyclesToday?: number;
+  childLock?: boolean;
+  odorControl?: boolean;
+  nightLight?: boolean;
+  lastCleanedAt?: string;
+  updatedAt?: string;
+  [key: string]: unknown;
+};
 type SpotifyRecentItem = {
   kind: "track" | "album" | "playlist";
   id: string;
@@ -141,7 +159,7 @@ const HUE_THEME_OPTIONS: Array<{ key: HueThemeKey; label: string }> = [
   { key: "nightlight", label: "Nightlight" },
 ];
 
-type RightWidgetKey = "clock" | "weather" | "nest" | "hue" | "spotify";
+type RightWidgetKey = "clock" | "weather" | "catlink" | "nest" | "hue" | "spotify";
 type SpotifyResultTab = "recent" | "featured" | "results";
 
 type SpotifyWebPlaybackPlayer = {
@@ -358,6 +376,7 @@ export function Board() {
   const [areas, setAreas] = useState<HueArea[]>([]);
   const [hueAnyLightOn, setHueAnyLightOn] = useState(false);
   const [weather, setWeather] = useState<Record<string, unknown> | null>(null);
+  const [catlink, setCatlink] = useState<CatlinkSnapshot | null>(null);
   const [indoorClimate, setIndoorClimate] = useState<IndoorClimate | null>(null);
   const [spotifyPlayback, setSpotifyPlayback] = useState<SpotifyPlayback | null>(
     null,
@@ -452,6 +471,7 @@ export function Board() {
   >({
     clock: false,
     weather: false,
+    catlink: false,
     nest: false,
     hue: false,
     spotify: false,
@@ -685,6 +705,20 @@ export function Board() {
         }
       } else {
         setWeather(null);
+      }
+
+      if (s.catlinkConfigured) {
+        const catRes = await fetch("/api/catlink", { signal });
+        if (signal?.aborted) return;
+        if (catRes.status === 501) {
+          setCatlink(null);
+        } else if (catRes.ok) {
+          setCatlink((await catRes.json()) as CatlinkSnapshot);
+        } else {
+          setCatlink(null);
+        }
+      } else {
+        setCatlink(null);
       }
 
       if (s.googleLinked && s.nestConfigured) {
@@ -1266,6 +1300,23 @@ export function Board() {
     await fetchBoard();
   }
 
+  async function catlinkControl(action: CatlinkAction) {
+    setBusy(`catlink-${action}`);
+    setMessage(null);
+    const res = await fetch("/api/catlink/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    setBusy(null);
+    const j = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      setMessage(j.error ?? "Catlink action failed");
+      return;
+    }
+    await fetchBoard();
+  }
+
   async function logoutGoogle() {
     await fetch("/api/auth/logout", { method: "POST" });
     clearCalendarExplicitChoice();
@@ -1594,6 +1645,27 @@ export function Board() {
   );
   const hourlyNext12 = weather?.hourlyNext12 as WeatherHourlyPoint[] | undefined;
   const todayForecast = daily?.[0];
+  const catlinkOnline =
+    typeof catlink?.online === "boolean" ? catlink.online : null;
+  const catlinkLitterLevel =
+    typeof catlink?.litterLevelPercent === "number"
+      ? Math.round(catlink.litterLevelPercent)
+      : null;
+  const catlinkWeightKg =
+    typeof catlink?.weightKg === "number" ? catlink.weightKg : null;
+  const catlinkCyclesToday =
+    typeof catlink?.cleanCyclesToday === "number"
+      ? Math.round(catlink.cleanCyclesToday)
+      : null;
+  const catlinkLastCleanedLabel =
+    typeof catlink?.lastCleanedAt === "string" && catlink.lastCleanedAt
+      ? new Date(catlink.lastCleanedAt).toLocaleString([], {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : null;
   const spotifyTrack = spotifyPlayback?.item;
   const spotifyArtist = spotifyTrack?.artists?.map((a) => a.name).filter(Boolean).join(", ");
   const spotifyActiveDevice =
@@ -2174,6 +2246,152 @@ export function Board() {
                 </div>
               ) : (
                 <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading weather…</p>
+              )}
+            </section>
+
+            <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  {collapsedWidgets.catlink ? (
+                    <span
+                      className={`${WIDGET_TITLE_ICON} flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950/70 text-xs font-semibold tabular-nums text-white`}
+                    >
+                      {catlinkLitterLevel !== null ? `${catlinkLitterLevel}%` : "CAT"}
+                    </span>
+                  ) : null}
+                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Catlink</h2>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                  <button
+                    type="button"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                    onClick={() => void fetchBoard()}
+                    aria-label="Refresh catlink"
+                    title="Refresh catlink"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                      <path d="M21 3v6h-6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                    onClick={() => toggleWidgetCollapse("catlink")}
+                    aria-label={collapsedWidgets.catlink ? "Expand catlink" : "Collapse catlink"}
+                    title={collapsedWidgets.catlink ? "Expand catlink" : "Collapse catlink"}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      {collapsedWidgets.catlink ? (
+                        <path d="M6 15l6-6 6 6" />
+                      ) : (
+                        <path d="M6 9l6 6 6-6" />
+                      )}
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              {collapsedWidgets.catlink ? null : !status?.catlinkConfigured ? (
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                  Set{" "}
+                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                    CATLINK_PHONE
+                  </code>{" "}
+                  and{" "}
+                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                    CATLINK_PASSWORD
+                  </code>{" "}
+                  (CatLink app login).
+                </p>
+              ) : catlink ? (
+                <div className="mt-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-2 text-sm sm:text-base">
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Status</p>
+                      <p className="mt-1 font-medium text-slate-100">
+                        {catlinkOnline === null ? "Unknown" : catlinkOnline ? "Online" : "Offline"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Litter level</p>
+                      <p className="mt-1 font-medium tabular-nums text-slate-100">
+                        {catlinkLitterLevel !== null ? `${catlinkLitterLevel}%` : "—"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Weight</p>
+                      <p className="mt-1 font-medium tabular-nums text-slate-100">
+                        {catlinkWeightKg !== null ? `${catlinkWeightKg.toFixed(1)} kg` : "—"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Cycles today</p>
+                      <p className="mt-1 font-medium tabular-nums text-slate-100">
+                        {catlinkCyclesToday !== null ? catlinkCyclesToday : "—"}
+                      </p>
+                    </div>
+                  </div>
+                  {catlinkLastCleanedLabel ? (
+                    <p className="text-sm text-slate-400 sm:text-base">
+                      Last cleaned:{" "}
+                      <span className="font-medium text-slate-200">{catlinkLastCleanedLabel}</span>
+                    </p>
+                  ) : null}
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
+                      disabled={busy === "catlink-clean_now"}
+                      onClick={() => void catlinkControl("clean_now")}
+                    >
+                      {busy === "catlink-clean_now" ? "Working…" : "Clean now"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
+                      disabled={busy === "catlink-toggle_child_lock"}
+                      onClick={() => void catlinkControl("toggle_child_lock")}
+                    >
+                      {catlink.childLock ? "Unlock child lock" : "Lock controls"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
+                      disabled={busy === "catlink-toggle_odor_control"}
+                      onClick={() => void catlinkControl("toggle_odor_control")}
+                    >
+                      {catlink.odorControl ? "Odor off" : "Odor on"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
+                      disabled={busy === "catlink-toggle_night_light"}
+                      onClick={() => void catlinkControl("toggle_night_light")}
+                    >
+                      {catlink.nightLight ? "Light off" : "Light on"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading catlink…</p>
               )}
             </section>
 

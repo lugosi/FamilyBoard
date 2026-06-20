@@ -26,5 +26,8 @@ export async function GET() {
     huePaired: Boolean(hueUser),
     weatherConfigured: Boolean(weather),
     nestConfigured: Boolean(nestProjectId),
+    catlinkConfigured: Boolean(
+      process.env.CATLINK_PHONE && process.env.CATLINK_PASSWORD,
+    ),
   });
 }
