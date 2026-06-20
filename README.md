@@ -57,6 +57,25 @@ You can change the app listen port at runtime with `APP_PORT` (default `3000`).
 - Keep Google OAuth redirect URI synced: `${PUBLIC_APP_URL}/api/auth/google/callback`.
 - Keep Spotify OAuth redirect URI synced: `${PUBLIC_APP_URL}/api/auth/spotify/callback`.
 
+### Internet-facing access gate
+
+If you expose this app to the public internet, enable the built-in unlock gate:
+
+1. Set both env vars:
+   - `BOARD_ACCESS_CODE` (a long random passphrase users type in `/unlock`)
+   - `BOARD_ACCESS_SECRET` (a separate long random secret used for session-cookie signing)
+2. Restart the app.
+3. Unauthenticated requests are redirected to `/unlock`.
+4. API requests return `401` until unlocked.
+
+Brute-force protection is built in (`/api/unlock` rate-limits repeated failed attempts per client IP).
+
+Generate strong values, for example:
+
+```bash
+openssl rand -base64 32
+```
+
 ## Publish with GitHub (recommended for TrueNAS)
 
 Pushes to `main` build the image and push to **GitHub Container Registry** via Actions.
