@@ -10,9 +10,9 @@ type ControlBody = {
 };
 
 export async function POST(request: Request) {
-  if (!getCatlinkConfig()) {
+  if (!(await getCatlinkConfig())) {
     return NextResponse.json(
-      { error: "Set CATLINK_PHONE and CATLINK_PASSWORD" },
+      { error: "Link Catlink from the board or set CATLINK_PHONE and CATLINK_PASSWORD" },
       { status: 501 },
     );
   }

@@ -52,6 +52,7 @@ type Status = {
   huePaired: boolean;
   weatherConfigured: boolean;
   catlinkConfigured?: boolean;
+  catlinkLinked?: boolean;
 };
 
 type CalendarOption = {
@@ -377,6 +378,8 @@ export function Board() {
   const [hueAnyLightOn, setHueAnyLightOn] = useState(false);
   const [weather, setWeather] = useState<Record<string, unknown> | null>(null);
   const [catlink, setCatlink] = useState<CatlinkSnapshot | null>(null);
+  const [catlinkLinkPhone, setCatlinkLinkPhone] = useState("");
+  const [catlinkLinkPassword, setCatlinkLinkPassword] = useState("");
   const [indoorClimate, setIndoorClimate] = useState<IndoorClimate | null>(null);
   const [spotifyPlayback, setSpotifyPlayback] = useState<SpotifyPlayback | null>(
     null,
@@ -1297,6 +1300,42 @@ export function Board() {
       return;
     }
     setMessage("Hue bridge paired. Lights should appear shortly.");
+    await fetchBoard();
+  }
+
+  async function linkCatlink() {
+    setBusy("catlink-link");
+    setMessage(null);
+    const res = await fetch("/api/catlink/auth/link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone: catlinkLinkPhone,
+        password: catlinkLinkPassword,
+      }),
+    });
+    setBusy(null);
+    const j = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      setMessage(j.error ?? "Could not link Catlink");
+      return;
+    }
+    setCatlinkLinkPassword("");
+    setMessage("Catlink linked.");
+    await fetchBoard();
+  }
+
+  async function unlinkCatlink() {
+    setBusy("catlink-unlink");
+    setMessage(null);
+    const res = await fetch("/api/catlink/auth/unlink", { method: "POST" });
+    setBusy(null);
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      setMessage(j.error ?? "Could not unlink Catlink");
+      return;
+    }
+    setMessage("Catlink unlinked.");
     await fetchBoard();
   }
 
@@ -2283,6 +2322,31 @@ export function Board() {
                       <path d="M21 3v6h-6" />
                     </svg>
                   </button>
+                  {status?.catlinkLinked ? (
+                    <button
+                      type="button"
+                      disabled={busy === "catlink-unlink"}
+                      className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-rose-200 disabled:opacity-50"
+                      onClick={() => void unlinkCatlink()}
+                      aria-label="Unlink Catlink"
+                      title="Unlink Catlink"
+                    >
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        className={`h-5 w-5 ${busy === "catlink-unlink" ? "animate-pulse" : ""}`}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <path d="M16 17l5-5-5-5" />
+                        <path d="M21 12H9" />
+                      </svg>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
@@ -2310,17 +2374,54 @@ export function Board() {
                 </div>
               </div>
               {collapsedWidgets.catlink ? null : !status?.catlinkConfigured ? (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">
-                  Set{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    CATLINK_PHONE
-                  </code>{" "}
-                  and{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    CATLINK_PASSWORD
-                  </code>{" "}
-                  (CatLink app login).
-                </p>
+                <div className="mt-3 space-y-3">
+                  <p className="text-base text-slate-300 sm:text-lg">
+                    The CatLink app can log in with SMS codes, but FamilyBoard needs a password
+                    login (same API Home Assistant uses). In the CatLink app, open account /
+                    security settings and set a login password first.
+                  </p>
+                  <p className="text-sm text-slate-400 sm:text-base">
+                    Use a short password (16 characters or fewer). After that, link here once —
+                    FamilyBoard stores the session token and does not need your password again.
+                  </p>
+                  <div className="space-y-2">
+                    <input
+                      type="tel"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500"
+                      placeholder="Phone number"
+                      aria-label="Catlink phone number"
+                      value={catlinkLinkPhone}
+                      onChange={(e) => setCatlinkLinkPhone(e.currentTarget.value)}
+                    />
+                    <input
+                      type="password"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500"
+                      placeholder="CatLink app password"
+                      aria-label="Catlink password"
+                      value={catlinkLinkPassword}
+                      onChange={(e) => setCatlinkLinkPassword(e.currentTarget.value)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy === "catlink-link"}
+                    className="inline-flex rounded-full bg-sky-500 px-4 py-2 text-base font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-50 sm:text-lg"
+                    onClick={() => void linkCatlink()}
+                  >
+                    {busy === "catlink-link" ? "Linking…" : "Link Catlink"}
+                  </button>
+                  <p className="text-xs text-slate-500 sm:text-sm">
+                    Or set{" "}
+                    <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">
+                      CATLINK_PHONE
+                    </code>{" "}
+                    and{" "}
+                    <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">
+                      CATLINK_PASSWORD
+                    </code>{" "}
+                    in env for automatic login.
+                  </p>
+                </div>
               ) : catlink ? (
                 <div className="mt-3 space-y-3">
                   <div className="grid grid-cols-2 gap-2 text-sm sm:text-base">

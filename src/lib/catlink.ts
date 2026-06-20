@@ -36,7 +36,7 @@ export type CatlinkSnapshot = {
 type CatlinkConfig = {
   phone: string;
   phoneIac: string;
-  password: string;
+  password?: string;
   apiBase: string;
   deviceId?: string;
   language: string;
@@ -44,7 +44,15 @@ type CatlinkConfig = {
 
 type CatlinkSession = {
   token?: string;
+  phone?: string;
+  phoneIac?: string;
   updatedAt?: string;
+};
+
+export type CatlinkLinkInput = {
+  phone: string;
+  phoneIac?: string;
+  password: string;
 };
 
 type CatlinkDeviceListItem = {
@@ -64,25 +72,50 @@ function normalizePhone(raw: string): string {
   return raw.replace(/\D/g, "");
 }
 
-export function getCatlinkConfig(): CatlinkConfig | null {
-  const phoneRaw = process.env.CATLINK_PHONE?.trim();
-  const password = process.env.CATLINK_PASSWORD?.trim();
-  if (!phoneRaw || !password) return null;
-
-  const phone = normalizePhone(phoneRaw);
-  if (!phone) return null;
-
+function buildBaseConfig(phone: string, phoneIac: string): Omit<CatlinkConfig, "password"> {
   const apiBaseRaw = process.env.CATLINK_API_BASE?.trim() || API_USA;
   const apiBase = apiBaseRaw.endsWith("/") ? apiBaseRaw : `${apiBaseRaw}/`;
-
   return {
     phone,
-    phoneIac: process.env.CATLINK_PHONE_IAC?.trim() || "1",
-    password,
+    phoneIac,
     apiBase,
     deviceId: process.env.CATLINK_DEVICE_ID?.trim() || undefined,
     language: process.env.CATLINK_LANGUAGE?.trim() || "en_US",
   };
+}
+
+export async function isCatlinkLinked(): Promise<boolean> {
+  const session = await readSession();
+  return Boolean(session?.token);
+}
+
+export async function getCatlinkConfig(): Promise<CatlinkConfig | null> {
+  const session = await readSession();
+  const envPhoneRaw = process.env.CATLINK_PHONE?.trim();
+  const envPassword = process.env.CATLINK_PASSWORD?.trim();
+  const phoneRaw = session?.phone ?? envPhoneRaw;
+  if (!phoneRaw) return null;
+
+  const phone = normalizePhone(phoneRaw);
+  if (!phone) return null;
+
+  const phoneIac =
+    session?.phoneIac?.trim() ||
+    process.env.CATLINK_PHONE_IAC?.trim() ||
+    "1";
+
+  if (!session?.token && !envPassword) return null;
+
+  return {
+    ...buildBaseConfig(phone, phoneIac),
+    password: envPassword || undefined,
+  };
+}
+
+export function getCatlinkEnvReady(): boolean {
+  const phoneRaw = process.env.CATLINK_PHONE?.trim();
+  const password = process.env.CATLINK_PASSWORD?.trim();
+  return Boolean(phoneRaw && password);
 }
 
 async function readSession(): Promise<CatlinkSession | null> {
@@ -98,6 +131,15 @@ async function readSession(): Promise<CatlinkSession | null> {
 async function writeSession(session: CatlinkSession): Promise<void> {
   const file = path.join(getDataDir(), SESSION_FILE);
   await fs.writeFile(file, JSON.stringify(session, null, 2), "utf-8");
+}
+
+async function clearSession(): Promise<void> {
+  const file = path.join(getDataDir(), SESSION_FILE);
+  try {
+    await fs.unlink(file);
+  } catch {
+    /* noop */
+  }
 }
 
 function apiUrl(cfg: CatlinkConfig, apiPath: string): string {
@@ -166,11 +208,11 @@ async function catlinkRequest(
   return data;
 }
 
-async function login(cfg: CatlinkConfig): Promise<string> {
+async function loginWithPassword(cfg: CatlinkConfig, plainPassword: string): Promise<string> {
   const password =
-    cfg.password.length <= PASSWORD_MAX_LENGTH
-      ? encryptCatlinkPassword(cfg.password)
-      : cfg.password;
+    plainPassword.length <= PASSWORD_MAX_LENGTH
+      ? encryptCatlinkPassword(plainPassword)
+      : plainPassword;
 
   const rsp = await catlinkRequest(cfg, undefined, "login/password", "POST", {
     platform: "ANDROID",
@@ -185,14 +227,22 @@ async function login(cfg: CatlinkConfig): Promise<string> {
     throw new Error(msg);
   }
 
-  await writeSession({ token, updatedAt: new Date().toISOString() });
+  await writeSession({
+    token,
+    phone: cfg.phone,
+    phoneIac: cfg.phoneIac,
+    updatedAt: new Date().toISOString(),
+  });
   return token;
 }
 
 async function getToken(cfg: CatlinkConfig): Promise<string> {
   const session = await readSession();
   if (session?.token) return session.token;
-  return login(cfg);
+  if (!cfg.password) {
+    throw new Error("Catlink session expired. Link Catlink again from the board.");
+  }
+  return loginWithPassword(cfg, cfg.password);
 }
 
 async function requestWithAuth(
@@ -204,10 +254,38 @@ async function requestWithAuth(
   let token = await getToken(cfg);
   let rsp = await catlinkRequest(cfg, token, apiPath, method, params);
   if (rsp.returnCode === RETURN_CODE_TOKEN_EXPIRED) {
-    token = await login(cfg);
+    if (!cfg.password) {
+      await clearSession();
+      throw new Error("Catlink session expired. Link Catlink again from the board.");
+    }
+    token = await loginWithPassword(cfg, cfg.password);
     rsp = await catlinkRequest(cfg, token, apiPath, method, params);
   }
   return rsp;
+}
+
+export async function linkCatlinkAccount(input: CatlinkLinkInput): Promise<void> {
+  const phone = normalizePhone(input.phone);
+  if (!phone) {
+    throw new Error("Phone number is required");
+  }
+  if (!input.password.trim()) {
+    throw new Error("Password is required");
+  }
+  if (input.password.length > PASSWORD_MAX_LENGTH) {
+    throw new Error(`Catlink passwords must be ${PASSWORD_MAX_LENGTH} characters or fewer`);
+  }
+
+  const phoneIac = input.phoneIac?.trim() || "1";
+  const cfg: CatlinkConfig = {
+    ...buildBaseConfig(phone, phoneIac),
+    password: input.password,
+  };
+  await loginWithPassword(cfg, input.password);
+}
+
+export async function unlinkCatlinkAccount(): Promise<void> {
+  await clearSession();
 }
 
 function assertSuccess(rsp: Record<string, unknown>, action: string): void {
@@ -373,7 +451,7 @@ function mapSnapshot(
 }
 
 export async function fetchCatlinkSnapshot(): Promise<CatlinkSnapshot> {
-  const cfg = getCatlinkConfig();
+  const cfg = await getCatlinkConfig();
   if (!cfg) {
     throw new Error("catlink_not_configured");
   }
@@ -464,7 +542,7 @@ async function toggleNightLight(
 }
 
 export async function executeCatlinkAction(action: CatlinkAction): Promise<void> {
-  const cfg = getCatlinkConfig();
+  const cfg = await getCatlinkConfig();
   if (!cfg) {
     throw new Error("catlink_not_configured");
   }

@@ -3,6 +3,7 @@ import { getNestProjectId, readGoogleTokens } from "@/lib/google";
 import { getHueBridgeIp, readHueUsername } from "@/lib/hue";
 import { readSpotifyTokens } from "@/lib/spotify";
 import { getWeatherCoordinates } from "@/lib/weather";
+import { getCatlinkEnvReady, isCatlinkLinked } from "@/lib/catlink";
 
 export async function GET() {
   const google = await readGoogleTokens();
@@ -11,6 +12,7 @@ export async function GET() {
   const hueUser = await readHueUsername();
   const weather = getWeatherCoordinates();
   const nestProjectId = getNestProjectId();
+  const catlinkLinked = await isCatlinkLinked();
 
   return NextResponse.json({
     googleLinked: Boolean(google?.refresh_token),
@@ -26,8 +28,7 @@ export async function GET() {
     huePaired: Boolean(hueUser),
     weatherConfigured: Boolean(weather),
     nestConfigured: Boolean(nestProjectId),
-    catlinkConfigured: Boolean(
-      process.env.CATLINK_PHONE && process.env.CATLINK_PASSWORD,
-    ),
+    catlinkLinked,
+    catlinkConfigured: catlinkLinked || getCatlinkEnvReady(),
   });
 }
