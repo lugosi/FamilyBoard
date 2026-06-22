@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { WeatherIcon } from "@/components/WeatherIcon";
+import { isNightAt } from "@/lib/weather";
 import { wmoLabel } from "@/lib/wmo";
 
 export type WeatherHourlyPoint = {
@@ -12,6 +13,8 @@ export type WeatherHourlyPoint = {
 
 type Props = {
   hours: WeatherHourlyPoint[];
+  sunriseToday?: string;
+  sunsetToday?: string;
   className?: string;
 };
 
@@ -38,7 +41,12 @@ function shouldShowHourLabel(index: number, total: number): boolean {
   return index % 2 === 0;
 }
 
-export function WeatherHourlyChart({ hours, className = "" }: Props) {
+export function WeatherHourlyChart({
+  hours,
+  sunriseToday,
+  sunsetToday,
+  className = "",
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 280, h: 128 });
 
@@ -235,7 +243,11 @@ export function WeatherHourlyChart({ hours, className = "" }: Props) {
                   className="flex items-center justify-center text-slate-200"
                   style={{ width: ICON_SIZE, height: ICON_SIZE }}
                 >
-                  <WeatherIcon code={h.code} className="h-5 w-5" />
+                  <WeatherIcon
+                    code={h.code}
+                    isNight={isNightAt(new Date(h.time), sunriseToday, sunsetToday)}
+                    className="h-5 w-5"
+                  />
                 </div>
               </foreignObject>
               {shouldShowHourLabel(i, n) ? (

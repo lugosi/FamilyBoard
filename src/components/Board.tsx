@@ -2140,6 +2140,7 @@ export function Board() {
                     current ? (
                       <WeatherIcon
                         code={Number(current.code ?? 0)}
+                        isNight={nightGreyscale}
                         className={`${WIDGET_TITLE_ICON} text-sky-300`}
                       />
                     ) : (
@@ -2221,6 +2222,7 @@ export function Board() {
                       </p>
                       <WeatherIcon
                         code={Number(current.code ?? 0)}
+                        isNight={nightGreyscale}
                         className="h-9 w-9 shrink-0 sm:h-10 sm:w-10"
                       />
                     </div>
@@ -2279,6 +2281,8 @@ export function Board() {
                   {hourlyNext12 && hourlyNext12.length > 0 ? (
                     <WeatherHourlyChart
                       hours={hourlyNext12}
+                      sunriseToday={sunriseToday}
+                      sunsetToday={sunsetToday}
                       className="h-32 shrink-0 sm:h-36"
                     />
                   ) : null}
@@ -2388,7 +2392,7 @@ export function Board() {
                     <input
                       type="tel"
                       className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500"
-                      placeholder="Phone number"
+                      placeholder="Phone (4244420566 or +1 424 442 0566)"
                       aria-label="Catlink phone number"
                       value={catlinkLinkPhone}
                       onChange={(e) => setCatlinkLinkPhone(e.currentTarget.value)}

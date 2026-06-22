@@ -30,8 +30,8 @@ export type WeatherSnapshot = {
   sunsetToday?: string;
 };
 
-/** Greyscale night mode: from sunset until sunrise (fallback: 10pm–7am local). */
-export function isNightGreyscaleActive(
+/** True from sunset until sunrise (fallback: 10pm–7am local). */
+export function isNightAt(
   now: Date,
   sunriseToday?: string,
   sunsetToday?: string,
@@ -44,6 +44,15 @@ export function isNightGreyscaleActive(
   }
   const h = now.getHours();
   return h >= 22 || h < 7;
+}
+
+/** Greyscale night mode for the board chrome. */
+export function isNightGreyscaleActive(
+  now: Date,
+  sunriseToday?: string,
+  sunsetToday?: string,
+): boolean {
+  return isNightAt(now, sunriseToday, sunsetToday);
 }
 
 export function getWeatherCoordinates(): { lat: number; lon: number } | null {

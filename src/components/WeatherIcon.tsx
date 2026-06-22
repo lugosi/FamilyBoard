@@ -23,7 +23,18 @@ function iconKindFromWmo(code: number): IconKind {
   return "partly";
 }
 
-function IconSvg({ kind }: { kind: IconKind }) {
+function MoonSvg({ x, y, r }: { x: number; y: number; r: number }) {
+  const fillMoon = "rgba(226, 232, 240, 0.95)";
+  const fillShadow = "rgba(15, 23, 42, 0.95)";
+  return (
+    <>
+      <circle cx={x + r * 0.35} cy={y} r={r} fill={fillShadow} />
+      <circle cx={x} cy={y} r={r} fill={fillMoon} />
+    </>
+  );
+}
+
+function IconSvg({ kind, isNight }: { kind: IconKind; isNight: boolean }) {
   const stroke = "currentColor";
   const fillSky = "rgba(56, 189, 248, 0.35)";
   const fillCloud = "rgba(148, 163, 184, 0.45)";
@@ -31,6 +42,13 @@ function IconSvg({ kind }: { kind: IconKind }) {
 
   switch (kind) {
     case "clear":
+      if (isNight) {
+        return (
+          <svg viewBox="0 0 64 64" className="h-full w-full" aria-hidden>
+            <MoonSvg x={32} y={30} r={13} />
+          </svg>
+        );
+      }
       return (
         <svg viewBox="0 0 64 64" className="h-full w-full" aria-hidden>
           {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
@@ -49,6 +67,20 @@ function IconSvg({ kind }: { kind: IconKind }) {
         </svg>
       );
     case "partly":
+      if (isNight) {
+        return (
+          <svg viewBox="0 0 64 64" className="h-full w-full" aria-hidden>
+            <MoonSvg x={22} y={24} r={9} />
+            <path
+              d="M18 44c-4 0-8-3-8-8 0-4 3-7 7-8 1-6 6-10 12-10 5 0 9 3 11 7 5 1 8 5 8 10 0 6-5 11-11 11H18z"
+              fill={fillCloud}
+              stroke={stroke}
+              strokeWidth="1.2"
+              opacity="0.9"
+            />
+          </svg>
+        );
+      }
       return (
         <svg viewBox="0 0 64 64" className="h-full w-full" aria-hidden>
           <circle cx="24" cy="26" r="10" fill={fillSun} />
@@ -174,11 +206,13 @@ function IconSvg({ kind }: { kind: IconKind }) {
 
 type Props = {
   code: number;
+  /** When true, clear/partly icons use a moon instead of the sun. */
+  isNight?: boolean;
   /** Tailwind size classes, e.g. h-10 w-10 */
   className?: string;
 };
 
-export function WeatherIcon({ code, className = "h-10 w-10" }: Props) {
+export function WeatherIcon({ code, isNight = false, className = "h-10 w-10" }: Props) {
   const kind = iconKindFromWmo(code);
   const label = wmoLabel(code);
   return (
@@ -187,7 +221,7 @@ export function WeatherIcon({ code, className = "h-10 w-10" }: Props) {
       role="img"
       aria-label={label}
     >
-      <IconSvg kind={kind} />
+      <IconSvg kind={kind} isNight={isNight} />
     </span>
   );
 }

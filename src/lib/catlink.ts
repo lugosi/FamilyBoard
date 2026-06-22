@@ -5,9 +5,18 @@ import { encryptCatlinkPassword, signCatlinkParameters } from "./catlink-crypto"
 
 const SESSION_FILE = "catlink-session.json";
 const RETURN_CODE_TOKEN_EXPIRED = 1002;
+const RETURN_CODE_WRONG_PASSWORD = 2002;
 const PASSWORD_MAX_LENGTH = 16;
 
 const API_USA = "https://app-usa.catlinks.cn/api/";
+
+/** CatLink cloud regions (same set as hasscc/catlink). */
+const CATLINK_API_REGIONS = [
+  API_USA,
+  "https://app.catlinks.cn/api/",
+  "https://app-sh.catlinks.cn/api/",
+  "https://app-sgp.catlinks.cn/api/",
+] as const;
 
 export type CatlinkAction =
   | "clean_now"
@@ -46,6 +55,7 @@ type CatlinkSession = {
   token?: string;
   phone?: string;
   phoneIac?: string;
+  apiBase?: string;
   updatedAt?: string;
 };
 
@@ -68,19 +78,121 @@ type DeviceApiKind = "scooper" | "litterbox" | "c08";
 
 type DeviceInfo = Record<string, unknown>;
 
-function normalizePhone(raw: string): string {
-  return raw.replace(/\D/g, "");
+function normalizeApiBase(raw: string): string {
+  return raw.endsWith("/") ? raw : `${raw}/`;
 }
 
-function buildBaseConfig(phone: string, phoneIac: string): Omit<CatlinkConfig, "password"> {
-  const apiBaseRaw = process.env.CATLINK_API_BASE?.trim() || API_USA;
-  const apiBase = apiBaseRaw.endsWith("/") ? apiBaseRaw : `${apiBaseRaw}/`;
+/** Split a phone field into CatLink internationalCode + national mobile number. */
+function parsePhoneInput(
+  raw: string,
+  defaultIac = "1",
+): { phoneIac: string; mobile: string } {
+  const trimmed = raw.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) {
+    return { phoneIac: defaultIac, mobile: "" };
+  }
+
+  if (trimmed.startsWith("+")) {
+    if (digits.startsWith("1") && digits.length === 11) {
+      return { phoneIac: "1", mobile: digits.slice(1) };
+    }
+    if (digits.startsWith("86") && digits.length >= 11) {
+      return { phoneIac: "86", mobile: digits.slice(2) };
+    }
+    for (const len of [3, 2, 1]) {
+      if (digits.length > len + 6) {
+        return { phoneIac: digits.slice(0, len), mobile: digits.slice(len) };
+      }
+    }
+  }
+
+  // US/Canada: 11 digits starting with 1 when country code omitted
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return { phoneIac: "1", mobile: digits.slice(1) };
+  }
+
+  return { phoneIac: defaultIac, mobile: digits };
+}
+
+function buildBaseConfig(
+  phone: string,
+  phoneIac: string,
+  apiBase?: string,
+): Omit<CatlinkConfig, "password"> {
+  const apiBaseRaw =
+    apiBase?.trim() || process.env.CATLINK_API_BASE?.trim() || API_USA;
   return {
     phone,
     phoneIac,
-    apiBase,
+    apiBase: normalizeApiBase(apiBaseRaw),
     deviceId: process.env.CATLINK_DEVICE_ID?.trim() || undefined,
     language: process.env.CATLINK_LANGUAGE?.trim() || "en_US",
+  };
+}
+
+function loginApiBases(): string[] {
+  const envBase = process.env.CATLINK_API_BASE?.trim();
+  const normalizedEnv = envBase ? normalizeApiBase(envBase) : null;
+  const bases = normalizedEnv ? [normalizedEnv] : [];
+  for (const base of CATLINK_API_REGIONS) {
+    if (!bases.includes(base)) bases.push(base);
+  }
+  return bases;
+}
+
+function loginErrorMessage(rsp: Record<string, unknown>): string {
+  const msg = typeof rsp.msg === "string" ? rsp.msg : "Login failed";
+  const code = typeof rsp.returnCode === "number" ? rsp.returnCode : undefined;
+
+  if (code === RETURN_CODE_WRONG_PASSWORD) {
+    return "Incorrect password. In the CatLink app, open Account → Security and set a login password (16 characters or fewer). SMS-only accounts cannot link until a password is set.";
+  }
+  if (code === 1001 && msg.toLowerCase().includes("null input")) {
+    return "CatLink rejected the login request. Try a shorter password (8–16 characters) and link again.";
+  }
+
+  return code != null ? `${msg} (code ${code})` : msg;
+}
+
+type LoginAttempt =
+  | { ok: true; token: string; apiBase: string }
+  | { ok: false; returnCode?: number; msg: string };
+
+async function attemptPasswordLogin(
+  apiBase: string,
+  phoneIac: string,
+  mobile: string,
+  plainPassword: string,
+): Promise<LoginAttempt> {
+  const cfg = buildBaseConfig(mobile, phoneIac, apiBase);
+  const password =
+    plainPassword.length <= PASSWORD_MAX_LENGTH
+      ? encryptCatlinkPassword(plainPassword)
+      : plainPassword;
+
+  let rsp: Record<string, unknown>;
+  try {
+    rsp = await catlinkRequest(cfg, undefined, "login/password", "POST", {
+      platform: "ANDROID",
+      internationalCode: phoneIac,
+      mobile,
+      password,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "CatLink request failed";
+    return { ok: false, msg: message };
+  }
+
+  const token = (rsp.data as { token?: string } | undefined)?.token;
+  if (token) {
+    return { ok: true, token, apiBase: cfg.apiBase };
+  }
+
+  return {
+    ok: false,
+    returnCode: typeof rsp.returnCode === "number" ? rsp.returnCode : undefined,
+    msg: loginErrorMessage(rsp),
   };
 }
 
@@ -93,21 +205,31 @@ export async function getCatlinkConfig(): Promise<CatlinkConfig | null> {
   const session = await readSession();
   const envPhoneRaw = process.env.CATLINK_PHONE?.trim();
   const envPassword = process.env.CATLINK_PASSWORD?.trim();
-  const phoneRaw = session?.phone ?? envPhoneRaw;
-  if (!phoneRaw) return null;
-
-  const phone = normalizePhone(phoneRaw);
-  if (!phone) return null;
-
-  const phoneIac =
+  const defaultIac =
     session?.phoneIac?.trim() ||
     process.env.CATLINK_PHONE_IAC?.trim() ||
     "1";
 
+  let phone: string;
+  let phoneIac: string;
+
+  if (session?.phone) {
+    phone = session.phone;
+    phoneIac = defaultIac;
+  } else if (envPhoneRaw) {
+    const parsed = parsePhoneInput(envPhoneRaw, defaultIac);
+    phone = parsed.mobile;
+    phoneIac = parsed.phoneIac;
+  } else {
+    return null;
+  }
+
+  if (!phone) return null;
+
   if (!session?.token && !envPassword) return null;
 
   return {
-    ...buildBaseConfig(phone, phoneIac),
+    ...buildBaseConfig(phone, phoneIac, session?.apiBase),
     password: envPassword || undefined,
   };
 }
@@ -209,31 +331,24 @@ async function catlinkRequest(
 }
 
 async function loginWithPassword(cfg: CatlinkConfig, plainPassword: string): Promise<string> {
-  const password =
-    plainPassword.length <= PASSWORD_MAX_LENGTH
-      ? encryptCatlinkPassword(plainPassword)
-      : plainPassword;
-
-  const rsp = await catlinkRequest(cfg, undefined, "login/password", "POST", {
-    platform: "ANDROID",
-    internationalCode: cfg.phoneIac,
-    mobile: cfg.phone,
-    password,
-  });
-
-  const token = (rsp.data as { token?: string } | undefined)?.token;
-  if (!token) {
-    const msg = typeof rsp.msg === "string" ? rsp.msg : "Login failed";
-    throw new Error(msg);
+  const result = await attemptPasswordLogin(
+    cfg.apiBase,
+    cfg.phoneIac,
+    cfg.phone,
+    plainPassword,
+  );
+  if (!result.ok) {
+    throw new Error(result.msg);
   }
 
   await writeSession({
-    token,
+    token: result.token,
     phone: cfg.phone,
     phoneIac: cfg.phoneIac,
+    apiBase: result.apiBase,
     updatedAt: new Date().toISOString(),
   });
-  return token;
+  return result.token;
 }
 
 async function getToken(cfg: CatlinkConfig): Promise<string> {
@@ -265,8 +380,12 @@ async function requestWithAuth(
 }
 
 export async function linkCatlinkAccount(input: CatlinkLinkInput): Promise<void> {
-  const phone = normalizePhone(input.phone);
-  if (!phone) {
+  const defaultIac =
+    input.phoneIac?.trim() ||
+    process.env.CATLINK_PHONE_IAC?.trim() ||
+    "1";
+  const { phoneIac, mobile } = parsePhoneInput(input.phone, defaultIac);
+  if (!mobile) {
     throw new Error("Phone number is required");
   }
   if (!input.password.trim()) {
@@ -276,12 +395,35 @@ export async function linkCatlinkAccount(input: CatlinkLinkInput): Promise<void>
     throw new Error(`Catlink passwords must be ${PASSWORD_MAX_LENGTH} characters or fewer`);
   }
 
-  const phoneIac = input.phoneIac?.trim() || "1";
-  const cfg: CatlinkConfig = {
-    ...buildBaseConfig(phone, phoneIac),
-    password: input.password,
-  };
-  await loginWithPassword(cfg, input.password);
+  let lastError = "Login failed on all CatLink regions";
+
+  for (const apiBase of loginApiBases()) {
+    const result = await attemptPasswordLogin(
+      apiBase,
+      phoneIac,
+      mobile,
+      input.password,
+    );
+    if (result.ok) {
+      await writeSession({
+        token: result.token,
+        phone: mobile,
+        phoneIac,
+        apiBase: result.apiBase,
+        updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    if (result.returnCode === RETURN_CODE_WRONG_PASSWORD) {
+      throw new Error(result.msg);
+    }
+    lastError = result.msg;
+  }
+
+  throw new Error(
+    `${lastError}. Check your phone number (e.g. 4244420566 or +1 424 442 0566) and CatLink app password.`,
+  );
 }
 
 export async function unlinkCatlinkAccount(): Promise<void> {
