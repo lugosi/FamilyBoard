@@ -125,18 +125,13 @@ type SpotifySearchPlaylist = {
   owner?: { display_name?: string };
 };
 type HueThemeKey = "bright" | "relax" | "focus" | "nightlight";
-type CatlinkAction = "clean_now" | "refill_litter" | "change_bag";
+type CatlinkAction = "clean_now" | "refill_litter" | "change_bag" | "reset_litter";
 type CatlinkSnapshot = {
   online?: boolean;
-  workStatusLabel?: string;
-  workModeLabel?: string;
-  litterRemainingDays?: number;
-  litterWeightKg?: number;
-  wasteBinFull?: boolean;
-  cleanCyclesToday?: number;
-  deodorantDaysLeft?: number;
-  statusMessage?: string;
-  lastCleanedAt?: string;
+  catName?: string;
+  catWeightKg?: number;
+  peeCountToday?: number;
+  poopCountToday?: number;
   updatedAt?: string;
   [key: string]: unknown;
 };
@@ -1682,41 +1677,14 @@ export function Board() {
   );
   const hourlyNext12 = weather?.hourlyNext12 as WeatherHourlyPoint[] | undefined;
   const todayForecast = daily?.[0];
-  const catlinkOnline =
-    typeof catlink?.online === "boolean" ? catlink.online : null;
-  const catlinkWorkStatusLabel =
-    typeof catlink?.workStatusLabel === "string" ? catlink.workStatusLabel : null;
-  const catlinkWorkModeLabel =
-    typeof catlink?.workModeLabel === "string" ? catlink.workModeLabel : null;
-  const catlinkLitterDays =
-    typeof catlink?.litterRemainingDays === "number"
-      ? Math.round(catlink.litterRemainingDays)
-      : null;
-  const catlinkLitterWeightKg =
-    typeof catlink?.litterWeightKg === "number" ? catlink.litterWeightKg : null;
-  const catlinkWasteBinFull =
-    typeof catlink?.wasteBinFull === "boolean" ? catlink.wasteBinFull : null;
-  const catlinkCyclesToday =
-    typeof catlink?.cleanCyclesToday === "number"
-      ? Math.round(catlink.cleanCyclesToday)
-      : null;
-  const catlinkDeodorantDays =
-    typeof catlink?.deodorantDaysLeft === "number"
-      ? Math.round(catlink.deodorantDaysLeft)
-      : null;
-  const catlinkStatusMessage =
-    typeof catlink?.statusMessage === "string" && catlink.statusMessage
-      ? catlink.statusMessage
-      : null;
-  const catlinkLastCleanedLabel =
-    typeof catlink?.lastCleanedAt === "string" && catlink.lastCleanedAt
-      ? new Date(catlink.lastCleanedAt).toLocaleString([], {
-          month: "short",
-          day: "numeric",
-          hour: "numeric",
-          minute: "2-digit",
-        })
-      : null;
+  const catlinkCatName =
+    typeof catlink?.catName === "string" && catlink.catName ? catlink.catName : null;
+  const catlinkCatWeightKg =
+    typeof catlink?.catWeightKg === "number" ? catlink.catWeightKg : null;
+  const catlinkPeeToday =
+    typeof catlink?.peeCountToday === "number" ? Math.round(catlink.peeCountToday) : null;
+  const catlinkPoopToday =
+    typeof catlink?.poopCountToday === "number" ? Math.round(catlink.poopCountToday) : null;
   const spotifyTrack = spotifyPlayback?.item;
   const spotifyArtist = spotifyTrack?.artists?.map((a) => a.name).filter(Boolean).join(", ");
   const spotifyActiveDevice =
@@ -2312,7 +2280,9 @@ export function Board() {
                     <span
                       className={`${WIDGET_TITLE_ICON} flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950/70 text-xs font-semibold tabular-nums text-white`}
                     >
-                      {catlinkLitterDays !== null ? `${catlinkLitterDays}d` : "CAT"}
+                      {catlinkCatWeightKg !== null
+                        ? `${catlinkCatWeightKg.toFixed(1)}`
+                        : "CAT"}
                     </span>
                   ) : null}
                   <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Catlink</h2>
@@ -2441,76 +2411,32 @@ export function Board() {
                 </div>
               ) : catlink ? (
                 <div className="mt-3 space-y-3">
-                  <div className="grid grid-cols-2 gap-2 text-sm sm:text-base">
+                  {catlinkCatName ? (
+                    <p className="text-sm text-slate-400 sm:text-base">{catlinkCatName}</p>
+                  ) : null}
+                  <div className="grid grid-cols-3 gap-2 text-sm sm:text-base">
                     <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Status</p>
-                      <p className="mt-1 font-medium text-slate-100">
-                        {catlinkOnline === null
-                          ? "Unknown"
-                          : catlinkOnline
-                            ? catlinkWorkStatusLabel ?? "Online"
-                            : "Offline"}
-                      </p>
-                      {catlinkWorkModeLabel ? (
-                        <p className="mt-0.5 text-xs text-slate-400">{catlinkWorkModeLabel} mode</p>
-                      ) : null}
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Litter left</p>
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Weight</p>
                       <p className="mt-1 font-medium tabular-nums text-slate-100">
-                        {catlinkLitterDays !== null ? `${catlinkLitterDays} days` : "—"}
+                        {catlinkCatWeightKg !== null
+                          ? `${catlinkCatWeightKg.toFixed(1)} kg`
+                          : "—"}
                       </p>
                     </div>
                     <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Waste bin</p>
-                      <p className="mt-1 font-medium text-slate-100">
-                        {catlinkWasteBinFull === null
-                          ? "—"
-                          : catlinkWasteBinFull
-                            ? "Full"
-                            : "OK"}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Cycles today</p>
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Pee</p>
                       <p className="mt-1 font-medium tabular-nums text-slate-100">
-                        {catlinkCyclesToday !== null ? catlinkCyclesToday : "—"}
+                        {catlinkPeeToday !== null ? catlinkPeeToday : "—"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Poop</p>
+                      <p className="mt-1 font-medium tabular-nums text-slate-100">
+                        {catlinkPoopToday !== null ? catlinkPoopToday : "—"}
                       </p>
                     </div>
                   </div>
-                  {catlinkStatusMessage ? (
-                    <p className="text-sm text-slate-400 sm:text-base">{catlinkStatusMessage}</p>
-                  ) : null}
-                  {catlinkLitterWeightKg !== null || catlinkDeodorantDays !== null ? (
-                    <p className="text-sm text-slate-400 sm:text-base">
-                      {catlinkLitterWeightKg !== null ? (
-                        <span>
-                          Litter weight:{" "}
-                          <span className="font-medium text-slate-200">
-                            {catlinkLitterWeightKg.toFixed(1)} kg
-                          </span>
-                        </span>
-                      ) : null}
-                      {catlinkLitterWeightKg !== null && catlinkDeodorantDays !== null ? (
-                        <span className="mx-2 text-slate-600">·</span>
-                      ) : null}
-                      {catlinkDeodorantDays !== null ? (
-                        <span>
-                          Deodorizer:{" "}
-                          <span className="font-medium text-slate-200">
-                            {catlinkDeodorantDays} days
-                          </span>
-                        </span>
-                      ) : null}
-                    </p>
-                  ) : null}
-                  {catlinkLastCleanedLabel ? (
-                    <p className="text-sm text-slate-400 sm:text-base">
-                      Last cleaned:{" "}
-                      <span className="font-medium text-slate-200">{catlinkLastCleanedLabel}</span>
-                    </p>
-                  ) : null}
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <button
                       type="button"
                       className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
@@ -2534,6 +2460,14 @@ export function Board() {
                       onClick={() => void catlinkControl("change_bag")}
                     >
                       {busy === "catlink-change_bag" ? "Working…" : "Change bag"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
+                      disabled={busy === "catlink-reset_litter"}
+                      onClick={() => void catlinkControl("reset_litter")}
+                    >
+                      {busy === "catlink-reset_litter" ? "Working…" : "Reset"}
                     </button>
                   </div>
                 </div>

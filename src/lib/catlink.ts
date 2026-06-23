@@ -18,7 +18,11 @@ const CATLINK_API_REGIONS = [
   "https://app-sgp.catlinks.cn/api/",
 ] as const;
 
-export type CatlinkAction = "clean_now" | "refill_litter" | "change_bag";
+export type CatlinkAction =
+  | "clean_now"
+  | "refill_litter"
+  | "change_bag"
+  | "reset_litter";
 
 export type CatlinkSnapshot = {
   deviceId: string;
@@ -26,17 +30,10 @@ export type CatlinkSnapshot = {
   model?: string;
   deviceType?: string;
   online?: boolean;
-  workStatus?: string;
-  workStatusLabel?: string;
-  workMode?: string;
-  workModeLabel?: string;
-  litterRemainingDays?: number;
-  litterWeightKg?: number;
-  wasteBinFull?: boolean;
-  cleanCyclesToday?: number;
-  deodorantDaysLeft?: number;
-  statusMessage?: string;
-  lastCleanedAt?: string;
+  catName?: string;
+  catWeightKg?: number;
+  peeCountToday?: number;
+  poopCountToday?: number;
   updatedAt?: string;
 };
 
@@ -75,6 +72,14 @@ type CatlinkDeviceListItem = {
 type DeviceApiKind = "scooper" | "litterbox" | "c08";
 
 type DeviceInfo = Record<string, unknown>;
+
+type CatListItem = {
+  id?: string;
+  petName?: string;
+  deviceName?: string;
+  name?: string;
+  weight?: number | string;
+};
 
 function normalizeApiBase(raw: string): string {
   return raw.endsWith("/") ? raw : `${raw}/`;
@@ -474,68 +479,83 @@ function classifyDevice(device: CatlinkDeviceListItem): DeviceApiKind {
   return "scooper";
 }
 
-const WORK_STATUS_LABELS: Record<string, string> = {
-  "00": "Idle",
-  "01": "Running",
-  "02": "Needs reset",
-};
-
-const WORK_MODE_LABELS: Record<string, string> = {
-  "00": "Auto",
-  "01": "Manual",
-  "02": "Timer",
-  "03": "Empty",
-};
-
-function workStatusLabel(code: unknown): string | undefined {
-  if (typeof code !== "string" && typeof code !== "number") return undefined;
-  const key = String(code).padStart(2, "0").slice(-2);
-  return WORK_STATUS_LABELS[key] ?? String(code);
+function getBoardTimezone(): string {
+  return process.env.DEFAULT_TIMEZONE?.trim() || "America/Los_Angeles";
 }
 
-function workModeLabel(code: unknown): string | undefined {
-  if (typeof code !== "string" && typeof code !== "number") return undefined;
-  const key = String(code).padStart(2, "0").slice(-2);
-  return WORK_MODE_LABELS[key] ?? String(code);
-}
-
-function isWasteBinFull(detail: DeviceInfo): boolean | undefined {
-  const errors = detail.deviceErrorList;
-  if (Array.isArray(errors)) {
-    for (const entry of errors) {
-      const errkey =
-        typeof entry === "object" && entry && "errkey" in entry
-          ? String((entry as { errkey?: string }).errkey ?? "")
-          : "";
-      if (errkey.includes("garbage_tobe_full")) return true;
-    }
+function todayDateLocal(timezoneId?: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezoneId || "UTC",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
   }
-  const message = [
-    detail.currentMessage,
-    detail.currentError,
-    detail.currentErrorMessage,
-  ]
-    .filter((v) => typeof v === "string" && v.trim())
-    .join(" ");
-  if (/waste|trash|garbage|full|已满|集便仓/i.test(message)) return true;
-  return false;
+}
+
+function catDisplayName(cat: CatListItem): string | undefined {
+  for (const key of ["petName", "deviceName", "name"] as const) {
+    const value = cat[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function pickCat(cats: CatListItem[]): CatListItem | undefined {
+  return cats.find((cat) => cat.id) ?? cats[0];
+}
+
+async function listCats(cfg: CatlinkConfig): Promise<CatListItem[]> {
+  const timezoneId = getBoardTimezone();
+  const rsp = await requestWithAuth(cfg, "token/pet/health/v3/cats", "GET", {
+    timezoneId,
+  });
+  if (rsp.returnCode !== 0) return [];
+  const data = rsp.data as { cats?: CatListItem[] } | undefined;
+  return data?.cats ?? [];
+}
+
+async function fetchCatSummary(
+  cfg: CatlinkConfig,
+  petId: string,
+): Promise<Record<string, unknown>> {
+  const timezoneId = getBoardTimezone();
+  const rsp = await requestWithAuth(cfg, "token/pet/health/v3/summarySimple", "GET", {
+    petId,
+    date: todayDateLocal(timezoneId),
+    sport: 1,
+    timezoneId,
+  });
+  if (rsp.returnCode !== 0) return {};
+  return (rsp.data as Record<string, unknown>) ?? {};
+}
+
+function parseCatStats(
+  cat: CatListItem,
+  summary: Record<string, unknown>,
+): Pick<CatlinkSnapshot, "catName" | "catWeightKg" | "peeCountToday" | "poopCountToday"> {
+  const toilet = (summary.toilet as Record<string, unknown>) ?? {};
+  const pee = toNumber(toilet.peed);
+  const poop = toNumber(toilet.pood);
+  const profileWeight = toNumber(cat.weight);
+  const visitWeight = toNumber(toilet.weightAvg);
+  const weight = profileWeight ?? visitWeight;
+
+  return {
+    catName: catDisplayName(cat),
+    catWeightKg: weight ?? undefined,
+    peeCountToday: pee !== null ? Math.round(pee) : undefined,
+    poopCountToday: poop !== null ? Math.round(poop) : undefined,
+  };
 }
 
 function infoApiPath(kind: DeviceApiKind): string {
   if (kind === "c08") return "token/litterbox/info/c08";
   if (kind === "litterbox") return "token/litterbox/info";
   return "token/device/info";
-}
-
-function logsApiPath(kind: DeviceApiKind): string | null {
-  if (kind === "c08" || kind === "litterbox") {
-    return "token/litterbox/stats/log/top5";
-  }
-  return "token/device/scooper/stats/log/top5";
-}
-
-function logsKey(kind: DeviceApiKind): string {
-  return kind === "scooper" ? "scooperLogTop5" : "scooperLogTop5";
 }
 
 async function listDevices(cfg: CatlinkConfig): Promise<CatlinkDeviceListItem[]> {
@@ -621,22 +641,6 @@ async function resolveDevice(
   return { device, kind, detail };
 }
 
-async function fetchRecentLogTime(
-  cfg: CatlinkConfig,
-  deviceId: string,
-  kind: DeviceApiKind,
-): Promise<string | undefined> {
-  const api = logsApiPath(kind);
-  if (!api) return undefined;
-  const rsp = await requestWithAuth(cfg, api, "GET", { deviceId });
-  if (rsp.returnCode !== 0) return undefined;
-  const data = rsp.data as Record<string, unknown> | undefined;
-  const logs = data?.[logsKey(kind)];
-  if (!Array.isArray(logs) || logs.length === 0) return undefined;
-  const first = logs[0] as { time?: string };
-  return typeof first.time === "string" ? first.time : undefined;
-}
-
 function toNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
@@ -657,27 +661,17 @@ function toBool(value: unknown): boolean | undefined {
   return undefined;
 }
 
-function mapSnapshot(
-  device: CatlinkDeviceListItem,
-  detail: DeviceInfo,
-  lastCleanedAt?: string,
-): CatlinkSnapshot {
-  const inductionTimes = toNumber(detail.inductionTimes) ?? 0;
-  const manualTimes = toNumber(detail.manualTimes) ?? 0;
-  const litterRemainingDays = toNumber(detail.litterCountdown);
-  const litterWeightKg = toNumber(detail.catLitterWeight) ?? toNumber(detail.weight);
-  const deodorantDaysLeft = toNumber(detail.deodorantCountdown);
-  const wasteBinFull = isWasteBinFull(detail);
-  const statusMessageRaw =
-    (typeof detail.currentMessage === "string" && detail.currentMessage.trim()) ||
-    (typeof detail.currentError === "string" && detail.currentError.trim()) ||
-    (typeof detail.currentErrorMessage === "string" &&
-      detail.currentErrorMessage.trim()) ||
-    undefined;
-  const statusMessage =
-    statusMessageRaw && !/device online/i.test(statusMessageRaw)
-      ? statusMessageRaw
-      : undefined;
+export async function fetchCatlinkSnapshot(): Promise<CatlinkSnapshot> {
+  const cfg = await getCatlinkConfig();
+  if (!cfg) {
+    throw new Error("catlink_not_configured");
+  }
+
+  const { device, detail } = await resolveDevice(cfg);
+  const cats = await listCats(cfg);
+  const cat = pickCat(cats);
+  const catStats =
+    cat?.id != null ? parseCatStats(cat, await fetchCatSummary(cfg, cat.id)) : {};
 
   return {
     deviceId: device.id ?? "",
@@ -685,33 +679,9 @@ function mapSnapshot(
     model: typeof device.model === "string" ? device.model : undefined,
     deviceType: typeof device.deviceType === "string" ? device.deviceType : undefined,
     online: toBool(detail.online),
-    workStatus: typeof detail.workStatus === "string" ? detail.workStatus : undefined,
-    workStatusLabel: workStatusLabel(detail.workStatus),
-    workMode: typeof detail.workModel === "string" ? detail.workModel : undefined,
-    workModeLabel: workModeLabel(detail.workModel),
-    litterRemainingDays:
-      litterRemainingDays !== null ? Math.max(0, Math.round(litterRemainingDays)) : undefined,
-    litterWeightKg: litterWeightKg ?? undefined,
-    wasteBinFull,
-    cleanCyclesToday: inductionTimes + manualTimes,
-    deodorantDaysLeft:
-      deodorantDaysLeft !== null ? Math.max(0, Math.round(deodorantDaysLeft)) : undefined,
-    statusMessage,
-    lastCleanedAt,
+    ...catStats,
     updatedAt: new Date().toISOString(),
   };
-}
-
-export async function fetchCatlinkSnapshot(): Promise<CatlinkSnapshot> {
-  const cfg = await getCatlinkConfig();
-  if (!cfg) {
-    throw new Error("catlink_not_configured");
-  }
-
-  const { device, kind, detail } = await resolveDevice(cfg);
-  const lastCleanedAt = await fetchRecentLogTime(cfg, device.id!, kind);
-
-  return mapSnapshot(device, detail, lastCleanedAt);
 }
 
 async function runCleanNow(
@@ -787,6 +757,24 @@ async function runChangeBag(
   assertSuccess(rsp, "Change bag");
 }
 
+async function runResetLitter(
+  cfg: CatlinkConfig,
+  device: CatlinkDeviceListItem,
+): Promise<void> {
+  if (!device.id) {
+    throw new Error("Selected Catlink device has no id");
+  }
+  if (!device.deviceType) {
+    throw new Error("Selected Catlink device has no type");
+  }
+  const rsp = await requestWithAuth(cfg, "token/device/union/consumableReset", "POST", {
+    consumablesType: "CAT_LITTER",
+    deviceId: device.id,
+    deviceType: device.deviceType,
+  });
+  assertSuccess(rsp, "Reset litter");
+}
+
 export async function executeCatlinkAction(action: CatlinkAction): Promise<void> {
   const cfg = await getCatlinkConfig();
   if (!cfg) {
@@ -807,6 +795,9 @@ export async function executeCatlinkAction(action: CatlinkAction): Promise<void>
       return;
     case "change_bag":
       await runChangeBag(cfg, device.id, kind);
+      return;
+    case "reset_litter":
+      await runResetLitter(cfg, device);
       return;
     default:
       throw new Error("Unsupported action");
