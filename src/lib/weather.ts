@@ -8,6 +8,8 @@ export type DailyForecast = {
   code: number;
 };
 
+export const HOURLY_FORECAST_HOURS = 18;
+
 export type WeatherSnapshot = {
   latitude: number;
   longitude: number;
@@ -19,8 +21,8 @@ export type WeatherSnapshot = {
     windMph: number;
   };
   daily: DailyForecast[];
-  /** Next 12 clock hours from the current hour (rolling on each refresh). */
-  hourlyNext12: Array<{
+  /** Next 18 clock hours from the current hour (rolling on each refresh). */
+  hourlyNext18: Array<{
     time: string;
     temperatureF: number;
     code: number;
@@ -152,8 +154,8 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
     (t) => new Date(t).getTime() >= currentHourStart.getTime(),
   );
   const fromIdx = startIdx >= 0 ? startIdx : 0;
-  const hourlyNext12 = hourlyTimes
-    .slice(fromIdx, fromIdx + 12)
+  const hourlyNext18 = hourlyTimes
+    .slice(fromIdx, fromIdx + HOURLY_FORECAST_HOURS)
     .map((time, i) => ({
       time,
       temperatureF: hourlyTemps[fromIdx + i] ?? 0,
@@ -180,7 +182,7 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
       windMph: cur.wind_speed_10m ?? 0,
     },
     daily,
-    hourlyNext12,
+    hourlyNext18,
     sunriseToday: dailySunrise[dayIdx],
     sunsetToday: dailySunset[dayIdx],
   };

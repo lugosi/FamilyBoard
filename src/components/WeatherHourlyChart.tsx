@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { WeatherIcon } from "@/components/WeatherIcon";
-import { isNightAt } from "@/lib/weather";
+import { WeatherIcon, weatherIconKey } from "@/components/WeatherIcon";
+import { HOURLY_FORECAST_HOURS, isNightAt } from "@/lib/weather";
 import { wmoLabel } from "@/lib/wmo";
 
 export type WeatherHourlyPoint = {
@@ -18,7 +18,6 @@ type Props = {
   className?: string;
 };
 
-const HOUR_COUNT = 12;
 const ICON_SIZE = 20;
 const ICON_GAP = 4;
 const TEMP_LABEL_LINE = 11;
@@ -38,6 +37,7 @@ function hourLabel(time: string): string {
 function shouldShowHourLabel(index: number, total: number): boolean {
   if (total <= 6) return true;
   if (index === 0 || index === total - 1) return true;
+  if (total > 12) return index % 3 === 0;
   return index % 2 === 0;
 }
 
@@ -66,7 +66,10 @@ export function WeatherHourlyChart({
     return () => ro.disconnect();
   }, []);
 
-  const displayHours = useMemo(() => hours.slice(0, HOUR_COUNT), [hours]);
+  const displayHours = useMemo(
+    () => hours.slice(0, HOURLY_FORECAST_HOURS),
+    [hours],
+  );
 
   if (displayHours.length < 2) {
     return (
@@ -140,7 +143,7 @@ export function WeatherHourlyChart({
         viewBox={`0 0 ${totalW} ${totalH}`}
         className="absolute inset-0 block h-full w-full"
         role="img"
-        aria-label="Next 12 hours temperature and conditions"
+        aria-label="Next 18 hours temperature and conditions"
       >
         {axisTicks.map((tick) => {
           const y = yForValue(tick.value);
@@ -203,6 +206,15 @@ export function WeatherHourlyChart({
           const iconY = isExtreme
             ? tempLabelY - TEMP_LABEL_LINE / 2 - ICON_GAP - ICON_SIZE
             : y - dotR - ICON_GAP - ICON_SIZE;
+          const isNight = isNightAt(new Date(h.time), sunriseToday, sunsetToday);
+          const prev = i > 0 ? displayHours[i - 1] : null;
+          const showIcon =
+            prev == null ||
+            weatherIconKey(h.code, isNight) !==
+              weatherIconKey(
+                prev.code,
+                isNightAt(new Date(prev.time), sunriseToday, sunsetToday),
+              );
           return (
             <g key={h.time}>
               <title>
@@ -232,24 +244,26 @@ export function WeatherHourlyChart({
                   {tempLabel}
                 </text>
               ) : null}
-              <foreignObject
-                x={x - ICON_SIZE / 2}
-                y={Math.max(2, iconY)}
-                width={ICON_SIZE}
-                height={ICON_SIZE}
-                className="overflow-visible"
-              >
-                <div
-                  className="flex items-center justify-center text-slate-200"
-                  style={{ width: ICON_SIZE, height: ICON_SIZE }}
+              {showIcon ? (
+                <foreignObject
+                  x={x - ICON_SIZE / 2}
+                  y={Math.max(2, iconY)}
+                  width={ICON_SIZE}
+                  height={ICON_SIZE}
+                  className="overflow-visible"
                 >
-                  <WeatherIcon
-                    code={h.code}
-                    isNight={isNightAt(new Date(h.time), sunriseToday, sunsetToday)}
-                    className="h-5 w-5"
-                  />
-                </div>
-              </foreignObject>
+                  <div
+                    className="flex items-center justify-center text-slate-200"
+                    style={{ width: ICON_SIZE, height: ICON_SIZE }}
+                  >
+                    <WeatherIcon
+                      code={h.code}
+                      isNight={isNight}
+                      className="h-5 w-5"
+                    />
+                  </div>
+                </foreignObject>
+              ) : null}
               {shouldShowHourLabel(i, n) ? (
                 <text
                   x={x}

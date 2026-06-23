@@ -204,6 +204,10 @@ function IconSvg({ kind, isNight }: { kind: IconKind; isNight: boolean }) {
   }
 }
 
+export function weatherIconKey(code: number, isNight: boolean): string {
+  return `${iconKindFromWmo(code)}-${isNight ? "night" : "day"}`;
+}
+
 type Props = {
   code: number;
   /** When true, clear/partly icons use a moon instead of the sun. */

@@ -13,6 +13,7 @@ import {
   eventBarClass,
   eventOverlapsLocalDay,
   getEventBounds,
+  isDefaultWeeksRange,
   parseLocalDateKey,
   rangeKeysToIso,
   shiftCalendarRangeByMonth,
@@ -449,12 +450,43 @@ export function Board() {
   const [rangeKeys, setRangeKeys] = useState<CalendarRangeKeys>(() =>
     defaultCalendarRangeKeys(DEFAULT_HOME_CALENDAR_WEEKS),
   );
+  const calendarScrollRef = useRef<HTMLDivElement>(null);
   const fetchIso = useMemo(() => rangeKeysToIso(rangeKeys), [rangeKeys]);
   const weekStarts = useMemo(() => {
     const a = startOfDay(parseLocalDateKey(rangeKeys.fromKey));
     const b = startOfDay(parseLocalDateKey(rangeKeys.toInclusiveKey));
     return enumerateWeekStarts(a, b);
   }, [rangeKeys.fromKey, rangeKeys.toInclusiveKey]);
+
+  useEffect(() => {
+    function syncCurrentWeekHomeRange() {
+      setRangeKeys((prev) => {
+        if (!isDefaultWeeksRange(prev, DEFAULT_HOME_CALENDAR_WEEKS)) return prev;
+        const next = defaultCalendarRangeKeys(DEFAULT_HOME_CALENDAR_WEEKS);
+        if (
+          prev.fromKey === next.fromKey &&
+          prev.toInclusiveKey === next.toInclusiveKey
+        ) {
+          return prev;
+        }
+        return next;
+      });
+    }
+    function onVisible() {
+      if (document.visibilityState === "visible") syncCurrentWeekHomeRange();
+    }
+    syncCurrentWeekHomeRange();
+    const id = window.setInterval(syncCurrentWeekHomeRange, 60_000);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
+  useEffect(() => {
+    calendarScrollRef.current?.scrollTo({ top: 0 });
+  }, [rangeKeys.fromKey]);
 
   const [calendars, setCalendars] = useState<CalendarOption[]>([]);
   const [selectedCalendarId, setSelectedCalendarId] = useState("primary");
@@ -1675,7 +1707,7 @@ export function Board() {
     () => dailyForecastByDate(daily),
     [daily],
   );
-  const hourlyNext12 = weather?.hourlyNext12 as WeatherHourlyPoint[] | undefined;
+  const hourlyNext18 = weather?.hourlyNext18 as WeatherHourlyPoint[] | undefined;
   const todayForecast = daily?.[0];
   const catlinkCatName =
     typeof catlink?.catName === "string" && catlink.catName ? catlink.catName : null;
@@ -1951,7 +1983,10 @@ export function Board() {
                       No weeks in this range.
                     </p>
                   ) : (
-                    <div className="board-scrollbar flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
+                    <div
+                      ref={calendarScrollRef}
+                      className="board-scrollbar flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto"
+                    >
                       <CompactCalendarGrid
                         weekStarts={weekStarts}
                         events={events}
@@ -2265,9 +2300,9 @@ export function Board() {
                       </div>
                     </div>
                   </div>
-                  {hourlyNext12 && hourlyNext12.length > 0 ? (
+                  {hourlyNext18 && hourlyNext18.length > 0 ? (
                     <WeatherHourlyChart
-                      hours={hourlyNext12}
+                      hours={hourlyNext18}
                       sunriseToday={sunriseToday}
                       sunsetToday={sunsetToday}
                       className="h-32 shrink-0 sm:h-36"

@@ -72,6 +72,9 @@ export function enumerateWeekStarts(rangeFrom: Date, rangeTo: Date): Date[] {
 
 export type CalendarRangeKeys = { fromKey: string; toInclusiveKey: string };
 
+/** Default span for “this week” home view: N full weeks starting Monday of the current week. */
+export const DEFAULT_HOME_CALENDAR_WEEKS = 3;
+
 export function defaultCalendarRangeKeys(weeksAhead = 4): CalendarRangeKeys {
   const ws = startOfWeekMonday(new Date());
   ws.setHours(0, 0, 0, 0);
@@ -81,8 +84,17 @@ export function defaultCalendarRangeKeys(weeksAhead = 4): CalendarRangeKeys {
   };
 }
 
-/** Default span for “this week” home view: N full weeks starting Monday of the current week. */
-export const DEFAULT_HOME_CALENDAR_WEEKS = 3;
+/** True when the range is exactly N full weeks starting on a Monday (home board view). */
+export function isDefaultWeeksRange(
+  keys: CalendarRangeKeys,
+  weeks = DEFAULT_HOME_CALENDAR_WEEKS,
+): boolean {
+  const from = startOfDay(parseLocalDateKey(keys.fromKey));
+  const to = startOfDay(parseLocalDateKey(keys.toInclusiveKey));
+  if (dateKeyLocal(startOfWeekMonday(from)) !== keys.fromKey) return false;
+  const spanDays = Math.round((to.getTime() - from.getTime()) / MS_DAY);
+  return spanDays === 7 * weeks - 1;
+}
 
 /** Monday of the week containing `d` through last local day of that calendar month. */
 export function calendarMonthRangeKeys(year: number, monthIndex: number): CalendarRangeKeys {
