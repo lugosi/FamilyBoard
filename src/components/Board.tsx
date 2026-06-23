@@ -125,19 +125,17 @@ type SpotifySearchPlaylist = {
   owner?: { display_name?: string };
 };
 type HueThemeKey = "bright" | "relax" | "focus" | "nightlight";
-type CatlinkAction =
-  | "clean_now"
-  | "toggle_child_lock"
-  | "toggle_odor_control"
-  | "toggle_night_light";
+type CatlinkAction = "clean_now" | "refill_litter" | "change_bag";
 type CatlinkSnapshot = {
   online?: boolean;
-  litterLevelPercent?: number;
-  weightKg?: number;
+  workStatusLabel?: string;
+  workModeLabel?: string;
+  litterRemainingDays?: number;
+  litterWeightKg?: number;
+  wasteBinFull?: boolean;
   cleanCyclesToday?: number;
-  childLock?: boolean;
-  odorControl?: boolean;
-  nightLight?: boolean;
+  deodorantDaysLeft?: number;
+  statusMessage?: string;
   lastCleanedAt?: string;
   updatedAt?: string;
   [key: string]: unknown;
@@ -1686,15 +1684,29 @@ export function Board() {
   const todayForecast = daily?.[0];
   const catlinkOnline =
     typeof catlink?.online === "boolean" ? catlink.online : null;
-  const catlinkLitterLevel =
-    typeof catlink?.litterLevelPercent === "number"
-      ? Math.round(catlink.litterLevelPercent)
+  const catlinkWorkStatusLabel =
+    typeof catlink?.workStatusLabel === "string" ? catlink.workStatusLabel : null;
+  const catlinkWorkModeLabel =
+    typeof catlink?.workModeLabel === "string" ? catlink.workModeLabel : null;
+  const catlinkLitterDays =
+    typeof catlink?.litterRemainingDays === "number"
+      ? Math.round(catlink.litterRemainingDays)
       : null;
-  const catlinkWeightKg =
-    typeof catlink?.weightKg === "number" ? catlink.weightKg : null;
+  const catlinkLitterWeightKg =
+    typeof catlink?.litterWeightKg === "number" ? catlink.litterWeightKg : null;
+  const catlinkWasteBinFull =
+    typeof catlink?.wasteBinFull === "boolean" ? catlink.wasteBinFull : null;
   const catlinkCyclesToday =
     typeof catlink?.cleanCyclesToday === "number"
       ? Math.round(catlink.cleanCyclesToday)
+      : null;
+  const catlinkDeodorantDays =
+    typeof catlink?.deodorantDaysLeft === "number"
+      ? Math.round(catlink.deodorantDaysLeft)
+      : null;
+  const catlinkStatusMessage =
+    typeof catlink?.statusMessage === "string" && catlink.statusMessage
+      ? catlink.statusMessage
       : null;
   const catlinkLastCleanedLabel =
     typeof catlink?.lastCleanedAt === "string" && catlink.lastCleanedAt
@@ -2299,7 +2311,7 @@ export function Board() {
                     <span
                       className={`${WIDGET_TITLE_ICON} flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950/70 text-xs font-semibold tabular-nums text-white`}
                     >
-                      {catlinkLitterLevel !== null ? `${catlinkLitterLevel}%` : "CAT"}
+                      {catlinkLitterDays !== null ? `${catlinkLitterDays}d` : "CAT"}
                     </span>
                   ) : null}
                   <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Catlink</h2>
@@ -2432,19 +2444,30 @@ export function Board() {
                     <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
                       <p className="text-xs uppercase tracking-wide text-slate-500">Status</p>
                       <p className="mt-1 font-medium text-slate-100">
-                        {catlinkOnline === null ? "Unknown" : catlinkOnline ? "Online" : "Offline"}
+                        {catlinkOnline === null
+                          ? "Unknown"
+                          : catlinkOnline
+                            ? catlinkWorkStatusLabel ?? "Online"
+                            : "Offline"}
+                      </p>
+                      {catlinkWorkModeLabel ? (
+                        <p className="mt-0.5 text-xs text-slate-400">{catlinkWorkModeLabel} mode</p>
+                      ) : null}
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Litter left</p>
+                      <p className="mt-1 font-medium tabular-nums text-slate-100">
+                        {catlinkLitterDays !== null ? `${catlinkLitterDays} days` : "—"}
                       </p>
                     </div>
                     <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Litter level</p>
-                      <p className="mt-1 font-medium tabular-nums text-slate-100">
-                        {catlinkLitterLevel !== null ? `${catlinkLitterLevel}%` : "—"}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Weight</p>
-                      <p className="mt-1 font-medium tabular-nums text-slate-100">
-                        {catlinkWeightKg !== null ? `${catlinkWeightKg.toFixed(1)} kg` : "—"}
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Waste bin</p>
+                      <p className="mt-1 font-medium text-slate-100">
+                        {catlinkWasteBinFull === null
+                          ? "—"
+                          : catlinkWasteBinFull
+                            ? "Full"
+                            : "OK"}
                       </p>
                     </div>
                     <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
@@ -2454,44 +2477,62 @@ export function Board() {
                       </p>
                     </div>
                   </div>
+                  {catlinkStatusMessage ? (
+                    <p className="text-sm text-slate-400 sm:text-base">{catlinkStatusMessage}</p>
+                  ) : null}
+                  {catlinkLitterWeightKg !== null || catlinkDeodorantDays !== null ? (
+                    <p className="text-sm text-slate-400 sm:text-base">
+                      {catlinkLitterWeightKg !== null ? (
+                        <span>
+                          Litter weight:{" "}
+                          <span className="font-medium text-slate-200">
+                            {catlinkLitterWeightKg.toFixed(1)} kg
+                          </span>
+                        </span>
+                      ) : null}
+                      {catlinkLitterWeightKg !== null && catlinkDeodorantDays !== null ? (
+                        <span className="mx-2 text-slate-600">·</span>
+                      ) : null}
+                      {catlinkDeodorantDays !== null ? (
+                        <span>
+                          Deodorizer:{" "}
+                          <span className="font-medium text-slate-200">
+                            {catlinkDeodorantDays} days
+                          </span>
+                        </span>
+                      ) : null}
+                    </p>
+                  ) : null}
                   {catlinkLastCleanedLabel ? (
                     <p className="text-sm text-slate-400 sm:text-base">
                       Last cleaned:{" "}
                       <span className="font-medium text-slate-200">{catlinkLastCleanedLabel}</span>
                     </p>
                   ) : null}
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
                       className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
                       disabled={busy === "catlink-clean_now"}
                       onClick={() => void catlinkControl("clean_now")}
                     >
-                      {busy === "catlink-clean_now" ? "Working…" : "Clean now"}
+                      {busy === "catlink-clean_now" ? "Working…" : "Clean"}
                     </button>
                     <button
                       type="button"
                       className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
-                      disabled={busy === "catlink-toggle_child_lock"}
-                      onClick={() => void catlinkControl("toggle_child_lock")}
+                      disabled={busy === "catlink-refill_litter"}
+                      onClick={() => void catlinkControl("refill_litter")}
                     >
-                      {catlink.childLock ? "Unlock child lock" : "Lock controls"}
+                      {busy === "catlink-refill_litter" ? "Working…" : "Refill"}
                     </button>
                     <button
                       type="button"
                       className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
-                      disabled={busy === "catlink-toggle_odor_control"}
-                      onClick={() => void catlinkControl("toggle_odor_control")}
+                      disabled={busy === "catlink-change_bag"}
+                      onClick={() => void catlinkControl("change_bag")}
                     >
-                      {catlink.odorControl ? "Odor off" : "Odor on"}
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
-                      disabled={busy === "catlink-toggle_night_light"}
-                      onClick={() => void catlinkControl("toggle_night_light")}
-                    >
-                      {catlink.nightLight ? "Light off" : "Light on"}
+                      {busy === "catlink-change_bag" ? "Working…" : "Change bag"}
                     </button>
                   </div>
                 </div>
