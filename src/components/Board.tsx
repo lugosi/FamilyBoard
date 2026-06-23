@@ -29,8 +29,10 @@ import {
 import { WeatherIcon } from "@/components/WeatherIcon";
 import {
   dailyForecastByDate,
+  isNightForWeatherIcon,
   isNightGreyscaleActive,
   type DailyForecast,
+  type SunTimes,
 } from "@/lib/weather";
 import { IndoorClimateCharts } from "@/components/IndoorClimateCharts";
 import type { ClimateHistorySample } from "@/lib/nest-climate-history";
@@ -1708,6 +1710,11 @@ export function Board() {
     [daily],
   );
   const hourlyNext18 = weather?.hourlyNext18 as WeatherHourlyPoint[] | undefined;
+  const weatherSunByDate = weather?.sunByDate as Record<string, SunTimes> | undefined;
+  const weatherIconIsNight = useMemo(
+    () => isNightForWeatherIcon(clockNow, weatherSunByDate),
+    [clockNow, weatherSunByDate],
+  );
   const todayForecast = daily?.[0];
   const catlinkCatName =
     typeof catlink?.catName === "string" && catlink.catName ? catlink.catName : null;
@@ -2162,7 +2169,7 @@ export function Board() {
                     current ? (
                       <WeatherIcon
                         code={Number(current.code ?? 0)}
-                        isNight={nightGreyscale}
+                        isNight={weatherIconIsNight}
                         className={`${WIDGET_TITLE_ICON} text-sky-300`}
                       />
                     ) : (
@@ -2244,7 +2251,7 @@ export function Board() {
                       </p>
                       <WeatherIcon
                         code={Number(current.code ?? 0)}
-                        isNight={nightGreyscale}
+                        isNight={weatherIconIsNight}
                         className="h-9 w-9 shrink-0 sm:h-10 sm:w-10"
                       />
                     </div>
@@ -2303,8 +2310,7 @@ export function Board() {
                   {hourlyNext18 && hourlyNext18.length > 0 ? (
                     <WeatherHourlyChart
                       hours={hourlyNext18}
-                      sunriseToday={sunriseToday}
-                      sunsetToday={sunsetToday}
+                      sunByDate={weatherSunByDate}
                       className="h-32 shrink-0 sm:h-36"
                     />
                   ) : null}

@@ -30,12 +30,26 @@ export type WeatherSnapshot = {
   /** Today's sunrise/sunset in local forecast timezone (ISO strings). */
   sunriseToday?: string;
   sunsetToday?: string;
+  /** Per-day sunrise/sunset for hourly icon night detection. */
+  sunByDate: Record<string, SunTimes>;
+};
+
+export type SunTimes = {
+  sunrise?: string;
+  sunset?: string;
 };
 
 function localTimeTodayMs(now: Date, hour: number, minute = 0): number {
   const d = new Date(now);
   d.setHours(hour, minute, 0, 0);
   return d.getTime();
+}
+
+function dateKeyLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /** True during night hours for icons/greyscale (not before 10pm; ends by sunrise or 7am). */
@@ -58,6 +72,37 @@ export function isNightAt(
 
   const h = now.getHours();
   return h >= 22 || h < 7;
+}
+
+/** Night weather icons: after sunset or before sunrise for that calendar day. */
+export function isNightForWeatherIcon(
+  at: Date,
+  sunByDate?: Record<string, SunTimes>,
+): boolean {
+  const dateKey = dateKeyLocal(at);
+  const day = sunByDate?.[dateKey];
+  if (day?.sunrise && day?.sunset) {
+    const t = at.getTime();
+    return t < new Date(day.sunrise).getTime() || t >= new Date(day.sunset).getTime();
+  }
+  const h = at.getHours();
+  return h < 6 || h >= 20;
+}
+
+/** Night weather icons from an Open-Meteo hourly timestamp (local forecast time). */
+export function isNightForWeatherIconAt(
+  timeIso: string,
+  sunByDate?: Record<string, SunTimes>,
+): boolean {
+  const dateKey = timeIso.slice(0, 10);
+  const day = sunByDate?.[dateKey];
+  if (day?.sunrise && day?.sunset) {
+    const t = new Date(timeIso).getTime();
+    return t < new Date(day.sunrise).getTime() || t >= new Date(day.sunset).getTime();
+  }
+  const d = new Date(timeIso);
+  const h = d.getHours();
+  return h < 6 || h >= 20;
 }
 
 /** Greyscale night mode for the board chrome. */
@@ -164,6 +209,15 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
 
   const dailySunrise = data.daily?.sunrise ?? [];
   const dailySunset = data.daily?.sunset ?? [];
+  const sunByDate: Record<string, SunTimes> = {};
+  for (let i = 0; i < times.length; i++) {
+    const date = times[i];
+    if (!date) continue;
+    sunByDate[date] = {
+      sunrise: dailySunrise[i],
+      sunset: dailySunset[i],
+    };
+  }
   const todayDate =
     hourlyTimes.find((t) => new Date(t).getTime() >= now)?.slice(0, 10) ??
     times[0] ??
@@ -185,6 +239,7 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
     hourlyNext18,
     sunriseToday: dailySunrise[dayIdx],
     sunsetToday: dailySunset[dayIdx],
+    sunByDate,
   };
 }
 

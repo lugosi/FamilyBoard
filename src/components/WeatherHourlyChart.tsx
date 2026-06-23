@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { WeatherIcon, weatherIconKey } from "@/components/WeatherIcon";
-import { HOURLY_FORECAST_HOURS, isNightAt } from "@/lib/weather";
+import { HOURLY_FORECAST_HOURS, isNightForWeatherIconAt } from "@/lib/weather";
+import type { SunTimes } from "@/lib/weather";
 import { wmoLabel } from "@/lib/wmo";
 
 export type WeatherHourlyPoint = {
@@ -13,8 +14,7 @@ export type WeatherHourlyPoint = {
 
 type Props = {
   hours: WeatherHourlyPoint[];
-  sunriseToday?: string;
-  sunsetToday?: string;
+  sunByDate?: Record<string, SunTimes>;
   className?: string;
 };
 
@@ -43,8 +43,7 @@ function shouldShowHourLabel(index: number, total: number): boolean {
 
 export function WeatherHourlyChart({
   hours,
-  sunriseToday,
-  sunsetToday,
+  sunByDate,
   className = "",
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -206,14 +205,14 @@ export function WeatherHourlyChart({
           const iconY = isExtreme
             ? tempLabelY - TEMP_LABEL_LINE / 2 - ICON_GAP - ICON_SIZE
             : y - dotR - ICON_GAP - ICON_SIZE;
-          const isNight = isNightAt(new Date(h.time), sunriseToday, sunsetToday);
+          const isNight = isNightForWeatherIconAt(h.time, sunByDate);
           const prev = i > 0 ? displayHours[i - 1] : null;
           const showIcon =
             prev == null ||
             weatherIconKey(h.code, isNight) !==
               weatherIconKey(
                 prev.code,
-                isNightAt(new Date(prev.time), sunriseToday, sunsetToday),
+                isNightForWeatherIconAt(prev.time, sunByDate),
               );
           return (
             <g key={h.time}>
