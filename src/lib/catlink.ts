@@ -141,12 +141,19 @@ function loginApiBases(): string[] {
   return bases;
 }
 
+const LOGIN_API_PATHS = ["login/password", "login/password/v2"] as const;
+
 function loginErrorMessage(rsp: Record<string, unknown>): string {
   const msg = typeof rsp.msg === "string" ? rsp.msg : "Login failed";
   const code = typeof rsp.returnCode === "number" ? rsp.returnCode : undefined;
 
   if (code === RETURN_CODE_WRONG_PASSWORD) {
-    return "Incorrect password. In the CatLink app, open Account → Security and set a login password (16 characters or fewer). SMS-only accounts cannot link until a password is set.";
+    return [
+      "CatLink recognized your phone number but rejected the password.",
+      "In the CatLink app: log out, choose phone + password login (not SMS), and confirm the password works there first.",
+      "Then set a new short password (8–12 letters/numbers) under Account → Security, log out again, and link here.",
+      "Only one session is allowed — stay logged out of the app while linking.",
+    ].join(" ");
   }
   if (code === 1001 && msg.toLowerCase().includes("null input")) {
     return "CatLink rejected the login request. Try a shorter password (8–16 characters) and link again.";
@@ -166,33 +173,47 @@ async function attemptPasswordLogin(
   plainPassword: string,
 ): Promise<LoginAttempt> {
   const cfg = buildBaseConfig(mobile, phoneIac, apiBase);
+  const trimmed = plainPassword.trim();
   const password =
-    plainPassword.length <= PASSWORD_MAX_LENGTH
-      ? encryptCatlinkPassword(plainPassword)
-      : plainPassword;
+    trimmed.length <= PASSWORD_MAX_LENGTH
+      ? encryptCatlinkPassword(trimmed)
+      : trimmed;
 
-  let rsp: Record<string, unknown>;
-  try {
-    rsp = await catlinkRequest(cfg, undefined, "login/password", "POST", {
-      platform: "ANDROID",
-      internationalCode: phoneIac,
-      mobile,
-      password,
-    });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "CatLink request failed";
-    return { ok: false, msg: message };
-  }
+  let sawWrongPassword = false;
+  let lastMsg = "Login failed";
 
-  const token = (rsp.data as { token?: string } | undefined)?.token;
-  if (token) {
-    return { ok: true, token, apiBase: cfg.apiBase };
+  for (const loginPath of LOGIN_API_PATHS) {
+    let rsp: Record<string, unknown>;
+    try {
+      rsp = await catlinkRequest(cfg, undefined, loginPath, "POST", {
+        platform: "ANDROID",
+        internationalCode: phoneIac,
+        mobile,
+        password,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "CatLink request failed";
+      return { ok: false, msg: message };
+    }
+
+    const token = (rsp.data as { token?: string } | undefined)?.token;
+    if (token) {
+      return { ok: true, token, apiBase: cfg.apiBase };
+    }
+
+    const returnCode =
+      typeof rsp.returnCode === "number" ? rsp.returnCode : undefined;
+    lastMsg = loginErrorMessage(rsp);
+    if (returnCode === RETURN_CODE_WRONG_PASSWORD) {
+      sawWrongPassword = true;
+      continue;
+    }
   }
 
   return {
     ok: false,
-    returnCode: typeof rsp.returnCode === "number" ? rsp.returnCode : undefined,
-    msg: loginErrorMessage(rsp),
+    returnCode: sawWrongPassword ? RETURN_CODE_WRONG_PASSWORD : undefined,
+    msg: lastMsg,
   };
 }
 
@@ -388,10 +409,11 @@ export async function linkCatlinkAccount(input: CatlinkLinkInput): Promise<void>
   if (!mobile) {
     throw new Error("Phone number is required");
   }
-  if (!input.password.trim()) {
+  const password = input.password.trim();
+  if (!password) {
     throw new Error("Password is required");
   }
-  if (input.password.length > PASSWORD_MAX_LENGTH) {
+  if (password.length > PASSWORD_MAX_LENGTH) {
     throw new Error(`Catlink passwords must be ${PASSWORD_MAX_LENGTH} characters or fewer`);
   }
 
@@ -402,7 +424,7 @@ export async function linkCatlinkAccount(input: CatlinkLinkInput): Promise<void>
       apiBase,
       phoneIac,
       mobile,
-      input.password,
+      password,
     );
     if (result.ok) {
       await writeSession({

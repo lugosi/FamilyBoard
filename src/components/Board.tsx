@@ -1310,8 +1310,8 @@ export function Board() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        phone: catlinkLinkPhone,
-        password: catlinkLinkPassword,
+        phone: catlinkLinkPhone.trim(),
+        password: catlinkLinkPassword.trim(),
       }),
     });
     setBusy(null);
@@ -2380,14 +2380,14 @@ export function Board() {
               {collapsedWidgets.catlink ? null : !status?.catlinkConfigured ? (
                 <div className="mt-3 space-y-3">
                   <p className="text-base text-slate-300 sm:text-lg">
-                    The CatLink app can log in with SMS codes, but FamilyBoard needs a password
-                    login (same API Home Assistant uses). In the CatLink app, open account /
-                    security settings and set a login password first.
+                    FamilyBoard uses CatLink&apos;s password API (same as Home Assistant). SMS
+                    codes from the app cannot be used here.
                   </p>
-                  <p className="text-sm text-slate-400 sm:text-base">
-                    Use a short password (16 characters or fewer). After that, link here once —
-                    FamilyBoard stores the session token and does not need your password again.
-                  </p>
+                  <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-400 sm:text-base">
+                    <li>In the CatLink app: Account → Security → set a short password (8–12 letters/numbers).</li>
+                    <li>Log out, then log back in with phone + password (not SMS) to confirm it works.</li>
+                    <li>Log out again, then link below (CatLink allows only one active session).</li>
+                  </ol>
                   <div className="space-y-2">
                     <input
                       type="tel"
