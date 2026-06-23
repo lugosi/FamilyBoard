@@ -30,18 +30,30 @@ export type WeatherSnapshot = {
   sunsetToday?: string;
 };
 
-/** True from sunset until sunrise (fallback: 10pm–7am local). */
+function localTimeTodayMs(now: Date, hour: number, minute = 0): number {
+  const d = new Date(now);
+  d.setHours(hour, minute, 0, 0);
+  return d.getTime();
+}
+
+/** True during night hours for icons/greyscale (not before 10pm; ends by sunrise or 7am). */
 export function isNightAt(
   now: Date,
   sunriseToday?: string,
   sunsetToday?: string,
 ): boolean {
+  const t = now.getTime();
+  const tenPmMs = localTimeTodayMs(now, 22);
+  const sevenAmMs = localTimeTodayMs(now, 7);
+
   const sunriseMs = sunriseToday ? new Date(sunriseToday).getTime() : NaN;
   const sunsetMs = sunsetToday ? new Date(sunsetToday).getTime() : NaN;
   if (Number.isFinite(sunriseMs) && Number.isFinite(sunsetMs)) {
-    const t = now.getTime();
-    return t < sunriseMs || t >= sunsetMs;
+    const nightStartMs = Math.max(sunsetMs, tenPmMs);
+    const nightEndMs = Math.min(sunriseMs, sevenAmMs);
+    return t < nightEndMs || t >= nightStartMs;
   }
+
   const h = now.getHours();
   return h >= 22 || h < 7;
 }

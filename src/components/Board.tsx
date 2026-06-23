@@ -1768,6 +1768,7 @@ export function Board() {
     if (live.length > 0) return live;
     return mergeSpotifyDevices(spotifyKnownDevices, []).slice(0, 8);
   }, [spotifyDevices, spotifyKnownDevices]);
+  const spotifyIsPlaying = Boolean(spotifyPlayback?.is_playing);
   const spotifyDurationMs = Math.max(0, Number(spotifyTrack?.duration_ms ?? 0));
   const spotifyProgressBaseMs =
     spotifySeekDraft !== null
@@ -2541,7 +2542,13 @@ export function Board() {
               )}
             </section>
 
-            <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+            <section
+              className={`min-w-0 shrink-0 overflow-hidden rounded-xl border p-3 shadow-lg transition-colors duration-500 sm:rounded-2xl sm:p-4 ${
+                spotifyIsPlaying
+                  ? "border-[#1db954]/50 bg-[#1db954]/30 shadow-[#1db954]/20"
+                  : "border-slate-800 bg-slate-900/60 shadow-slate-950/40"
+              }`}
+            >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2.5">
                   {collapsedWidgets.spotify ? (
