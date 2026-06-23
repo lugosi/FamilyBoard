@@ -125,7 +125,7 @@ type SpotifySearchPlaylist = {
   owner?: { display_name?: string };
 };
 type HueThemeKey = "bright" | "relax" | "focus" | "nightlight";
-type CatlinkAction = "clean_now" | "refill_litter" | "change_bag" | "reset_litter";
+type CatlinkAction = "clean_now" | "refill_litter" | "change_bag" | "reset_bin";
 type CatlinkSnapshot = {
   online?: boolean;
   catName?: string;
@@ -1685,6 +1685,12 @@ export function Board() {
     typeof catlink?.peeCountToday === "number" ? Math.round(catlink.peeCountToday) : null;
   const catlinkPoopToday =
     typeof catlink?.poopCountToday === "number" ? Math.round(catlink.poopCountToday) : null;
+  const catlinkWasteBinFull =
+    typeof catlink?.wasteBinFull === "boolean" ? catlink.wasteBinFull : null;
+  const catlinkWasteBinStatusLabel =
+    typeof catlink?.wasteBinStatusLabel === "string" && catlink.wasteBinStatusLabel
+      ? catlink.wasteBinStatusLabel
+      : null;
   const spotifyTrack = spotifyPlayback?.item;
   const spotifyArtist = spotifyTrack?.artists?.map((a) => a.name).filter(Boolean).join(", ");
   const spotifyActiveDevice =
@@ -2280,9 +2286,11 @@ export function Board() {
                     <span
                       className={`${WIDGET_TITLE_ICON} flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950/70 text-xs font-semibold tabular-nums text-white`}
                     >
-                      {catlinkCatWeightKg !== null
-                        ? `${catlinkCatWeightKg.toFixed(1)}`
-                        : "CAT"}
+                      {catlinkWasteBinFull
+                        ? "!"
+                        : catlinkCatWeightKg !== null
+                          ? `${catlinkCatWeightKg.toFixed(1)}`
+                          : "CAT"}
                     </span>
                   ) : null}
                   <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Catlink</h2>
@@ -2414,6 +2422,22 @@ export function Board() {
                   {catlinkCatName ? (
                     <p className="text-sm text-slate-400 sm:text-base">{catlinkCatName}</p>
                   ) : null}
+                  <div
+                    className={`rounded-lg border px-3 py-2 text-sm sm:text-base ${
+                      catlinkWasteBinFull
+                        ? "border-amber-500/60 bg-amber-500/15"
+                        : "border-slate-800 bg-slate-950/40"
+                    }`}
+                  >
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Waste bin</p>
+                    <p
+                      className={`mt-1 font-medium ${
+                        catlinkWasteBinFull ? "text-amber-200" : "text-slate-100"
+                      }`}
+                    >
+                      {catlinkWasteBinStatusLabel ?? "—"}
+                    </p>
+                  </div>
                   <div className="grid grid-cols-3 gap-2 text-sm sm:text-base">
                     <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
                       <p className="text-xs uppercase tracking-wide text-slate-500">Weight</p>
@@ -2464,10 +2488,10 @@ export function Board() {
                     <button
                       type="button"
                       className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
-                      disabled={busy === "catlink-reset_litter"}
-                      onClick={() => void catlinkControl("reset_litter")}
+                      disabled={busy === "catlink-reset_bin"}
+                      onClick={() => void catlinkControl("reset_bin")}
                     >
-                      {busy === "catlink-reset_litter" ? "Working…" : "Reset"}
+                      {busy === "catlink-reset_bin" ? "Working…" : "Reset"}
                     </button>
                   </div>
                 </div>

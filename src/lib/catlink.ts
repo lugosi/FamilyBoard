@@ -22,7 +22,7 @@ export type CatlinkAction =
   | "clean_now"
   | "refill_litter"
   | "change_bag"
-  | "reset_litter";
+  | "reset_bin";
 
 export type CatlinkSnapshot = {
   deviceId: string;
@@ -34,6 +34,8 @@ export type CatlinkSnapshot = {
   catWeightKg?: number;
   peeCountToday?: number;
   poopCountToday?: number;
+  wasteBinFull?: boolean;
+  wasteBinStatusLabel?: string;
   updatedAt?: string;
 };
 
@@ -661,6 +663,46 @@ function toBool(value: unknown): boolean | undefined {
   return undefined;
 }
 
+function parseWasteBinStatus(detail: DeviceInfo): {
+  wasteBinFull?: boolean;
+  wasteBinStatusLabel?: string;
+} {
+  const errors = detail.deviceErrorList;
+  if (Array.isArray(errors)) {
+    for (const entry of errors) {
+      const errkey =
+        typeof entry === "object" && entry && "errkey" in entry
+          ? String((entry as { errkey?: string }).errkey ?? "")
+          : "";
+      if (errkey.includes("garbage_tobe_full")) {
+        return { wasteBinFull: true, wasteBinStatusLabel: "Change bag" };
+      }
+    }
+  }
+
+  const garbageStatus =
+    typeof detail.garbageStatus === "string" ? detail.garbageStatus : "";
+  if (garbageStatus === "02") {
+    return { wasteBinFull: false, wasteBinStatusLabel: "Bag moving" };
+  }
+  if (garbageStatus === "03") {
+    return { wasteBinFull: false, wasteBinStatusLabel: "Bag moving" };
+  }
+
+  const message = [
+    detail.currentMessage,
+    detail.currentError,
+    detail.currentErrorMessage,
+  ]
+    .filter((v) => typeof v === "string" && v.trim())
+    .join(" ");
+  if (/waste|trash|garbage|full|已满|集便仓/i.test(message)) {
+    return { wasteBinFull: true, wasteBinStatusLabel: "Change bag" };
+  }
+
+  return { wasteBinFull: false, wasteBinStatusLabel: "OK" };
+}
+
 export async function fetchCatlinkSnapshot(): Promise<CatlinkSnapshot> {
   const cfg = await getCatlinkConfig();
   if (!cfg) {
@@ -672,6 +714,7 @@ export async function fetchCatlinkSnapshot(): Promise<CatlinkSnapshot> {
   const cat = pickCat(cats);
   const catStats =
     cat?.id != null ? parseCatStats(cat, await fetchCatSummary(cfg, cat.id)) : {};
+  const wasteBin = parseWasteBinStatus(detail);
 
   return {
     deviceId: device.id ?? "",
@@ -680,6 +723,7 @@ export async function fetchCatlinkSnapshot(): Promise<CatlinkSnapshot> {
     deviceType: typeof device.deviceType === "string" ? device.deviceType : undefined,
     online: toBool(detail.online),
     ...catStats,
+    ...wasteBin,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -757,22 +801,19 @@ async function runChangeBag(
   assertSuccess(rsp, "Change bag");
 }
 
-async function runResetLitter(
+async function runResetBin(
   cfg: CatlinkConfig,
-  device: CatlinkDeviceListItem,
+  deviceId: string,
+  kind: DeviceApiKind,
 ): Promise<void> {
-  if (!device.id) {
-    throw new Error("Selected Catlink device has no id");
+  if (kind === "scooper") {
+    throw new Error("Reset is not supported on this Catlink model");
   }
-  if (!device.deviceType) {
-    throw new Error("Selected Catlink device has no type");
-  }
-  const rsp = await requestWithAuth(cfg, "token/device/union/consumableReset", "POST", {
-    consumablesType: "CAT_LITTER",
-    deviceId: device.id,
-    deviceType: device.deviceType,
+  const rsp = await requestWithAuth(cfg, "token/litterbox/replaceGarbageBagCmd", "POST", {
+    deviceId,
+    enable: "0",
   });
-  assertSuccess(rsp, "Reset litter");
+  assertSuccess(rsp, "Reset");
 }
 
 export async function executeCatlinkAction(action: CatlinkAction): Promise<void> {
@@ -796,8 +837,8 @@ export async function executeCatlinkAction(action: CatlinkAction): Promise<void>
     case "change_bag":
       await runChangeBag(cfg, device.id, kind);
       return;
-    case "reset_litter":
-      await runResetLitter(cfg, device);
+    case "reset_bin":
+      await runResetBin(cfg, device.id, kind);
       return;
     default:
       throw new Error("Unsupported action");
