@@ -762,19 +762,13 @@ async function runRefillLitter(
   deviceId: string,
   kind: DeviceApiKind,
 ): Promise<void> {
-  if (kind === "c08") {
+  // Scooper SE / litterbox and C08: Add/Empty (level litter) is PAVE via actionCmd/v3.
+  // Litterbox actionCmd only documents Cleaning (01) and Pause (00) — cmd "02" is invalid there.
+  if (kind === "c08" || kind === "litterbox") {
     const rsp = await requestWithAuth(cfg, "token/litterbox/actionCmd/v3", "POST", {
       deviceId,
       action: "RUN",
       behavior: "PAVE",
-    });
-    assertSuccess(rsp, "Refill litter");
-    return;
-  }
-  if (kind === "litterbox") {
-    const rsp = await requestWithAuth(cfg, "token/litterbox/actionCmd", "POST", {
-      deviceId,
-      cmd: "02",
     });
     assertSuccess(rsp, "Refill litter");
     return;
