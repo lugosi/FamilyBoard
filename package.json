@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "qa:smoke": "node scripts/qa-smoke.mjs"
   },
   "dependencies": {
     "docker": "^1.0.0",

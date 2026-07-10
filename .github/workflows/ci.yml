@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-build-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WEATHER_LAT: "37.77"
+      WEATHER_LON: "-122.42"
+      DATA_DIR: ${{ github.workspace }}/data
+      PORT: "3000"
+      HOSTNAME: "127.0.0.1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Prepare standalone server
+        run: |
+          cp -r public .next/standalone/
+          mkdir -p .next/standalone/.next
+          cp -r .next/static .next/standalone/.next/static
+
+      - name: Start server
+        run: |
+          node .next/standalone/server.js &
+          echo $! > /tmp/familyboard-ci.pid
+          for i in $(seq 1 60); do
+            if curl -sf "http://127.0.0.1:3000/api/auth/status" >/dev/null; then
+              echo "Server ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server failed to become ready"
+          exit 1
+
+      - name: API smoke
+        run: npm run qa:smoke
+        env:
+          BASE_URL: http://127.0.0.1:3000
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f /tmp/familyboard-ci.pid ]; then
+            kill "$(cat /tmp/familyboard-ci.pid)" || true
+          fi
