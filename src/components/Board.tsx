@@ -1715,7 +1715,8 @@ export function Board() {
     () => isNightForWeatherIcon(clockNow, weatherSunByDate),
     [clockNow, weatherSunByDate],
   );
-  const todayForecast = daily?.[0];
+  const todayForecast =
+    calendarDailyForecast[dateKeyLocal(clockNow)] ?? daily?.[0];
   const catlinkCatName =
     typeof catlink?.catName === "string" && catlink.catName ? catlink.catName : null;
   const catlinkCatWeightKg =

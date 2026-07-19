@@ -121,6 +121,72 @@ export function getWeatherCoordinates(): { lat: number; lon: number } | null {
   return { lat, lon };
 }
 
+/** Rain, snow, freezing precip, or thunderstorm WMO codes. */
+export function isPrecipOrStormWeatherCode(code: number): boolean {
+  return (
+    (code >= 51 && code <= 67) ||
+    (code >= 71 && code <= 77) ||
+    (code >= 80 && code <= 86) ||
+    code >= 95
+  );
+}
+
+/**
+ * Open-Meteo daily weather_code is the most severe hour in 24h (incl. overnight),
+ * which often looks worse than consumer weather apps. Prefer the dominant daytime
+ * condition; keep meaningful daytime precip/storms visible.
+ */
+export function representativeDaytimeWeatherCode(codes: number[]): number {
+  if (codes.length === 0) return 0;
+
+  const wet = codes.filter(isPrecipOrStormWeatherCode);
+  if (wet.length >= 2 || wet.some((c) => c >= 95)) {
+    return Math.max(...wet);
+  }
+
+  const counts = new Map<number, number>();
+  for (const c of codes) counts.set(c, (counts.get(c) ?? 0) + 1);
+  let best = codes[0]!;
+  let bestCount = 0;
+  for (const [code, count] of counts) {
+    if (count > bestCount || (count === bestCount && code > best)) {
+      best = code;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+/** Hour is daytime when between sunrise and sunset (Open-Meteo local ISO strings). */
+function isDaytimeForecastHour(
+  time: string,
+  sunrise?: string,
+  sunset?: string,
+): boolean {
+  if (sunrise && sunset) {
+    return time >= sunrise && time < sunset;
+  }
+  const hour = Number(time.slice(11, 13));
+  return Number.isFinite(hour) && hour >= 8 && hour < 18;
+}
+
+function daytimeCodesForDate(
+  date: string,
+  hourlyTimes: string[],
+  hourlyCodes: number[],
+  sunrise?: string,
+  sunset?: string,
+): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < hourlyTimes.length; i++) {
+    const time = hourlyTimes[i];
+    if (!time?.startsWith(date)) continue;
+    if (!isDaytimeForecastHour(time, sunrise, sunset)) continue;
+    out.push(hourlyCodes[i] ?? 0);
+  }
+  return out;
+}
+
 export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
   const coords = getWeatherCoordinates();
   if (!coords) return null;
@@ -182,16 +248,32 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
   const codes = data.daily?.weather_code ?? [];
   const max = data.daily?.temperature_2m_max ?? [];
   const min = data.daily?.temperature_2m_min ?? [];
-  const daily = times.map((date, i) => ({
-    date,
-    maxF: max[i] ?? 0,
-    minF: min[i] ?? 0,
-    code: codes[i] ?? 0,
-  }));
-
+  const dailySunrise = data.daily?.sunrise ?? [];
+  const dailySunset = data.daily?.sunset ?? [];
   const hourlyTimes = data.hourly?.time ?? [];
   const hourlyTemps = data.hourly?.temperature_2m ?? [];
   const hourlyCodes = data.hourly?.weather_code ?? [];
+
+  const daily = times.map((date, i) => {
+    const apiCode = codes[i] ?? 0;
+    const daytimeCodes = daytimeCodesForDate(
+      date,
+      hourlyTimes,
+      hourlyCodes,
+      dailySunrise[i],
+      dailySunset[i],
+    );
+    return {
+      date,
+      maxF: max[i] ?? 0,
+      minF: min[i] ?? 0,
+      code:
+        daytimeCodes.length > 0
+          ? representativeDaytimeWeatherCode(daytimeCodes)
+          : apiCode,
+    };
+  });
+
   const now = Date.now();
   const currentHourStart = new Date(now);
   currentHourStart.setMinutes(0, 0, 0);
@@ -207,8 +289,6 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
       code: hourlyCodes[fromIdx + i] ?? 0,
     }));
 
-  const dailySunrise = data.daily?.sunrise ?? [];
-  const dailySunset = data.daily?.sunset ?? [];
   const sunByDate: Record<string, SunTimes> = {};
   for (let i = 0; i < times.length; i++) {
     const date = times[i];

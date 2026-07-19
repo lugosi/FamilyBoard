@@ -73,6 +73,7 @@ Never conflate these.
 - Chart: `WeatherHourlyChart` — smooth cubic path (`smoothLinePath`), high/low labels
 - Show weather icon only when `weatherIconKey(code, isNight)` changes vs previous hour
 - Open-Meteo, no API key; needs `WEATHER_LAT` / `WEATHER_LON`
+- Daily calendar icons use `representativeDaytimeWeatherCode` (daytime hours), not Open-Meteo’s 24h max `weather_code` (overnight skew)
 
 ## Integration hard rules
 
