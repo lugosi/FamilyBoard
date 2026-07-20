@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { Board } from "@/components/Board";
+import { AppShell } from "@/components/AppShell";
 
 export default function Home() {
   return (
@@ -10,7 +10,7 @@ export default function Home() {
         </div>
       }
     >
-      <Board />
+      <AppShell />
     </Suspense>
   );
 }

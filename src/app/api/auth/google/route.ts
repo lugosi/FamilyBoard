@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  GOOGLE_CALENDAR_SCOPES,
+  GOOGLE_OAUTH_SCOPES,
   createOAuth2,
   requireGoogleOAuthEnv,
 } from "@/lib/google";
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   const url = oauth2.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
-    scope: GOOGLE_CALENDAR_SCOPES,
+    scope: GOOGLE_OAUTH_SCOPES,
     include_granted_scopes: true,
   });
   return NextResponse.redirect(url);

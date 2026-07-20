@@ -5,11 +5,17 @@ import { getDataDir } from "./data-dir";
 
 const TOKEN_FILE = "google-tokens.json";
 
-export const GOOGLE_CALENDAR_SCOPES = [
+/** Calendar + Nest SDM + Gmail drop-box (read/modify for Processed label). */
+export const GOOGLE_OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
   "https://www.googleapis.com/auth/sdm.service",
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.modify",
 ];
+
+/** @deprecated Use GOOGLE_OAUTH_SCOPES */
+export const GOOGLE_CALENDAR_SCOPES = GOOGLE_OAUTH_SCOPES;
 
 export type StoredGoogleTokens = {
   refresh_token?: string;

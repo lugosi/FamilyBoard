@@ -8,11 +8,12 @@ Read this when editing CatLink, Spotify, Hue, Nest, Google Calendar, Weather, or
 
 | File | Integration |
 |------|-------------|
-| `google-tokens.json` | Google Calendar + Nest OAuth |
+| `google-tokens.json` | Google Calendar + Nest + Gmail OAuth |
 | `spotify-tokens.json` | Spotify OAuth |
 | `hue.json` | Hue bridge username |
 | `catlink-session.json` | CatLink token, phone, phoneIac, apiBase |
 | `nest-climate-history.json` | Indoor climate samples |
+| `todos.json` | WikiLLM email-scan todos (not the GitHub wiki) |
 
 ## CatLink (`src/lib/catlink.ts`, `catlink-crypto.ts`)
 
@@ -101,3 +102,11 @@ Env: `CATLINK_PHONE`, `CATLINK_PASSWORD`, `CATLINK_PHONE_IAC`, `CATLINK_API_BASE
 
 - `BOARD_ACCESS_CODE` + `BOARD_ACCESS_SECRET`; cookie `fb_gate`.
 - Keep form in `UnlockForm.tsx` (client child of server page).
+
+## WikiLLM + Gmail drop-box
+
+- UI: `AppShell` → `WikiLlm.tsx` (AI tab). Knowledge: private GitHub repo only (`WIKILM_GITHUB_REPO` + `WIKILM_GITHUB_TOKEN`, optional `WIKILM_GITHUB_PATH=wiki`).
+- Gemini: `GEMINI_API_KEY` / optional `GEMINI_MODEL`. Chat routes under `/api/wiki/*`.
+- Google scopes include `gmail.readonly` + `gmail.modify`. Enable Gmail API; **re-link Google** after deploy.
+- Flow: forward mail to linked inbox → **Scan inbox** → Gemini extracts todos → `todos.json`. No send-from-board in v1.
+- Do not put wiki markdown or the GitHub PAT in `DATA_DIR` session files.

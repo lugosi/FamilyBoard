@@ -2,10 +2,10 @@
 name: familyboard-agent
 description: >-
   FamilyBoard home-dashboard coding agent. Use when editing FamilyBoard widgets,
-  Board.tsx, calendar, weather, CatLink, Spotify, Hue, Nest, Google Calendar,
-  API routes under src/app/api, or src/lib integrations. Encodes Next.js 16
-  quirks, snapshot/control patterns, DATA_DIR sessions, and hard-won device UX
-  lessons.
+  Board.tsx, AppShell, WikiLLM, calendar, weather, CatLink, Spotify, Hue, Nest,
+  Google Calendar/Gmail, API routes under src/app/api, or src/lib integrations.
+  Encodes Next.js 16 quirks, snapshot/control patterns, DATA_DIR sessions, and
+  hard-won device UX lessons.
 ---
 
 # FamilyBoard coding agent
@@ -77,7 +77,15 @@ Never conflate these.
 
 ## Integration hard rules
 
-Read [integrations.md](integrations.md) before touching CatLink, Spotify, Hue, Nest, or Google.
+Read [integrations.md](integrations.md) before touching CatLink, Spotify, Hue, Nest, Google, or WikiLLM.
+
+## WikiLLM (AI tab)
+
+- Shell: `AppShell` tabs **Board** | **AI** (`?tab=ai`). Do not fold AI UI into `Board.tsx`.
+- Knowledge base: **private GitHub markdown only** (`WIKILM_GITHUB_*`) via `src/lib/wikilm-github.ts`. Never store wiki pages in `DATA_DIR`.
+- Chat: `POST /api/wiki/chat` grounds Gemini on wiki context. Save: `POST /api/wiki/control` `save_page`.
+- Gmail drop-box: read + `FamilyBoard/Processed` label; `scan_to_todos` → `DATA_DIR/todos.json` (not GitHub).
+- Re-link Google after enabling Gmail API / new OAuth scopes.
 
 **CatLink (highest footgun density):**
 

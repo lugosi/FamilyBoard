@@ -35,6 +35,7 @@ Do **not** mutate devices in default QA (no CatLink Clean, Hue toggles, Spotify 
 | [`qa/features/board_shell.feature`](../../../qa/features/board_shell.feature) | Gate off/on, unlock |
 | [`qa/features/calendar.feature`](../../../qa/features/calendar.feature) | Calendar column vs Google link |
 | [`qa/features/widgets.feature`](../../../qa/features/widgets.feature) | Clock + Weather/Catlink/Spotify/Hue/Indoor |
+| [`qa/features/wikilm.feature`](../../../qa/features/wikilm.feature) | Board/AI tabs, GitHub wiki, inbox, todos |
 
 These `.feature` files are **agent specs**, not an executable Cucumber suite. Interpret steps literally against the running app.
 

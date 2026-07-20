@@ -182,6 +182,22 @@ async function main() {
     await check(`GET ${path}`, path, spotifyOk);
   }
 
+  const wikiPagesOk = statusBody.wikilmGithubConfigured
+    ? new Set([200])
+    : new Set([501]);
+  await check("GET /api/wiki/pages", "/api/wiki/pages", wikiPagesOk);
+
+  await check("GET /api/todos", "/api/todos", new Set([200]));
+
+  /** @type {Set<number>} */
+  let gmailAllowed;
+  if (statusBody.gmailReady || statusBody.googleLinked) {
+    gmailAllowed = new Set([200, 401, 403]);
+  } else {
+    gmailAllowed = new Set([401]);
+  }
+  await check("GET /api/gmail", "/api/gmail", gmailAllowed);
+
   printAndExit();
 }
 

@@ -1884,7 +1884,7 @@ export function Board() {
   return (
     <>
     <div
-      className={`flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-base text-slate-100 sm:text-lg ${
+      className={`flex h-full max-h-full min-h-0 flex-col overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-base text-slate-100 sm:text-lg ${
         nightGreyscale ? "grayscale" : ""
       }`}
     >
