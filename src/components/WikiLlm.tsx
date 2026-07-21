@@ -32,7 +32,7 @@ type FamilyTodo = {
   createdAt: string;
 };
 
-export function WikiLlm() {
+export function WikiLlm({ active = true }: { active?: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [pages, setPages] = useState<WikiPageMeta[]>([]);
   const [messages, setMessages] = useState<GmailMessage[]>([]);
@@ -44,6 +44,7 @@ export function WikiLlm() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scanNote, setScanNote] = useState<string | null>(null);
+  const [loadedOnce, setLoadedOnce] = useState(false);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     setError(null);
@@ -87,10 +88,14 @@ export function WikiLlm() {
   }, []);
 
   useEffect(() => {
+    if (!active) return;
+    if (loadedOnce) return;
     const ac = new AbortController();
-    void refresh(ac.signal);
+    void refresh(ac.signal).finally(() => {
+      if (!ac.signal.aborted) setLoadedOnce(true);
+    });
     return () => ac.abort();
-  }, [refresh]);
+  }, [active, loadedOnce, refresh]);
 
   async function sendChat() {
     const text = input.trim();

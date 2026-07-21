@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Board } from "@/components/Board";
 import { WikiLlm } from "@/components/WikiLlm";
 
@@ -15,13 +14,20 @@ function parseTab(raw: string | null | undefined): AppTab | null {
 }
 
 export function AppShell() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
   const [tab, setTab] = useState<AppTab>("board");
+  const [ready, setReady] = useState(false);
 
+  // Read initial tab once (query wins, else localStorage). Do not router.replace —
+  // URL changes can re-trigger Chrome cert / "not private" interstitials on LAN HTTPS.
   useEffect(() => {
-    const fromQuery = parseTab(searchParams.get("tab"));
+    let fromQuery: AppTab | null = null;
+    try {
+      fromQuery = parseTab(
+        new URLSearchParams(window.location.search).get("tab"),
+      );
+    } catch {
+      fromQuery = null;
+    }
     if (fromQuery) {
       setTab(fromQuery);
       try {
@@ -29,32 +35,25 @@ export function AppShell() {
       } catch {
         /* ignore */
       }
-      return;
-    }
-    try {
-      const stored = parseTab(localStorage.getItem(TAB_STORAGE_KEY));
-      if (stored) setTab(stored);
-    } catch {
-      /* ignore */
-    }
-  }, [searchParams]);
-
-  const selectTab = useCallback(
-    (next: AppTab) => {
-      setTab(next);
+    } else {
       try {
-        localStorage.setItem(TAB_STORAGE_KEY, next);
+        const stored = parseTab(localStorage.getItem(TAB_STORAGE_KEY));
+        if (stored) setTab(stored);
       } catch {
         /* ignore */
       }
-      const params = new URLSearchParams(searchParams.toString());
-      if (next === "board") params.delete("tab");
-      else params.set("tab", next);
-      const qs = params.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-    },
-    [pathname, router, searchParams],
-  );
+    }
+    setReady(true);
+  }, []);
+
+  const selectTab = useCallback((next: AppTab) => {
+    setTab(next);
+    try {
+      localStorage.setItem(TAB_STORAGE_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   return (
     <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-slate-950 text-slate-100">
@@ -86,8 +85,28 @@ export function AppShell() {
           );
         })}
       </nav>
-      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        {tab === "board" ? <Board /> : <WikiLlm />}
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+        {/* Keep both mounted so Board does not remount/blank on every tab switch */}
+        <div
+          className={
+            ready && tab === "board"
+              ? "h-full min-h-0"
+              : "pointer-events-none invisible absolute inset-0 h-full min-h-0"
+          }
+          aria-hidden={tab !== "board"}
+        >
+          <Board />
+        </div>
+        <div
+          className={
+            ready && tab === "ai"
+              ? "h-full min-h-0"
+              : "pointer-events-none invisible absolute inset-0 h-full min-h-0"
+          }
+          aria-hidden={tab !== "ai"}
+        >
+          <WikiLlm active={tab === "ai"} />
+        </div>
       </div>
     </div>
   );
