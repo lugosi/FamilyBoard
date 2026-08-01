@@ -52,6 +52,8 @@ If you linked Spotify before these scopes were added, disconnect and link again.
 You can change the app listen port at runtime with `APP_PORT` (default `3000`).
 
 - In TrueNAS **Edit** for the app, set env var `APP_PORT` to your target internal port.
+
+Public HTTPS for `app.lutin.org` (Nginx Proxy Manager + manual Let’s Encrypt DNS): see [docs/SSL_RENEWAL_GUIDE.md](docs/SSL_RENEWAL_GUIDE.md) (renew every ~90 days).
 - Update the app **container port mapping** to match the same internal port.
 - Update `PUBLIC_APP_URL` to include the external host/port users open in a browser.
 - Keep Google OAuth redirect URI synced: `${PUBLIC_APP_URL}/api/auth/google/callback`.

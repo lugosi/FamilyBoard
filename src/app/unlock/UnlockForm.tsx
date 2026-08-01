@@ -7,6 +7,7 @@ export function UnlockForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [code, setCode] = useState("");
+  const [showCode, setShowCode] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -55,16 +56,27 @@ export function UnlockForm() {
         <label className="mt-5 block text-sm font-medium text-slate-200" htmlFor="code">
           Access code
         </label>
-        <input
-          id="code"
-          type="password"
-          autoComplete="current-password"
-          spellCheck={false}
-          className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-cyan-500 transition focus:ring-2"
-          value={code}
-          onChange={(event) => setCode(event.target.value)}
-          required
-        />
+        <div className="mt-2 flex gap-2">
+          <input
+            id="code"
+            type={showCode ? "text" : "password"}
+            autoComplete="current-password"
+            spellCheck={false}
+            className="min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-cyan-500 transition focus:ring-2"
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            required
+          />
+          <button
+            type="button"
+            className="shrink-0 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-700"
+            aria-pressed={showCode}
+            aria-label={showCode ? "Hide access code" : "Show access code"}
+            onClick={() => setShowCode((v) => !v)}
+          >
+            {showCode ? "Hide" : "Show"}
+          </button>
+        </div>
         {error ? <p className="mt-3 text-sm text-rose-300">{error}</p> : null}
         <button
           type="submit"
