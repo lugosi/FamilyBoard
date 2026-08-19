@@ -89,6 +89,19 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     }
   }, []);
 
+  async function parseJsonSafe<T>(res: Response): Promise<T> {
+    const ct = res.headers.get("content-type") ?? "";
+    if (ct.toLowerCase().includes("application/json")) {
+      return (await res.json()) as T;
+    }
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `Non-JSON response (${res.status}). ${text
+        .slice(0, 180)
+        .replace(/\s+/g, " ")}`,
+    );
+  }
+
   useEffect(() => {
     if (!active) return;
     if (loadedOnceRef.current) return;
@@ -119,7 +132,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         body: JSON.stringify({ messages: nextChat }),
         signal: ac.signal,
       });
-      const json = (await res.json()) as { reply?: string; error?: string };
+      const json = await parseJsonSafe<{ reply?: string; error?: string }>(res);
       if (!res.ok) throw new Error(json.error || `Chat failed (${res.status})`);
       setChat([...nextChat, { role: "model", content: json.reply || "" }]);
       if (!saveContent && json.reply) {
@@ -159,7 +172,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
           content: saveContent.trim(),
         }),
       });
-      const json = (await res.json()) as { error?: string };
+      const json = await parseJsonSafe<{ error?: string }>(res);
       if (!res.ok) throw new Error(json.error || `Save failed (${res.status})`);
       setSaveTitle("");
       setSaveContent("");
@@ -182,11 +195,11 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "scan_to_todos" }),
       });
-      const json = (await res.json()) as {
+      const json = await parseJsonSafe<{
         added?: FamilyTodo[];
         scanned?: number;
         error?: string;
-      };
+      }>(res);
       if (!res.ok) throw new Error(json.error || `Scan failed (${res.status})`);
       const n = json.added?.length ?? 0;
       setScanNote(
@@ -212,7 +225,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         body: JSON.stringify({ action, id }),
       });
       if (!res.ok) {
-        const json = (await res.json()) as { error?: string };
+        const json = await parseJsonSafe<{ error?: string }>(res);
         throw new Error(json.error || "todo_error");
       }
       await refresh();
