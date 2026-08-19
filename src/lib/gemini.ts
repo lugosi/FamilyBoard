@@ -1,4 +1,6 @@
-const DEFAULT_MODEL = "gemini-2.0-flash";
+// `gemini-2.0-flash` was deprecated/shut down; keep a working default
+// so the AI tab doesn't break when GEMINI_MODEL isn't explicitly set.
+const DEFAULT_MODEL = "gemini-3.6-flash";
 
 export function getGeminiApiKey(): string | null {
   return process.env.GEMINI_API_KEY?.trim() || null;
