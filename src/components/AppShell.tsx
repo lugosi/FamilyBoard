@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Board } from "@/components/Board";
 import { WikiLlm } from "@/components/WikiLlm";
 
@@ -14,37 +14,29 @@ function parseTab(raw: string | null | undefined): AppTab | null {
 }
 
 export function AppShell() {
-  const [tab, setTab] = useState<AppTab>("board");
-  const [ready, setReady] = useState(false);
+  const [tab, setTab] = useState<AppTab>(() => {
+    // Avoid useEffect+setState (eslint react-hooks/set-state-in-effect).
+    // This component is client-rendered in practice; during SSR we fall back to "board".
+    if (typeof window === "undefined") return "board";
 
-  // Read initial tab once (query wins, else localStorage). Do not router.replace —
-  // URL changes can re-trigger Chrome cert / "not private" interstitials on LAN HTTPS.
-  useEffect(() => {
-    let fromQuery: AppTab | null = null;
+    const fromQuery = (() => {
+      try {
+        return parseTab(new URLSearchParams(window.location.search).get("tab"));
+      } catch {
+        return null;
+      }
+    })();
+    if (fromQuery) return fromQuery;
+
     try {
-      fromQuery = parseTab(
-        new URLSearchParams(window.location.search).get("tab"),
-      );
+      const stored = parseTab(localStorage.getItem(TAB_STORAGE_KEY));
+      if (stored) return stored;
     } catch {
-      fromQuery = null;
+      /* ignore */
     }
-    if (fromQuery) {
-      setTab(fromQuery);
-      try {
-        localStorage.setItem(TAB_STORAGE_KEY, fromQuery);
-      } catch {
-        /* ignore */
-      }
-    } else {
-      try {
-        const stored = parseTab(localStorage.getItem(TAB_STORAGE_KEY));
-        if (stored) setTab(stored);
-      } catch {
-        /* ignore */
-      }
-    }
-    setReady(true);
-  }, []);
+
+    return "board";
+  });
 
   const selectTab = useCallback((next: AppTab) => {
     setTab(next);
@@ -89,7 +81,7 @@ export function AppShell() {
         {/* Keep both mounted so Board does not remount/blank on every tab switch */}
         <div
           className={
-            ready && tab === "board"
+            tab === "board"
               ? "h-full min-h-0"
               : "pointer-events-none invisible absolute inset-0 h-full min-h-0"
           }
@@ -99,7 +91,7 @@ export function AppShell() {
         </div>
         <div
           className={
-            ready && tab === "ai"
+            tab === "ai"
               ? "h-full min-h-0"
               : "pointer-events-none invisible absolute inset-0 h-full min-h-0"
           }

@@ -44,7 +44,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scanNote, setScanNote] = useState<string | null>(null);
-  const [loadedOnce, setLoadedOnce] = useState(false);
+  const loadedOnceRef = useRef(false);
   const [chatStatus, setChatStatus] = useState<string | null>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
 
@@ -91,13 +91,12 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
 
   useEffect(() => {
     if (!active) return;
-    if (loadedOnce) return;
+    if (loadedOnceRef.current) return;
+    loadedOnceRef.current = true;
     const ac = new AbortController();
-    void refresh(ac.signal).finally(() => {
-      if (!ac.signal.aborted) setLoadedOnce(true);
-    });
+    void refresh(ac.signal);
     return () => ac.abort();
-  }, [active, loadedOnce, refresh]);
+  }, [active, refresh]);
 
   async function sendChat() {
     const text = input.trim();

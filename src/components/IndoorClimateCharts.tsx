@@ -80,9 +80,9 @@ function ClimateChart({
   color: string;
   points: ChartPoint[];
 }) {
-  const now = Date.now();
-  const tMin = now - 12 * 60 * 60 * 1000;
-  const tMax = now;
+  // Avoid impure render calls (react-hooks/purity): derive time window from data.
+  const tMax = points.length ? points[points.length - 1].t : 0;
+  const tMin = tMax - 12 * 60 * 60 * 1000;
 
   const values = points.map((p) => p.value);
   const dataMin = values.length ? Math.min(...values) : 0;

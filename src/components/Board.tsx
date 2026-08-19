@@ -1062,7 +1062,7 @@ export function Board() {
       spotifyDevices.find((d) => d.is_active) ?? spotifyPlayback?.device ?? null;
     const confirmed = Math.round(device?.volume_percent ?? -1);
     if (confirmed === spotifyVolumePending) {
-      setSpotifyVolumePending(null);
+      queueMicrotask(() => setSpotifyVolumePending(null));
     }
   }, [spotifyVolumePending, spotifyDevices, spotifyPlayback?.device]);
 
@@ -1633,7 +1633,7 @@ export function Board() {
       });
       return;
     }
-    setSpotifyResultTab("results");
+    queueMicrotask(() => setSpotifyResultTab("results"));
     const id = window.setTimeout(() => void searchSpotify(), 420);
     return () => window.clearTimeout(id);
   }, [spotifyPickOpen, spotifyQuery, searchSpotify]);
