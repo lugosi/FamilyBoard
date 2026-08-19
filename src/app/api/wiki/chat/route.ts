@@ -67,6 +67,7 @@ Never claim you sent email or modified todos unless the user is clearly in that 
 ${context || "(wiki is empty)"}
 === END WIKI ===`,
       messages: messages.filter((m) => m.role !== "system"),
+      signal: request.signal,
     });
     return NextResponse.json({ reply });
   } catch (e) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Status = {
   googleLinked?: boolean;
@@ -45,6 +45,8 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [scanNote, setScanNote] = useState<string | null>(null);
   const [loadedOnce, setLoadedOnce] = useState(false);
+  const [chatStatus, setChatStatus] = useState<string | null>(null);
+  const chatAbortRef = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     setError(null);
@@ -102,14 +104,21 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     if (!text || busy) return;
     setBusy("chat");
     setError(null);
+    setChatStatus(null);
     const nextChat: ChatTurn[] = [...chat, { role: "user", content: text }];
     setChat(nextChat);
     setInput("");
+    const ac = new AbortController();
+    chatAbortRef.current = ac;
+    const statusTimer = window.setTimeout(() => {
+      setChatStatus("Gemini is busy. Retrying if needed — you can cancel.");
+    }, 1500);
     try {
       const res = await fetch("/api/wiki/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: nextChat }),
+        signal: ac.signal,
       });
       const json = (await res.json()) as { reply?: string; error?: string };
       if (!res.ok) throw new Error(json.error || `Chat failed (${res.status})`);
@@ -118,11 +127,23 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         setSaveContent(json.reply);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "chat_error");
+      const message = e instanceof Error ? e.message : "chat_error";
+      if (message === "Gemini request cancelled") {
+        setChatStatus("Chat cancelled.");
+      } else {
+        setError(message);
+      }
       setChat(chat);
     } finally {
+      window.clearTimeout(statusTimer);
+      chatAbortRef.current = null;
       setBusy(null);
+      setChatStatus((prev) => (prev === "Chat cancelled." ? prev : null));
     }
+  }
+
+  function cancelChat() {
+    chatAbortRef.current?.abort();
   }
 
   async function savePage() {
@@ -234,6 +255,20 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
             {scanNote}
           </p>
         ) : null}
+        {chatStatus ? (
+          <div className="shrink-0 flex items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200">
+            <span>{chatStatus}</span>
+            {busy === "chat" ? (
+              <button
+                type="button"
+                className="rounded-md border border-slate-600 bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800"
+                onClick={cancelChat}
+              >
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="board-scrollbar grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto lg:grid-cols-2 xl:grid-cols-3 lg:overflow-hidden">
           {/* Chat */}
@@ -290,7 +325,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                     className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-900 disabled:opacity-50"
                     disabled={busy === "chat" || !input.trim()}
                   >
-                    {busy === "chat" ? "…" : "Ask"}
+                    {busy === "chat" ? "Working…" : "Ask"}
                   </button>
                 </form>
               </>
