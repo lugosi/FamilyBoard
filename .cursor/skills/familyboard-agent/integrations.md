@@ -14,7 +14,7 @@ Read this when editing CatLink, Spotify, Hue, Nest, Google Calendar, Weather, or
 | `catlink-session.json` | CatLink token, phone, phoneIac, apiBase |
 | `nest-climate-history.json` | Indoor climate samples |
 | `todos.json` | WikiLLM email-scan todos (not the GitHub wiki) |
-| `signal-conversations.json` | Signal bot short-term memory per sender (30 min TTL) |
+| `chat-conversations.json` | Slack bot short-term memory per DM / channel thread (30 min TTL) |
 
 ## CatLink (`src/lib/catlink.ts`, `catlink-crypto.ts`)
 
@@ -112,11 +112,12 @@ Env: `CATLINK_PHONE`, `CATLINK_PASSWORD`, `CATLINK_PHONE_IAC`, `CATLINK_API_BASE
 - Flow: forward mail to linked inbox → **Scan inbox** (button, agent `scan_inbox`, or `GMAIL_AUTO_SCAN_MINUTES`) → Gemini extracts todos + events → `todos.json` + Google Calendar. No send-from-board in v1.
 - Do not put wiki markdown or the GitHub PAT in `DATA_DIR` session files.
 
-## Signal bot (`src/lib/signal.ts`, `src/lib/signal-bot.ts`)
+## Slack bot (`src/lib/slack.ts`, `src/lib/slack-bot.ts`)
 
-- Transport: `bbernhard/signal-cli-rest-api` with `MODE=native`; FamilyBoard polls `GET /v1/receive/{number}` and replies with `POST /v2/send`. Never set `AUTO_RECEIVE_SCHEDULE` on that container (it consumes messages).
-- `json-rpc` mode turns `/v1/receive` into a websocket. The poller does not support that mode.
-- Poller starts in `src/instrumentation.ts` (`register`, Node runtime only). State lives on `globalThis` so `/api/signal` can read it from another bundle.
-- Security: the REST API has no auth (keep it on the LAN). Only `SIGNAL_ALLOWED_SENDERS` (E.164 or ACI uuid) get answers; groups are ignored.
-- Registration from the AI tab: captcha (`signalcaptcha://…`, prefix stripped) → `register` → SMS/voice code → `verify` (optional PIN) → profile name.
-- Routes: `GET /api/signal` (501 unconfigured, 502 unreachable), `POST /api/signal/control` `{ action: register | verify | set_profile | poll_now | send_hello }`.
+- Socket Mode: `apps.connections.open` (app token `xapp-`, `connections:write`) → WebSocket (Node 22 global `WebSocket`, no SDK). Ack every envelope with `{ envelope_id }` immediately; Slack retries un-acked events, so dedupe on `event_id`.
+- On `disconnect` frames (Slack refreshes sockets every few hours) close and reconnect; backoff up to 60s on failures.
+- Events: `message.im` (DMs, skip any `subtype` / `bot_id` / own user) and `app_mention` (reply in `thread_ts ?? ts`). Memory key is the DM user or the channel thread; thread turns are prefixed with the speaker's name.
+- Reply text is Slack mrkdwn (agent channel `"slack"`); changed-state actions are appended as ✅ lines. 👀 reaction while working.
+- Starts in `src/instrumentation.ts`; state on `globalThis` so `GET /api/slack` (501 unconfigured, 502 bad token) can read it.
+- Workspace-open by design (family workspace). Do not add a public Events API endpoint; Socket Mode keeps the board unexposed.
+- `SLACK_API_BASE_URL` override exists for local mocks only.

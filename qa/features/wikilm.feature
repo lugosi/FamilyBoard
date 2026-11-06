@@ -1,6 +1,6 @@
 Feature: WikiLLM AI tab
   As a family member
-  I want one assistant prompt that can update the calendar, plus an inbox drop-box, todos, and Signal
+  I want one assistant prompt that can update the calendar, plus an inbox drop-box, todos, and Slack
   So we can ask questions and turn messages and forwarded mail into calendar events
 
   Background:
@@ -22,7 +22,7 @@ Feature: WikiLLM AI tab
     When I open the AI tab
     Then I see one prompt input labelled "Ask the family assistant" and a "Send" button
     And I see suggestion chips such as "What's on the calendar this week?"
-    And capability pills show Calendar, Inbox, Wiki, Signal (green when available)
+    And capability pills show Calendar, Inbox, Wiki, Slack (green when available)
 
   Scenario: Assistant updates the calendar
     Given auth status has googleLinked true and geminiConfigured true
@@ -38,16 +38,16 @@ Feature: WikiLLM AI tab
     And I see a Todos section
     And the scan note reports todo(s) and calendar event(s)
 
-  Scenario: Signal setup when not configured
-    Given auth status has signalConfigured false
+  Scenario: Slack setup when not configured
+    Given auth status has slackConfigured false
     When I open the AI tab
-    Then the Signal panel mentions SIGNAL_API_URL, SIGNAL_NUMBER, and SIGNAL_ALLOWED_SENDERS
+    Then the Slack panel mentions SLACK_BOT_TOKEN and SLACK_APP_TOKEN
 
-  Scenario: Signal registered
-    Given GET /api/signal returns registered true
+  Scenario: Slack connected
+    Given GET /api/slack returns bot.connected true
     When I open the AI tab
-    Then the Signal panel shows the bot number, allowed family names, and "Listening: yes"
+    Then the Slack panel shows the workspace, the bot name, and "Connected: yes"
 
   # Knowledge base lives only in the private GitHub repo (not DATA_DIR).
   # Todos from email scans are local DATA_DIR/todos.json — not wiki content.
-  # Default QA does not send email, create real calendar events, register Signal, or "Say hello".
+  # Default QA does not send email, create real calendar events, or message Slack.

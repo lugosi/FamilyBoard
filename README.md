@@ -47,11 +47,11 @@ the scopes used by this project (`streaming`, `user-read-email`, `user-read-priv
 `user-read-playback-state`, `user-read-currently-playing`, `user-modify-playback-state`).
 If you linked Spotify before these scopes were added, disconnect and link again.
 
-### AI tab and Signal
+### AI tab and Slack
 
 The **AI** tab is one prompt backed by Gemini function calling (`src/lib/agent.ts`). It can find, add, move, and delete Google Calendar events, manage todos, scan the Gmail drop-box (forwarded mail becomes todos *and* calendar events), and save pages to the private GitHub wiki. Needs `GEMINI_API_KEY`; calendar and inbox need Link Google.
 
-The same assistant is reachable over Signal: run `signal-cli-rest-api` next to FamilyBoard on TrueNAS, set `SIGNAL_*`, and register the bot number from the AI tab. See [docs/SIGNAL_SETUP.md](docs/SIGNAL_SETUP.md).
+The same assistant is reachable from Slack (DM the bot or @mention it in a channel). It uses Socket Mode, so nothing needs to be exposed publicly. Set `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN`; see [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md).
 
 ### TrueNAS port configuration
 

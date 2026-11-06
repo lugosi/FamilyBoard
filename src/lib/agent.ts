@@ -30,7 +30,7 @@ import {
 const MAX_TOOL_ROUNDS = 6;
 const WIKI_CONTEXT_BUDGET = 60_000;
 
-export type AgentChannel = "board" | "signal";
+export type AgentChannel = "board" | "slack";
 
 export type AgentAction = {
   tool: string;
@@ -396,9 +396,10 @@ function buildSystemPrompt(input: {
       "Google is not linked, so calendar and inbox tools are unavailable. If asked, say to use Link Google on the board.",
     );
   }
-  if (input.channel === "signal") {
+  if (input.channel === "slack") {
     lines.push(
-      "You are replying over Signal: plain text only, no markdown, keep it under about 600 characters.",
+      "You are replying in Slack, usually on a phone: keep it short. Use Slack mrkdwn only (*bold*, _italic_, lines starting with •); no headings, tables, or **double asterisks**.",
+      "In a shared channel thread, each user message starts with the speaker's name.",
     );
     if (input.senderName) lines.push(`The person messaging you is ${input.senderName}.`);
   }
