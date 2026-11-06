@@ -1,7 +1,8 @@
 import { google } from "googleapis";
-import { getOAuth2WithRefresh } from "./google";
 import { generateGeminiText } from "./gemini";
 import { addTodos, type FamilyTodo } from "./todos";
+import { createCalendarEvent, todayDateKey } from "./calendar";
+import { getDefaultTimeZone, getOAuth2WithRefresh } from "./google";
 
 const PROCESSED_LABEL_NAME = "FamilyBoard/Processed";
 
@@ -127,9 +128,37 @@ export async function fetchGmailSnapshot(
   return { messages };
 }
 
+export type InboxCalendarResult = {
+  summary: string;
+  sourceMessageId: string;
+  start: string;
+  ok: boolean;
+  error?: string;
+  eventId?: string;
+};
+
+export type InboxScanResult = {
+  added: FamilyTodo[];
+  events: InboxCalendarResult[];
+  scanned: number;
+  skipped: number;
+};
+
+type ExtractedEvent = {
+  summary?: string;
+  start?: string;
+  end?: string;
+  allDay?: boolean;
+  startDate?: string;
+  endDate?: string;
+  location?: string;
+  notes?: string;
+  sourceMessageId?: string;
+};
+
 export async function scanInboxToTodos(
   redirectUri: string,
-): Promise<{ added: FamilyTodo[]; scanned: number; skipped: number }> {
+): Promise<InboxScanResult> {
   const gmail = await getGmail(redirectUri);
   const processedLabelId = await ensureProcessedLabelId(gmail);
   const listed = await gmail.users.messages.list({
@@ -153,7 +182,7 @@ export async function scanInboxToTodos(
     }
   }
   if (ids.length === 0) {
-    return { added: [], scanned: 0, skipped: 0 };
+    return { added: [], events: [], scanned: 0, skipped: 0 };
   }
 
   const emailBlocks: string[] = [];
@@ -173,18 +202,26 @@ export async function scanInboxToTodos(
     );
   }
 
+  const tz = getDefaultTimeZone();
+  const today = todayDateKey(tz);
   const raw = await generateGeminiText({
-    system: `You extract actionable family todos from emails forwarded to a household inbox.
-Return ONLY valid JSON: {"todos":[{"title":"...","notes":"...","dueHint":"...","sourceMessageId":"..."}]}
+    system: `You triage emails forwarded to a family household inbox into todos and calendar events.
+Today is ${today}; the family's timezone is ${tz}.
+Return ONLY valid JSON:
+{"todos":[{"title":"...","notes":"...","dueHint":"...","sourceMessageId":"..."}],
+ "events":[{"summary":"...","start":"YYYY-MM-DDTHH:MM","end":"YYYY-MM-DDTHH:MM","allDay":false,"startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD","location":"...","notes":"...","sourceMessageId":"..."}]}
 Rules:
-- title is short and actionable (e.g. "Schedule dentist appointment")
-- sourceMessageId must match an email messageId from the input
-- skip newsletters, receipts with no action, and marketing
-- if nothing actionable, return {"todos":[]}`,
+- events: only for a concrete appointment, reservation, class, game, flight, or school date with a known day. Use local wall-clock times in ${tz} with no offset.
+- timed events need start and end; if no end is given assume 1 hour. Day-only events use allDay true with startDate (endDate exclusive, optional).
+- skip events in the past and anything with an ambiguous date.
+- todos: short actionable tasks (e.g. "Pay field trip fee"). Do not duplicate an event as a todo unless there is a separate task (e.g. "RSVP").
+- sourceMessageId must match an email messageId from the input.
+- skip newsletters, receipts with no action, and marketing.
+- if nothing applies, return {"todos":[],"events":[]}`,
     messages: [
       {
         role: "user",
-        content: `Extract todos from these emails:\n\n${emailBlocks.join("\n")}`,
+        content: `Triage these emails:\n\n${emailBlocks.join("\n")}`,
       },
     ],
   });
@@ -196,16 +233,18 @@ Rules:
       dueHint?: string;
       sourceMessageId?: string;
     }[];
+    events?: ExtractedEvent[];
   } = {};
   try {
     const match = raw.match(/\{[\s\S]*\}/);
     parsed = JSON.parse(match?.[0] ?? raw) as typeof parsed;
   } catch {
-    throw new Error("Gemini todo extract was not valid JSON");
+    throw new Error("Gemini inbox triage was not valid JSON");
   }
 
+  const idSet = new Set(ids);
   const candidates = (parsed.todos ?? [])
-    .filter((t) => t.title?.trim() && t.sourceMessageId)
+    .filter((t) => t.title?.trim() && t.sourceMessageId && idSet.has(t.sourceMessageId.trim()))
     .map((t) => ({
       title: t.title!.trim(),
       notes: t.notes?.trim(),
@@ -215,6 +254,36 @@ Rules:
 
   const added = await addTodos(candidates);
 
+  const events: InboxCalendarResult[] = [];
+  for (const ev of parsed.events ?? []) {
+    const summary = ev.summary?.trim();
+    const sourceMessageId = ev.sourceMessageId?.trim();
+    if (!summary || !sourceMessageId || !idSet.has(sourceMessageId)) continue;
+    const start = (ev.allDay ? ev.startDate : ev.start) ?? "";
+    try {
+      const created = await createCalendarEvent(redirectUri, {
+        summary,
+        start: ev.start,
+        end: ev.end,
+        allDay: ev.allDay,
+        startDate: ev.startDate,
+        endDate: ev.endDate,
+        location: ev.location,
+        description: ev.notes,
+        sourceMessageId,
+      });
+      events.push({ summary, sourceMessageId, start, ok: true, eventId: created.id });
+    } catch (e) {
+      events.push({
+        summary,
+        sourceMessageId,
+        start,
+        ok: false,
+        error: e instanceof Error ? e.message : "calendar_error",
+      });
+    }
+  }
+
   for (const id of ids) {
     await gmail.users.messages.modify({
       userId: "me",
@@ -223,9 +292,14 @@ Rules:
     });
   }
 
+  const usedIds = new Set([
+    ...candidates.map((c) => c.sourceMessageId),
+    ...events.filter((e) => e.ok).map((e) => e.sourceMessageId),
+  ]);
   return {
     added,
+    events,
     scanned: ids.length,
-    skipped: Math.max(0, ids.length - new Set(candidates.map((c) => c.sourceMessageId)).size),
+    skipped: Math.max(0, ids.length - usedIds.size),
   };
 }

@@ -34,6 +34,14 @@ export function getNestPcmRedirectUri(request: Request): string {
   return `${u.origin}/api/auth/nest/pcm/callback`;
 }
 
+/** Google redirect URI for server-side jobs (Signal bot, inbox auto-scan) that have no request. */
+export function getBackgroundGoogleRedirectUri(): string {
+  const base =
+    getConfiguredPublicAppUrl() ||
+    `http://localhost:${process.env.APP_PORT || process.env.PORT || "3000"}`;
+  return `${base}/api/auth/google/callback`;
+}
+
 export function getConfiguredPublicAppUrl(): string | null {
   const base = process.env.PUBLIC_APP_URL?.trim().replace(/\/$/, "");
   return base || null;

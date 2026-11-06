@@ -1,4 +1,5 @@
 const DEFAULT_MODEL = "gemini-3.6-flash";
+const DEFAULT_API_BASE = "https://generativelanguage.googleapis.com";
 const MAX_RETRY_DELAY_MS = 12_000;
 
 export function getGeminiApiKey(): string | null {
@@ -13,73 +14,116 @@ export function getGeminiModel(): string {
   return process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
 }
 
+function getGeminiApiBase(): string {
+  return (process.env.GEMINI_API_BASE_URL?.trim() || DEFAULT_API_BASE).replace(
+    /\/+$/,
+    "",
+  );
+}
+
 export type GeminiMessage = {
   role: "user" | "model" | "system";
   content: string;
 };
 
-type GeminiPart = { text: string };
-type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
+export type GeminiFunctionCall = {
+  id?: string;
+  name: string;
+  args?: Record<string, unknown>;
+};
 
-export async function generateGeminiText(input: {
-  system?: string;
-  messages: GeminiMessage[];
-  signal?: AbortSignal;
-}): Promise<string> {
-  const key = getGeminiApiKey();
-  if (!key) throw new Error("gemini_not_configured");
+/** Parts are passed back verbatim so Gemini 3 thought signatures survive tool loops. */
+export type GeminiPart = {
+  text?: string;
+  functionCall?: GeminiFunctionCall;
+  functionResponse?: {
+    id?: string;
+    name: string;
+    response: Record<string, unknown>;
+  };
+  thought?: boolean;
+  thoughtSignature?: string;
+};
 
-  const model = getGeminiModel();
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
+export type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
 
-  const sleep = (ms: number, signal?: AbortSignal) =>
-    new Promise<void>((resolve, reject) => {
-      const id = setTimeout(() => {
-        signal?.removeEventListener("abort", onAbort);
-        resolve();
-      }, ms);
-      function onAbort() {
-        clearTimeout(id);
-        reject(new Error("Gemini request cancelled"));
-      }
-      if (signal?.aborted) {
-        onAbort();
-        return;
-      }
-      signal?.addEventListener("abort", onAbort, { once: true });
-    });
+export type GeminiFunctionDeclaration = {
+  name: string;
+  description: string;
+  parameters?: Record<string, unknown>;
+};
 
-  function parseRetryDelayMs(text: string): number | null {
-    const m1 = text.match(/Please retry in\s+([\d.]+)s/i);
-    if (m1?.[1]) {
-      const sec = Number(m1[1]);
-      if (Number.isFinite(sec)) return Math.max(0, Math.round(sec * 1000));
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const id = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(id);
+      reject(new Error("Gemini request cancelled"));
     }
-    const m2 = text.match(/retryDelay["']?\s*:\s*["']?([\d.]+)s/i);
-    if (m2?.[1]) {
-      const sec = Number(m2[1]);
-      if (Number.isFinite(sec)) return Math.max(0, Math.round(sec * 1000));
+    if (signal?.aborted) {
+      onAbort();
+      return;
     }
-    return null;
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function parseRetryDelayMs(text: string): number | null {
+  const m1 = text.match(/Please retry in\s+([\d.]+)s/i);
+  if (m1?.[1]) {
+    const sec = Number(m1[1]);
+    if (Number.isFinite(sec)) return Math.max(0, Math.round(sec * 1000));
   }
+  const m2 = text.match(/retryDelay["']?\s*:\s*["']?([\d.]+)s/i);
+  if (m2?.[1]) {
+    const sec = Number(m2[1]);
+    if (Number.isFinite(sec)) return Math.max(0, Math.round(sec * 1000));
+  }
+  return null;
+}
 
+export function toGeminiContents(messages: GeminiMessage[]): GeminiContent[] {
   const contents: GeminiContent[] = [];
-  for (const m of input.messages) {
+  for (const m of messages) {
     if (m.role === "system") continue;
     contents.push({
       role: m.role === "model" ? "model" : "user",
       parts: [{ text: m.content }],
     });
   }
-  if (contents.length === 0) {
-    throw new Error("empty_messages");
-  }
+  return contents;
+}
 
-  const body: Record<string, unknown> = { contents };
+/** One generateContent call (with retries). Returns the model turn's raw parts. */
+export async function generateGeminiContent(input: {
+  system?: string;
+  contents: GeminiContent[];
+  tools?: GeminiFunctionDeclaration[];
+  /** NONE forces a text answer while keeping tool history valid. */
+  toolMode?: "AUTO" | "NONE";
+  signal?: AbortSignal;
+}): Promise<GeminiContent> {
+  const key = getGeminiApiKey();
+  if (!key) throw new Error("gemini_not_configured");
+  if (input.contents.length === 0) throw new Error("empty_messages");
+
+  const model = getGeminiModel();
+  const url = `${getGeminiApiBase()}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
+
+  const body: Record<string, unknown> = { contents: input.contents };
   if (input.system?.trim()) {
     body.systemInstruction = {
       parts: [{ text: input.system.trim() }],
     };
+  }
+  if (input.tools?.length) {
+    body.tools = [{ functionDeclarations: input.tools }];
+    if (input.toolMode) {
+      body.toolConfig = { functionCallingConfig: { mode: input.toolMode } };
+    }
   }
 
   const maxAttempts = 4;
@@ -94,14 +138,11 @@ export async function generateGeminiText(input: {
     });
     if (res.ok) {
       const json = (await res.json()) as {
-        candidates?: { content?: { parts?: { text?: string }[] } }[];
+        candidates?: { content?: { parts?: GeminiPart[] } }[];
       };
-      const text = json.candidates?.[0]?.content?.parts
-        ?.map((p) => p.text ?? "")
-        .join("")
-        .trim();
-      if (!text) throw new Error("Gemini returned empty response");
-      return text;
+      const parts = json.candidates?.[0]?.content?.parts ?? [];
+      if (parts.length === 0) throw new Error("Gemini returned empty response");
+      return { role: "model", parts };
     }
 
     const text = await res.text().catch(() => "");
@@ -123,4 +164,27 @@ export async function generateGeminiText(input: {
   }
 
   throw lastError ?? new Error("Gemini error");
+}
+
+export function textFromParts(parts: GeminiPart[]): string {
+  return parts
+    .filter((p) => !p.thought)
+    .map((p) => p.text ?? "")
+    .join("")
+    .trim();
+}
+
+export async function generateGeminiText(input: {
+  system?: string;
+  messages: GeminiMessage[];
+  signal?: AbortSignal;
+}): Promise<string> {
+  const content = await generateGeminiContent({
+    system: input.system,
+    contents: toGeminiContents(input.messages),
+    signal: input.signal,
+  });
+  const text = textFromParts(content.parts);
+  if (!text) throw new Error("Gemini returned empty response");
+  return text;
 }

@@ -5,7 +5,7 @@ import { scanInboxToTodos } from "@/lib/gmail";
 import { isGeminiConfigured } from "@/lib/gemini";
 
 type ControlBody = {
-  action?: "scan_to_todos";
+  action?: "scan" | "scan_to_todos";
 };
 
 export async function POST(request: Request) {
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  if (body.action !== "scan_to_todos") {
+  if (body.action !== "scan" && body.action !== "scan_to_todos") {
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   }
 
