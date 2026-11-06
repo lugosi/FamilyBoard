@@ -88,7 +88,7 @@ Read [integrations.md](integrations.md) before touching CatLink, Spotify, Hue, N
 - Gemini tool loops must pass model parts back verbatim (Gemini 3 `thoughtSignature`). Use `generateGeminiContent`, not `generateGeminiText`, for tools.
 - Knowledge base: **private GitHub markdown only** (`WIKILM_GITHUB_*`) via `src/lib/wikilm-github.ts`. Never store wiki pages in `DATA_DIR`.
 - Gmail drop-box: `scan_to_todos` / `scan` → todos (`DATA_DIR/todos.json`) **and** calendar events (tagged `extendedProperties.private.familyboardGmailId`), then `FamilyBoard/Processed` label. Optional `GMAIL_AUTO_SCAN_MINUTES`.
-- Signal: same agent over `signal-cli-rest-api` (`src/lib/signal.ts`, `signal-bot.ts`), polled from `src/instrumentation.ts`. Only `SIGNAL_ALLOWED_SENDERS` get replies. Setup: `docs/SIGNAL_SETUP.md`.
+- Slack: same agent via Socket Mode (`src/lib/slack.ts`, `slack-bot.ts`), started from `src/instrumentation.ts`. Answers DMs and channel @mentions (thread replies); open to the whole workspace. Setup + manifest: `docs/SLACK_SETUP.md`.
 - Re-link Google after enabling Gmail API / new OAuth scopes.
 
 **CatLink (highest footgun density):**

@@ -2,7 +2,7 @@ import { getBackgroundGoogleRedirectUri } from "./app-url";
 import { isGeminiConfigured } from "./gemini";
 import { scanInboxToTodos } from "./gmail";
 import { readGoogleTokens } from "./google";
-import { startSignalBot } from "./signal-bot";
+import { startSlackBot } from "./slack-bot";
 
 const g = globalThis as typeof globalThis & { __familyboardBackground?: boolean };
 
@@ -36,6 +36,6 @@ function startInboxAutoScan(): void {
 export function startBackgroundJobs(): void {
   if (g.__familyboardBackground) return;
   g.__familyboardBackground = true;
-  startSignalBot();
+  startSlackBot();
   startInboxAutoScan();
 }

@@ -9,7 +9,7 @@ type Status = {
   wikilmGithubConfigured?: boolean;
   gmailReady?: boolean;
   inboxAutoScanMinutes?: number;
-  signalConfigured?: boolean;
+  slackConfigured?: boolean;
 };
 
 type AgentAction = { tool: string; ok: boolean; label: string };
@@ -38,20 +38,17 @@ type FamilyTodo = {
   createdAt: string;
 };
 
-type SignalSnapshot = {
+type SlackSnapshot = {
   configured?: boolean;
-  reachable?: boolean;
-  registered?: boolean;
-  number?: string;
-  mode?: string | null;
-  allowedSenders?: string[];
+  team?: string;
+  botName?: string;
   bot?: {
     running: boolean;
-    lastPollAt: string | null;
-    lastMessageAt: string | null;
+    connected: boolean;
+    connectedAt: string | null;
+    lastEventAt: string | null;
     lastError: string | null;
     handled: number;
-    ignored: number;
   };
   error?: string;
 };
@@ -62,8 +59,6 @@ const SUGGESTIONS = [
   "Move Saturday's soccer to 10am",
   "Check the inbox",
 ];
-
-const SIGNAL_CAPTCHA_URL = "https://signalcaptchas.org/registration/generate.html";
 
 async function parseJsonSafe<T>(res: Response): Promise<T> {
   const ct = res.headers.get("content-type") ?? "";
@@ -88,18 +83,13 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [messages, setMessages] = useState<GmailMessage[]>([]);
   const [todos, setTodos] = useState<FamilyTodo[]>([]);
-  const [signal, setSignal] = useState<SignalSnapshot | null>(null);
+  const [slack, setSlack] = useState<SlackSnapshot | null>(null);
   const [chat, setChat] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [chatStatus, setChatStatus] = useState<string | null>(null);
-  const [captcha, setCaptcha] = useState("");
-  const [useVoice, setUseVoice] = useState(false);
-  const [code, setCode] = useState("");
-  const [pin, setPin] = useState("");
-  const [codeSent, setCodeSent] = useState(false);
   const loadedOnceRef = useRef(false);
   const chatAbortRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -130,11 +120,11 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         setMessages([]);
       }
 
-      if (statusJson.signalConfigured) {
-        const signalRes = await fetch("/api/signal", { signal: signalArg });
-        setSignal(await parseJsonSafe<SignalSnapshot>(signalRes));
+      if (statusJson.slackConfigured) {
+        const slackRes = await fetch("/api/slack", { signal: signalArg });
+        setSlack(await parseJsonSafe<SlackSnapshot>(slackRes));
       } else {
-        setSignal(null);
+        setSlack(null);
       }
     } catch (e) {
       if (signalArg?.aborted) return;
@@ -262,54 +252,10 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     }
   }
 
-  async function signalAction(
-    action: "register" | "verify" | "poll_now" | "send_hello",
-    extra: Record<string, unknown> = {},
-  ) {
-    if (busy) return;
-    setBusy(`signal-${action}`);
-    setError(null);
-    setNote(null);
-    try {
-      const res = await fetch("/api/signal/control", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, ...extra }),
-      });
-      const json = await parseJsonSafe<{
-        error?: string;
-        received?: number;
-        sent?: number;
-      }>(res);
-      if (!res.ok) throw new Error(json.error || `Signal ${action} failed (${res.status})`);
-      if (action === "register") {
-        setCodeSent(true);
-        setNote(useVoice ? "Signal is calling the bot number with a code." : "Signal texted a code to the bot number.");
-      } else if (action === "verify") {
-        setCodeSent(false);
-        setCode("");
-        setPin("");
-        setCaptcha("");
-        setNote("Signal account registered. Family members on the allowlist can text it now.");
-      } else if (action === "poll_now") {
-        setNote(`Checked Signal: ${json.received ?? 0} new message(s).`);
-      } else {
-        setNote(`Sent hello to ${json.sent ?? 0} family member(s).`);
-      }
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "signal_error");
-    } finally {
-      setBusy(null);
-    }
-  }
-
   const panel =
     "flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 shadow-lg shadow-slate-950/40";
   const smallBtn =
     "rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50";
-  const field =
-    "w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-slate-500";
   const unprocessed = messages.filter((m) => !m.processed).length;
   const openTodos = todos.filter((t) => !t.done);
   const doneTodos = todos.filter((t) => t.done);
@@ -318,7 +264,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     { label: "Calendar", on: Boolean(status?.googleLinked) },
     { label: "Inbox", on: Boolean(status?.gmailReady) },
     { label: "Wiki", on: Boolean(status?.wikilmGithubConfigured) },
-    { label: "Signal", on: Boolean(signal?.registered) },
+    { label: "Slack", on: Boolean(slack?.bot?.connected) },
   ];
 
   return (
@@ -615,159 +561,44 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
               </ul>
             </section>
 
-            <section className={`${panel} shrink-0 p-3`} aria-label="Signal">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <h2 className="text-base font-semibold text-white">Signal</h2>
-                {signal?.registered ? (
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      className={smallBtn}
-                      disabled={Boolean(busy)}
-                      onClick={() => void signalAction("poll_now")}
-                    >
-                      {busy === "signal-poll_now" ? "Checking…" : "Check now"}
-                    </button>
-                    <button
-                      type="button"
-                      className={smallBtn}
-                      disabled={Boolean(busy) || !signal.allowedSenders?.length}
-                      onClick={() => void signalAction("send_hello")}
-                    >
-                      {busy === "signal-send_hello" ? "Sending…" : "Say hello"}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-              {!status?.signalConfigured ? (
+            <section className={`${panel} shrink-0 p-3`} aria-label="Slack">
+              <h2 className="mb-2 text-base font-semibold text-white">Slack</h2>
+              {!status?.slackConfigured ? (
                 <p className="text-sm text-slate-400">
-                  Text the assistant from Signal. Run{" "}
-                  <code className="text-slate-300">signal-cli-rest-api</code> on
-                  TrueNAS, then set{" "}
-                  <code className="text-slate-300">SIGNAL_API_URL</code>,{" "}
-                  <code className="text-slate-300">SIGNAL_NUMBER</code>, and{" "}
-                  <code className="text-slate-300">SIGNAL_ALLOWED_SENDERS</code>{" "}
-                  (see docs/SIGNAL_SETUP.md).
+                  Chat with the assistant from the Slack app: DM the bot or
+                  @mention it in a channel. Set{" "}
+                  <code className="text-slate-300">SLACK_BOT_TOKEN</code> and{" "}
+                  <code className="text-slate-300">SLACK_APP_TOKEN</code> (see
+                  docs/SLACK_SETUP.md).
                 </p>
-              ) : !signal ? (
+              ) : !slack ? (
                 <p className="text-sm text-slate-500">Loading…</p>
-              ) : !signal.reachable ? (
-                <p className="text-sm text-amber-200">
-                  {signal.error ?? "Signal API unreachable."}
-                </p>
-              ) : signal.registered ? (
+              ) : (
                 <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-                  <dt className="text-slate-500">Number</dt>
-                  <dd className="tabular-nums text-slate-200">{signal.number}</dd>
-                  <dt className="text-slate-500">Family</dt>
-                  <dd className="text-slate-200">
-                    {signal.allowedSenders?.length ? (
-                      signal.allowedSenders.join(", ")
-                    ) : (
-                      <span className="text-amber-200">
-                        No one allowed — set SIGNAL_ALLOWED_SENDERS
-                      </span>
-                    )}
-                  </dd>
-                  <dt className="text-slate-500">Listening</dt>
-                  <dd className="text-slate-200">
-                    {signal.bot?.running
-                      ? `yes · polled ${timeAgo(signal.bot.lastPollAt)}`
-                      : "no (restart the app)"}
+                  <dt className="text-slate-500">Workspace</dt>
+                  <dd className="text-slate-200">{slack.team || "—"}</dd>
+                  <dt className="text-slate-500">Bot</dt>
+                  <dd className="text-slate-200">{slack.botName ? `@${slack.botName}` : "—"}</dd>
+                  <dt className="text-slate-500">Connected</dt>
+                  <dd className={slack.bot?.connected ? "text-slate-200" : "text-amber-200"}>
+                    {slack.bot?.connected
+                      ? `yes (connected ${timeAgo(slack.bot.connectedAt)})`
+                      : slack.bot?.running
+                        ? "reconnecting…"
+                        : "no (restart the app)"}
                   </dd>
                   <dt className="text-slate-500">Replies</dt>
                   <dd className="tabular-nums text-slate-200">
-                    {signal.bot?.handled ?? 0}
-                    {signal.bot?.lastMessageAt
-                      ? ` · last ${timeAgo(signal.bot.lastMessageAt)}`
-                      : ""}
+                    {slack.bot?.handled ?? 0}
+                    {slack.bot?.lastEventAt ? ` · last ${timeAgo(slack.bot.lastEventAt)}` : ""}
                   </dd>
-                  {signal.bot?.lastError ? (
+                  {slack.error || slack.bot?.lastError ? (
                     <>
                       <dt className="text-slate-500">Error</dt>
-                      <dd className="text-amber-200">{signal.bot.lastError}</dd>
+                      <dd className="text-amber-200">{slack.error ?? slack.bot?.lastError}</dd>
                     </>
                   ) : null}
                 </dl>
-              ) : !codeSent ? (
-                <form
-                  className="space-y-2 text-sm"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void signalAction("register", { captcha, useVoice });
-                  }}
-                >
-                  <p className="text-slate-400">
-                    Register <span className="tabular-nums text-slate-200">{signal.number}</span>{" "}
-                    as the family bot. Solve the{" "}
-                    <a
-                      className="text-sky-300 underline"
-                      href={SIGNAL_CAPTCHA_URL}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Signal captcha
-                    </a>
-                    , then copy the “Open Signal” link and paste it here.
-                  </p>
-                  <input
-                    className={field}
-                    placeholder="signalcaptcha://…"
-                    value={captcha}
-                    onChange={(e) => setCaptcha(e.target.value)}
-                    disabled={Boolean(busy)}
-                  />
-                  <label className="flex items-center gap-2 text-xs text-slate-400">
-                    <input
-                      type="checkbox"
-                      checked={useVoice}
-                      onChange={(e) => setUseVoice(e.target.checked)}
-                    />
-                    Call with the code instead of SMS (landlines)
-                  </label>
-                  <button type="submit" className={smallBtn} disabled={Boolean(busy) || !captcha.trim()}>
-                    {busy === "signal-register" ? "Requesting…" : "Send code"}
-                  </button>
-                </form>
-              ) : (
-                <form
-                  className="space-y-2 text-sm"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void signalAction("verify", { code, pin });
-                  }}
-                >
-                  <p className="text-slate-400">
-                    Enter the code Signal sent to {signal.number}.
-                  </p>
-                  <input
-                    className={`${field} tabular-nums`}
-                    placeholder="123-456"
-                    inputMode="numeric"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    disabled={Boolean(busy)}
-                  />
-                  <input
-                    className={field}
-                    placeholder="Registration lock PIN (only if set)"
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value)}
-                    disabled={Boolean(busy)}
-                  />
-                  <div className="flex gap-2">
-                    <button type="submit" className={smallBtn} disabled={Boolean(busy) || !code.trim()}>
-                      {busy === "signal-verify" ? "Verifying…" : "Verify"}
-                    </button>
-                    <button
-                      type="button"
-                      className="text-xs text-slate-500 hover:text-slate-300"
-                      onClick={() => setCodeSent(false)}
-                    >
-                      Start over
-                    </button>
-                  </div>
-                </form>
               )}
             </section>
           </div>
