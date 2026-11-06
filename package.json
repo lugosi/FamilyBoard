@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "qa:smoke": "node scripts/qa-smoke.mjs"
+    "qa:smoke": "node scripts/qa-smoke.mjs",
+    "test:wiki": "node --test scripts/wiki-format.test.mjs"
   },
   "dependencies": {
     "docker": "^1.0.0",

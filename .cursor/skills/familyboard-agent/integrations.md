@@ -111,6 +111,9 @@ Env: `CATLINK_PHONE`, `CATLINK_PASSWORD`, `CATLINK_PHONE_IAC`, `CATLINK_API_BASE
 - Google scopes include `gmail.readonly` + `gmail.modify`. Enable Gmail API; **re-link Google** after deploy.
 - Flow: forward mail to linked inbox → **Scan inbox** (button, agent `scan_inbox`, or `GMAIL_AUTO_SCAN_MINUTES`) → Gemini extracts todos + events → `todos.json` + Google Calendar. No send-from-board in v1.
 - Do not put wiki markdown or the GitHub PAT in `DATA_DIR` session files.
+- Wiki reads: one `git/trees/{branch}?recursive=1` call per minute (cache) + `git/blobs/{sha}` only for changed files (blob cache keyed by sha). Edits read fresh via `contents/` and write with that `sha`; GitHub answers 409 (or 422 when a create hits an existing file) → `WikiError("conflict" | "exists")`.
+- Paths in tools, API, and UI are relative to `WIKILM_GITHUB_PATH` (`people/maya.md`). New pages and move targets are slugified; existing paths keep their case. `..`, dot-folders, and >3 levels are rejected.
+- `WIKILM_GITHUB_API_BASE_URL` override exists for local mocks only.
 
 ## Slack bot (`src/lib/slack.ts`, `src/lib/slack-bot.ts`)
 

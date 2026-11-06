@@ -83,10 +83,14 @@ Read [integrations.md](integrations.md) before touching CatLink, Spotify, Hue, N
 
 - Shell: `AppShell` tabs **Board** | **AI** (`?tab=ai`). Do not fold AI UI into `Board.tsx`.
 - AI tab is **one prompt** → `POST /api/agent/chat` → `runFamilyAgent` in `src/lib/agent.ts` (Gemini function calling). Add capabilities as tools there, not as new panels.
-- Tools: calendar `find_events` / `create_event` / `update_event` / `delete_event` / `list_calendars` (via `src/lib/calendar.ts`), todos, `scan_inbox`, `save_wiki_page`. Calendar + inbox tools only when Google is linked; wiki tool only when GitHub is configured.
+- Tools: calendar `find_events` / `create_event` / `update_event` / `delete_event` / `list_calendars` (via `src/lib/calendar.ts`), todos, `scan_inbox`, and wiki tools (`src/lib/agent-wiki-tools.ts`). Calendar + inbox tools only when Google is linked; wiki tools only when GitHub is configured.
 - Agent times are local wall-clock in `DEFAULT_TIMEZONE` with no offset; `src/lib/calendar.ts` attaches `timeZone`. Never hand the model UTC. New events default via `resolveDefaultCalendarId` (`GOOGLE_CALENDAR_ID`, else "berkeley", else primary) so they match the board.
 - Gemini tool loops must pass model parts back verbatim (Gemini 3 `thoughtSignature`). Use `generateGeminiContent`, not `generateGeminiText`, for tools.
-- Knowledge base: **private GitHub markdown only** (`WIKILM_GITHUB_*`) via `src/lib/wikilm-github.ts`. Never store wiki pages in `DATA_DIR`.
+- Knowledge base: **private GitHub markdown only** (`WIKILM_GITHUB_*`) via `src/lib/wikilm-github.ts`. Never store wiki pages in `DATA_DIR`. Layout + template: `docs/WIKI.md`.
+  - Prompt gets an **index** (`buildWikiIndex`, 12k chars), never page bodies; the model calls `search_wiki` / `read_wiki_page`.
+  - Writes: `edit_wiki_section` (server-side append/replace on the latest version), `create_wiki_page` (template, refuses near-duplicates), `rewrite_wiki_page` (only after `read_wiki_page` in the same request; sha-checked), `move_wiki_page`, `delete_wiki_page`. Every write is a GitHub contents PUT/DELETE with the file `sha` → 409 on conflict.
+  - Pure parsing/editing/search lives in `src/lib/wiki-format.ts` (no imports) with tests: `npm run test:wiki`.
+  - The AI tab has a **Chat | Wiki** switch (`WikiBrowser.tsx`): browse/search/edit/move/delete. It is the one deliberate exception to "tools, not panels".
 - Gmail drop-box: `scan_to_todos` / `scan` → todos (`DATA_DIR/todos.json`) **and** calendar events (tagged `extendedProperties.private.familyboardGmailId`), then `FamilyBoard/Processed` label. Optional `GMAIL_AUTO_SCAN_MINUTES`.
 - Slack: same agent via Socket Mode (`src/lib/slack.ts`, `slack-bot.ts`), started from `src/instrumentation.ts`. Answers DMs and channel @mentions (thread replies); open to the whole workspace. Setup + manifest: `docs/SLACK_SETUP.md`.
 - Re-link Google after enabling Gmail API / new OAuth scopes.

@@ -1,6 +1,8 @@
 import { getDefaultTimeZone } from "./google";
 import {
+  categoryOf,
   composeNewPage,
+  slugify,
   editSection,
   existingWikiPath,
   newWikiPath,
@@ -321,6 +323,17 @@ export async function createWikiPage(input: {
   const rel = input.path?.trim()
     ? newWikiPath(input.path, cfg.basePath)
     : pathForNewPage(input.category, title);
+  const squash = (s: string) => slugify(s).replace(/-/g, "");
+  const folder = categoryOf(rel);
+  const twin = (await loadWikiPages()).find(
+    (p) =>
+      p.category === folder &&
+      (squash(p.title) === squash(title) ||
+        squash(p.path.split("/").pop()!.replace(/\.md$/i, "")) === squash(title)),
+  );
+  if (twin) {
+    throw new WikiError("exists", `“${twin.title}” already exists at ${twin.path}; add to that page instead`);
+  }
   const content = composeNewPage({
     title,
     summary: input.summary,
