@@ -6,6 +6,8 @@ import { getWeatherCoordinates } from "@/lib/weather";
 import { getCatlinkEnvReady, isCatlinkLinked } from "@/lib/catlink";
 import { isGeminiConfigured } from "@/lib/gemini";
 import { isWikilmGithubConfigured } from "@/lib/wikilm-github";
+import { isSignalConfigured } from "@/lib/signal";
+import { getInboxAutoScanMinutes } from "@/lib/background";
 
 export async function GET() {
   const google = await readGoogleTokens();
@@ -36,5 +38,7 @@ export async function GET() {
     geminiConfigured: isGeminiConfigured(),
     wikilmGithubConfigured: isWikilmGithubConfigured(),
     gmailReady: googleLinked,
+    inboxAutoScanMinutes: getInboxAutoScanMinutes(),
+    signalConfigured: isSignalConfigured(),
   });
 }

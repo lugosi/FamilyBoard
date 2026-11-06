@@ -14,6 +14,7 @@ Read this when editing CatLink, Spotify, Hue, Nest, Google Calendar, Weather, or
 | `catlink-session.json` | CatLink token, phone, phoneIac, apiBase |
 | `nest-climate-history.json` | Indoor climate samples |
 | `todos.json` | WikiLLM email-scan todos (not the GitHub wiki) |
+| `signal-conversations.json` | Signal bot short-term memory per sender (30 min TTL) |
 
 ## CatLink (`src/lib/catlink.ts`, `catlink-crypto.ts`)
 
@@ -108,5 +109,14 @@ Env: `CATLINK_PHONE`, `CATLINK_PASSWORD`, `CATLINK_PHONE_IAC`, `CATLINK_API_BASE
 - UI: `AppShell` → `WikiLlm.tsx` (AI tab). Knowledge: private GitHub repo only (`WIKILM_GITHUB_REPO` + `WIKILM_GITHUB_TOKEN`, optional `WIKILM_GITHUB_PATH=wiki`).
 - Gemini: `GEMINI_API_KEY` / optional `GEMINI_MODEL`. Chat routes under `/api/wiki/*`.
 - Google scopes include `gmail.readonly` + `gmail.modify`. Enable Gmail API; **re-link Google** after deploy.
-- Flow: forward mail to linked inbox → **Scan inbox** → Gemini extracts todos → `todos.json`. No send-from-board in v1.
+- Flow: forward mail to linked inbox → **Scan inbox** (button, agent `scan_inbox`, or `GMAIL_AUTO_SCAN_MINUTES`) → Gemini extracts todos + events → `todos.json` + Google Calendar. No send-from-board in v1.
 - Do not put wiki markdown or the GitHub PAT in `DATA_DIR` session files.
+
+## Signal bot (`src/lib/signal.ts`, `src/lib/signal-bot.ts`)
+
+- Transport: `bbernhard/signal-cli-rest-api` with `MODE=native`; FamilyBoard polls `GET /v1/receive/{number}` and replies with `POST /v2/send`. Never set `AUTO_RECEIVE_SCHEDULE` on that container (it consumes messages).
+- `json-rpc` mode turns `/v1/receive` into a websocket. The poller does not support that mode.
+- Poller starts in `src/instrumentation.ts` (`register`, Node runtime only). State lives on `globalThis` so `/api/signal` can read it from another bundle.
+- Security: the REST API has no auth (keep it on the LAN). Only `SIGNAL_ALLOWED_SENDERS` (E.164 or ACI uuid) get answers; groups are ignored.
+- Registration from the AI tab: captcha (`signalcaptcha://…`, prefix stripped) → `register` → SMS/voice code → `verify` (optional PIN) → profile name.
+- Routes: `GET /api/signal` (501 unconfigured, 502 unreachable), `POST /api/signal/control` `{ action: register | verify | set_profile | poll_now | send_hello }`.

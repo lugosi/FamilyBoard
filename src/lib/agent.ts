@@ -1,0 +1,504 @@
+import {
+  generateGeminiContent,
+  textFromParts,
+  toGeminiContents,
+  type GeminiContent,
+  type GeminiFunctionDeclaration,
+  type GeminiMessage,
+  type GeminiPart,
+} from "./gemini";
+import {
+  addDaysToDateKey,
+  createCalendarEvent,
+  deleteCalendarEvent,
+  listCalendars,
+  listEventsInRange,
+  resolveDefaultCalendarId,
+  todayDateKey,
+  updateCalendarEvent,
+} from "./calendar";
+import { getDefaultTimeZone, readGoogleTokens } from "./google";
+import { scanInboxToTodos } from "./gmail";
+import { addTodo, listTodos, setTodoDone } from "./todos";
+import {
+  buildWikiContext,
+  commitWikiPage,
+  isWikilmGithubConfigured,
+  loadWikiPages,
+} from "./wikilm-github";
+
+const MAX_TOOL_ROUNDS = 6;
+const WIKI_CONTEXT_BUDGET = 60_000;
+
+export type AgentChannel = "board" | "signal";
+
+export type AgentAction = {
+  tool: string;
+  ok: boolean;
+  label: string;
+};
+
+export type AgentResult = {
+  reply: string;
+  actions: AgentAction[];
+};
+
+type ToolContext = {
+  redirectUri: string;
+  timeZone: string;
+};
+
+type ToolOutcome = {
+  response: Record<string, unknown>;
+  label: string;
+};
+
+type Tool = {
+  declaration: GeminiFunctionDeclaration;
+  run: (args: Record<string, unknown>, ctx: ToolContext) => Promise<ToolOutcome>;
+};
+
+const str = (v: unknown): string | undefined =>
+  typeof v === "string" && v.trim() ? v.trim() : undefined;
+const bool = (v: unknown): boolean | undefined =>
+  typeof v === "boolean" ? v : v === "true" ? true : v === "false" ? false : undefined;
+
+function formatWhen(value: string, timeZone: string): string {
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split("-").map(Number);
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: "UTC",
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    }).format(new Date(Date.UTC(y, m - 1, d)));
+  }
+  const hasOffset = /(Z|[+-]\d{2}:\d{2})$/.test(value);
+  const date = new Date(hasOffset ? value : `${value}Z`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: hasOffset ? timeZone : "UTC",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+const timeProps = {
+  start: {
+    type: "string",
+    description:
+      "Timed event start, local wall-clock time with no offset, e.g. 2026-11-10T15:00",
+  },
+  end: {
+    type: "string",
+    description: "Timed event end, local wall-clock time with no offset",
+  },
+  allDay: { type: "boolean", description: "True for an all-day event" },
+  startDate: { type: "string", description: "All-day start date YYYY-MM-DD" },
+  endDate: {
+    type: "string",
+    description: "All-day end date YYYY-MM-DD, exclusive (day after the last day)",
+  },
+};
+
+const calendarTools: Tool[] = [
+  {
+    declaration: {
+      name: "list_calendars",
+      description: "List the family's Google calendars (id, name, writable).",
+      parameters: { type: "object", properties: {} },
+    },
+    async run(_args, ctx) {
+      const calendars = await listCalendars(ctx.redirectUri);
+      return {
+        response: {
+          calendars,
+          defaultCalendarId: await resolveDefaultCalendarId(ctx.redirectUri),
+        },
+        label: `Listed ${calendars.length} calendar(s)`,
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "find_events",
+      description:
+        "Find calendar events across all calendars between two dates. Use before updating or deleting to get eventId and calendarId.",
+      parameters: {
+        type: "object",
+        properties: {
+          from: { type: "string", description: "First day YYYY-MM-DD (inclusive)" },
+          to: { type: "string", description: "Last day YYYY-MM-DD (exclusive)" },
+          query: { type: "string", description: "Optional free-text filter" },
+        },
+        required: ["from", "to"],
+      },
+    },
+    async run(args, ctx) {
+      const from = str(args.from) ?? todayDateKey(ctx.timeZone);
+      const to = str(args.to) ?? addDaysToDateKey(from, 7);
+      const events = await listEventsInRange(ctx.redirectUri, from, to, {
+        query: str(args.query),
+      });
+      return {
+        response: { events },
+        label: `Looked up ${events.length} event(s) ${formatWhen(from, ctx.timeZone)} – ${formatWhen(addDaysToDateKey(to, -1), ctx.timeZone)}`,
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "create_event",
+      description:
+        "Add an event to the family calendar. Timed events need start and end; all-day events need allDay and startDate.",
+      parameters: {
+        type: "object",
+        properties: {
+          summary: { type: "string", description: "Event title" },
+          ...timeProps,
+          location: { type: "string" },
+          description: { type: "string" },
+          calendarId: {
+            type: "string",
+            description: "Only when the user names a specific calendar",
+          },
+        },
+        required: ["summary"],
+      },
+    },
+    async run(args, ctx) {
+      const created = await createCalendarEvent(ctx.redirectUri, {
+        summary: str(args.summary) ?? "",
+        start: str(args.start),
+        end: str(args.end),
+        allDay: bool(args.allDay),
+        startDate: str(args.startDate),
+        endDate: str(args.endDate),
+        location: str(args.location),
+        description: str(args.description),
+        calendarId: str(args.calendarId),
+      });
+      return {
+        response: { event: created },
+        label: `Added “${created.summary}” · ${formatWhen(created.start, ctx.timeZone)}`,
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "update_event",
+      description:
+        "Change an existing event (title, time, location, notes). Get eventId and calendarId from find_events first. When moving a timed event, send both start and end.",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: { type: "string" },
+          calendarId: { type: "string" },
+          summary: { type: "string" },
+          ...timeProps,
+          location: { type: "string" },
+          description: { type: "string" },
+        },
+        required: ["eventId", "calendarId"],
+      },
+    },
+    async run(args, ctx) {
+      const updated = await updateCalendarEvent(ctx.redirectUri, {
+        eventId: str(args.eventId) ?? "",
+        calendarId: str(args.calendarId),
+        summary: str(args.summary),
+        start: str(args.start),
+        end: str(args.end),
+        allDay: bool(args.allDay),
+        startDate: str(args.startDate),
+        endDate: str(args.endDate),
+        location: typeof args.location === "string" ? args.location : undefined,
+        description:
+          typeof args.description === "string" ? args.description : undefined,
+      });
+      return {
+        response: { event: updated },
+        label: `Updated “${updated.summary}” · ${formatWhen(updated.start, ctx.timeZone)}`,
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "delete_event",
+      description:
+        "Delete a calendar event. Only when the user explicitly asked to remove or cancel that specific event.",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: { type: "string" },
+          calendarId: { type: "string" },
+          summary: {
+            type: "string",
+            description: "Title of the event being deleted (for the confirmation)",
+          },
+        },
+        required: ["eventId", "calendarId"],
+      },
+    },
+    async run(args, ctx) {
+      const deleted = await deleteCalendarEvent(ctx.redirectUri, {
+        eventId: str(args.eventId) ?? "",
+        calendarId: str(args.calendarId),
+      });
+      return {
+        response: { deleted },
+        label: `Deleted “${str(args.summary) ?? deleted.id}”`,
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "scan_inbox",
+      description:
+        "Process new mail in the family drop-box inbox: adds todos and calendar events from forwarded emails.",
+      parameters: { type: "object", properties: {} },
+    },
+    async run(_args, ctx) {
+      const result = await scanInboxToTodos(ctx.redirectUri);
+      const created = result.events.filter((e) => e.ok).length;
+      return {
+        response: {
+          scanned: result.scanned,
+          todosAdded: result.added.map((t) => t.title),
+          events: result.events,
+        },
+        label: `Scanned ${result.scanned} email(s): ${result.added.length} todo(s), ${created} event(s)`,
+      };
+    },
+  },
+];
+
+const todoTools: Tool[] = [
+  {
+    declaration: {
+      name: "list_todos",
+      description: "List the family todo list.",
+      parameters: {
+        type: "object",
+        properties: {
+          includeDone: { type: "boolean", description: "Include completed todos" },
+        },
+      },
+    },
+    async run(args) {
+      const all = await listTodos();
+      const todos = (bool(args.includeDone) ? all : all.filter((t) => !t.done))
+        .slice(0, 50)
+        .map(({ id, title, notes, dueHint, done }) => ({ id, title, notes, dueHint, done }));
+      return { response: { todos }, label: `Checked todos (${todos.length})` };
+    },
+  },
+  {
+    declaration: {
+      name: "add_todo",
+      description: "Add a todo to the family list.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          notes: { type: "string" },
+          dueHint: { type: "string", description: "Free-text due date, e.g. 'by Friday'" },
+        },
+        required: ["title"],
+      },
+    },
+    async run(args) {
+      const todo = await addTodo({
+        title: str(args.title) ?? "",
+        notes: str(args.notes),
+        dueHint: str(args.dueHint),
+      });
+      return { response: { todo }, label: `Added todo “${todo.title}”` };
+    },
+  },
+  {
+    declaration: {
+      name: "complete_todo",
+      description: "Mark a todo done. Get the id from list_todos.",
+      parameters: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+    },
+    async run(args) {
+      const todo = await setTodoDone(str(args.id) ?? "", true);
+      if (!todo) throw new Error("todo not found");
+      return { response: { todo }, label: `Completed “${todo.title}”` };
+    },
+  },
+];
+
+const wikiTools: Tool[] = [
+  {
+    declaration: {
+      name: "save_wiki_page",
+      description:
+        "Save or overwrite a markdown page in the private family wiki (recipes, household notes). Only when the user asks to save or remember something.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          content: { type: "string", description: "Full markdown content" },
+        },
+        required: ["title", "content"],
+      },
+    },
+    async run(args) {
+      const page = await commitWikiPage({
+        title: str(args.title) ?? "",
+        content: str(args.content) ?? "",
+      });
+      return { response: { page }, label: `Saved wiki page “${page.title}”` };
+    },
+  },
+];
+
+function nowDescription(timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date());
+}
+
+function buildSystemPrompt(input: {
+  channel: AgentChannel;
+  timeZone: string;
+  googleLinked: boolean;
+  wikiConfigured: boolean;
+  wikiContext: string | null;
+  senderName?: string;
+}): string {
+  const lines = [
+    "You are the FamilyBoard home assistant for one family. Be brief, warm, and practical.",
+    `It is now ${nowDescription(input.timeZone)} (${input.timeZone}, today ${todayDateKey(input.timeZone)}). Resolve relative dates ("tomorrow", "next Tuesday") against this. Weeks start Monday.`,
+    "Use tools to act; never claim you changed the calendar, todos, or wiki unless a tool call succeeded.",
+    "Calendar: times are local wall-clock in the family timezone with no offset. If an event length is not given, assume 1 hour. To change or delete an event, call find_events first and use its eventId and calendarId. If several events match, ask which one.",
+    "Only delete an event when the user explicitly asked to remove or cancel it. If a request is ambiguous (missing day or time), ask one short question instead of guessing.",
+    "After acting, confirm in one or two sentences with the day and time.",
+  ];
+  if (!input.googleLinked) {
+    lines.push(
+      "Google is not linked, so calendar and inbox tools are unavailable. If asked, say to use Link Google on the board.",
+    );
+  }
+  if (input.channel === "signal") {
+    lines.push(
+      "You are replying over Signal: plain text only, no markdown, keep it under about 600 characters.",
+    );
+    if (input.senderName) lines.push(`The person messaging you is ${input.senderName}.`);
+  }
+  if (input.wikiConfigured) {
+    lines.push(
+      "Answer household questions (recipes, notes) from the private family wiki below. If the wiki lacks the answer, say so; do not invent private family facts.",
+      "=== FAMILY WIKI ===",
+      input.wikiContext || "(wiki is empty or unavailable)",
+      "=== END WIKI ===",
+    );
+  }
+  return lines.join("\n");
+}
+
+export async function runFamilyAgent(input: {
+  messages: GeminiMessage[];
+  redirectUri: string;
+  channel?: AgentChannel;
+  senderName?: string;
+  signal?: AbortSignal;
+}): Promise<AgentResult> {
+  const channel = input.channel ?? "board";
+  const timeZone = getDefaultTimeZone();
+  const googleLinked = Boolean((await readGoogleTokens())?.refresh_token);
+  const wikiConfigured = isWikilmGithubConfigured();
+
+  let wikiContext: string | null = null;
+  if (wikiConfigured) {
+    try {
+      wikiContext = buildWikiContext(await loadWikiPages(), WIKI_CONTEXT_BUDGET);
+    } catch {
+      wikiContext = null;
+    }
+  }
+
+  const tools = [
+    ...(googleLinked ? calendarTools : []),
+    ...todoTools,
+    ...(wikiConfigured ? wikiTools : []),
+  ];
+  const byName = new Map(tools.map((t) => [t.declaration.name, t]));
+  const system = buildSystemPrompt({
+    channel,
+    timeZone,
+    googleLinked,
+    wikiConfigured,
+    wikiContext,
+    senderName: input.senderName,
+  });
+  const ctx: ToolContext = { redirectUri: input.redirectUri, timeZone };
+  const contents: GeminiContent[] = toGeminiContents(input.messages);
+  const actions: AgentAction[] = [];
+
+  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    const lastRound = round === MAX_TOOL_ROUNDS;
+    const turn = await generateGeminiContent({
+      system,
+      contents,
+      tools: tools.map((t) => t.declaration),
+      toolMode: lastRound ? "NONE" : "AUTO",
+      signal: input.signal,
+    });
+    contents.push(turn);
+
+    const calls = turn.parts.filter((p) => p.functionCall?.name);
+    if (calls.length === 0 || lastRound) {
+      const reply =
+        textFromParts(turn.parts) ||
+        (actions.length ? "Done." : "Sorry, I didn't get a reply. Try again?");
+      return { reply, actions };
+    }
+
+    const responses: GeminiPart[] = [];
+    for (const part of calls) {
+      const call = part.functionCall!;
+      const tool = byName.get(call.name);
+      let response: Record<string, unknown>;
+      if (!tool) {
+        response = { error: `Tool ${call.name} is not available` };
+      } else {
+        try {
+          const outcome = await tool.run(call.args ?? {}, ctx);
+          response = outcome.response;
+          actions.push({ tool: call.name, ok: true, label: outcome.label });
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          response = { error: message };
+          actions.push({ tool: call.name, ok: false, label: `${call.name} failed: ${message}` });
+        }
+      }
+      responses.push({
+        functionResponse: {
+          ...(call.id ? { id: call.id } : {}),
+          name: call.name,
+          response,
+        },
+      });
+    }
+    contents.push({ role: "user", parts: responses });
+  }
+
+  return { reply: "Done.", actions };
+}

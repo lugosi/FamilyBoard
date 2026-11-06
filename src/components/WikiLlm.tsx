@@ -8,11 +8,17 @@ type Status = {
   geminiConfigured?: boolean;
   wikilmGithubConfigured?: boolean;
   gmailReady?: boolean;
+  inboxAutoScanMinutes?: number;
+  signalConfigured?: boolean;
 };
 
-type WikiPageMeta = { path: string; title: string; sha?: string };
+type AgentAction = { tool: string; ok: boolean; label: string };
 
-type ChatTurn = { role: "user" | "model"; content: string };
+type ChatTurn = {
+  role: "user" | "model";
+  content: string;
+  actions?: AgentAction[];
+};
 
 type GmailMessage = {
   id: string;
@@ -32,48 +38,88 @@ type FamilyTodo = {
   createdAt: string;
 };
 
+type SignalSnapshot = {
+  configured?: boolean;
+  reachable?: boolean;
+  registered?: boolean;
+  number?: string;
+  mode?: string | null;
+  allowedSenders?: string[];
+  bot?: {
+    running: boolean;
+    lastPollAt: string | null;
+    lastMessageAt: string | null;
+    lastError: string | null;
+    handled: number;
+    ignored: number;
+  };
+  error?: string;
+};
+
+const SUGGESTIONS = [
+  "What's on the calendar this week?",
+  "Add dentist for Maya next Tuesday at 3pm",
+  "Move Saturday's soccer to 10am",
+  "Check the inbox",
+];
+
+const SIGNAL_CAPTCHA_URL = "https://signalcaptchas.org/registration/generate.html";
+
+async function parseJsonSafe<T>(res: Response): Promise<T> {
+  const ct = res.headers.get("content-type") ?? "";
+  if (ct.toLowerCase().includes("application/json")) {
+    return (await res.json()) as T;
+  }
+  const text = await res.text().catch(() => "");
+  throw new Error(
+    `Non-JSON response (${res.status}). ${text.slice(0, 180).replace(/\s+/g, " ")}`,
+  );
+}
+
+function timeAgo(iso: string | null | undefined): string {
+  if (!iso) return "never";
+  const sec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (sec < 60) return `${sec}s ago`;
+  if (sec < 3600) return `${Math.round(sec / 60)}m ago`;
+  return `${Math.round(sec / 3600)}h ago`;
+}
+
 export function WikiLlm({ active = true }: { active?: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
-  const [pages, setPages] = useState<WikiPageMeta[]>([]);
   const [messages, setMessages] = useState<GmailMessage[]>([]);
   const [todos, setTodos] = useState<FamilyTodo[]>([]);
+  const [signal, setSignal] = useState<SignalSnapshot | null>(null);
   const [chat, setChat] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
-  const [saveTitle, setSaveTitle] = useState("");
-  const [saveContent, setSaveContent] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [scanNote, setScanNote] = useState<string | null>(null);
-  const loadedOnceRef = useRef(false);
+  const [note, setNote] = useState<string | null>(null);
   const [chatStatus, setChatStatus] = useState<string | null>(null);
+  const [captcha, setCaptcha] = useState("");
+  const [useVoice, setUseVoice] = useState(false);
+  const [code, setCode] = useState("");
+  const [pin, setPin] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
+  const loadedOnceRef = useRef(false);
   const chatAbortRef = useRef<AbortController | null>(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
 
-  const refresh = useCallback(async (signal?: AbortSignal) => {
+  const refresh = useCallback(async (signalArg?: AbortSignal) => {
     setError(null);
     try {
-      const statusRes = await fetch("/api/auth/status", { signal });
+      const statusRes = await fetch("/api/auth/status", { signal: signalArg });
       const statusJson = (await statusRes.json()) as Status;
-      if (signal?.aborted) return;
+      if (signalArg?.aborted) return;
       setStatus(statusJson);
 
-      const todosRes = await fetch("/api/todos", { signal });
+      const todosRes = await fetch("/api/todos", { signal: signalArg });
       if (todosRes.ok) {
         const t = (await todosRes.json()) as { todos: FamilyTodo[] };
         setTodos(t.todos ?? []);
       }
 
-      if (statusJson.wikilmGithubConfigured) {
-        const pagesRes = await fetch("/api/wiki/pages", { signal });
-        if (pagesRes.ok) {
-          const p = (await pagesRes.json()) as { pages: WikiPageMeta[] };
-          setPages(p.pages ?? []);
-        }
-      } else {
-        setPages([]);
-      }
-
       if (statusJson.gmailReady) {
-        const gmailRes = await fetch("/api/gmail", { signal });
+        const gmailRes = await fetch("/api/gmail", { signal: signalArg });
         if (gmailRes.ok) {
           const g = (await gmailRes.json()) as { messages: GmailMessage[] };
           setMessages(g.messages ?? []);
@@ -83,24 +129,18 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
       } else {
         setMessages([]);
       }
+
+      if (statusJson.signalConfigured) {
+        const signalRes = await fetch("/api/signal", { signal: signalArg });
+        setSignal(await parseJsonSafe<SignalSnapshot>(signalRes));
+      } else {
+        setSignal(null);
+      }
     } catch (e) {
-      if (signal?.aborted) return;
+      if (signalArg?.aborted) return;
       setError(e instanceof Error ? e.message : "Failed to load AI tab");
     }
   }, []);
-
-  async function parseJsonSafe<T>(res: Response): Promise<T> {
-    const ct = res.headers.get("content-type") ?? "";
-    if (ct.toLowerCase().includes("application/json")) {
-      return (await res.json()) as T;
-    }
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `Non-JSON response (${res.status}). ${text
-        .slice(0, 180)
-        .replace(/\s+/g, " ")}`,
-    );
-  }
 
   useEffect(() => {
     if (!active) return;
@@ -111,8 +151,12 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     return () => ac.abort();
   }, [active, refresh]);
 
-  async function sendChat() {
-    const text = input.trim();
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ block: "end" });
+  }, [chat, busy]);
+
+  async function sendPrompt(raw?: string) {
+    const text = (raw ?? input).trim();
     if (!text || busy) return;
     setBusy("chat");
     setError(null);
@@ -123,63 +167,43 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     const ac = new AbortController();
     chatAbortRef.current = ac;
     const statusTimer = window.setTimeout(() => {
-      setChatStatus("Gemini is busy. Retrying if needed — you can cancel.");
-    }, 1500);
+      setChatStatus("Still working (Gemini may be retrying) — you can cancel.");
+    }, 4000);
     try {
-      const res = await fetch("/api/wiki/chat", {
+      const res = await fetch("/api/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextChat }),
+        body: JSON.stringify({
+          messages: nextChat.map(({ role, content }) => ({ role, content })),
+        }),
         signal: ac.signal,
       });
-      const json = await parseJsonSafe<{ reply?: string; error?: string }>(res);
-      if (!res.ok) throw new Error(json.error || `Chat failed (${res.status})`);
-      setChat([...nextChat, { role: "model", content: json.reply || "" }]);
-      if (!saveContent && json.reply) {
-        setSaveContent(json.reply);
+      const json = await parseJsonSafe<{
+        reply?: string;
+        actions?: AgentAction[];
+        error?: string;
+      }>(res);
+      if (!res.ok) throw new Error(json.error || `Assistant failed (${res.status})`);
+      setChat([
+        ...nextChat,
+        { role: "model", content: json.reply || "", actions: json.actions ?? [] },
+      ]);
+      if (json.actions?.some((a) => a.ok && a.tool !== "find_events")) {
+        void refresh();
       }
     } catch (e) {
       if (ac.signal.aborted) {
-        setChatStatus("Chat cancelled.");
+        setChatStatus("Cancelled.");
       } else {
         setError(e instanceof Error ? e.message : "chat_error");
       }
       setChat(chat);
+      setInput(text);
     } finally {
       window.clearTimeout(statusTimer);
       chatAbortRef.current = null;
       setBusy(null);
-      setChatStatus((prev) => (prev === "Chat cancelled." ? prev : null));
-    }
-  }
-
-  function cancelChat() {
-    chatAbortRef.current?.abort();
-  }
-
-  async function savePage() {
-    if (!saveTitle.trim() || !saveContent.trim() || busy) return;
-    setBusy("save");
-    setError(null);
-    try {
-      const res = await fetch("/api/wiki/control", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "save_page",
-          title: saveTitle.trim(),
-          content: saveContent.trim(),
-        }),
-      });
-      const json = await parseJsonSafe<{ error?: string }>(res);
-      if (!res.ok) throw new Error(json.error || `Save failed (${res.status})`);
-      setSaveTitle("");
-      setSaveContent("");
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "save_error");
-    } finally {
-      setBusy(null);
+      setChatStatus((prev) => (prev === "Cancelled." ? prev : null));
     }
   }
 
@@ -187,22 +211,28 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     if (busy) return;
     setBusy("scan");
     setError(null);
-    setScanNote(null);
+    setNote(null);
     try {
       const res = await fetch("/api/gmail/control", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "scan_to_todos" }),
+        body: JSON.stringify({ action: "scan" }),
       });
       const json = await parseJsonSafe<{
         added?: FamilyTodo[];
+        events?: { summary: string; ok: boolean; error?: string }[];
         scanned?: number;
         error?: string;
       }>(res);
       if (!res.ok) throw new Error(json.error || `Scan failed (${res.status})`);
-      const n = json.added?.length ?? 0;
-      setScanNote(
-        `Scanned ${json.scanned ?? 0} message(s); added ${n} todo(s).`,
+      const todosAdded = json.added?.length ?? 0;
+      const eventsAdded = json.events?.filter((e) => e.ok).length ?? 0;
+      const failed = json.events?.filter((e) => !e.ok) ?? [];
+      setNote(
+        `Scanned ${json.scanned ?? 0} email(s): ${todosAdded} todo(s), ${eventsAdded} calendar event(s).` +
+          (failed.length
+            ? ` Could not add: ${failed.map((f) => f.summary).join(", ")}.`
+            : ""),
       );
       await refresh();
     } catch (e) {
@@ -212,10 +242,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     }
   }
 
-  async function todoAction(
-    action: "complete" | "uncomplete" | "remove",
-    id: string,
-  ) {
+  async function todoAction(action: "complete" | "uncomplete" | "remove", id: string) {
     setBusy(`todo-${id}`);
     try {
       const res = await fetch("/api/todos/control", {
@@ -235,16 +262,88 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     }
   }
 
+  async function signalAction(
+    action: "register" | "verify" | "poll_now" | "send_hello",
+    extra: Record<string, unknown> = {},
+  ) {
+    if (busy) return;
+    setBusy(`signal-${action}`);
+    setError(null);
+    setNote(null);
+    try {
+      const res = await fetch("/api/signal/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...extra }),
+      });
+      const json = await parseJsonSafe<{
+        error?: string;
+        received?: number;
+        sent?: number;
+      }>(res);
+      if (!res.ok) throw new Error(json.error || `Signal ${action} failed (${res.status})`);
+      if (action === "register") {
+        setCodeSent(true);
+        setNote(useVoice ? "Signal is calling the bot number with a code." : "Signal texted a code to the bot number.");
+      } else if (action === "verify") {
+        setCodeSent(false);
+        setCode("");
+        setPin("");
+        setCaptcha("");
+        setNote("Signal account registered. Family members on the allowlist can text it now.");
+      } else if (action === "poll_now") {
+        setNote(`Checked Signal: ${json.received ?? 0} new message(s).`);
+      } else {
+        setNote(`Sent hello to ${json.sent ?? 0} family member(s).`);
+      }
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "signal_error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const panel =
     "flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 shadow-lg shadow-slate-950/40";
+  const smallBtn =
+    "rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50";
+  const field =
+    "w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-slate-500";
+  const unprocessed = messages.filter((m) => !m.processed).length;
+  const openTodos = todos.filter((t) => !t.done);
+  const doneTodos = todos.filter((t) => t.done);
+
+  const capabilities = [
+    { label: "Calendar", on: Boolean(status?.googleLinked) },
+    { label: "Inbox", on: Boolean(status?.gmailReady) },
+    { label: "Wiki", on: Boolean(status?.wikilmGithubConfigured) },
+    { label: "Signal", on: Boolean(signal?.registered) },
+  ];
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-base text-slate-100">
       <div className="box-border flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-2 py-2 sm:px-4 sm:py-3 lg:px-6">
-        <div className="flex shrink-0 items-center justify-between gap-2">
-          <h1 className="text-lg font-bold tracking-tight text-white sm:text-xl">
-            WikiLLM
-          </h1>
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-lg font-bold tracking-tight text-white sm:text-xl">
+              WikiLLM
+            </h1>
+            <ul className="flex flex-wrap gap-1.5 text-xs" aria-label="Assistant capabilities">
+              {capabilities.map((c) => (
+                <li
+                  key={c.label}
+                  className={`rounded-full border px-2 py-0.5 ${
+                    c.on
+                      ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-200"
+                      : "border-slate-700 bg-slate-900 text-slate-500"
+                  }`}
+                >
+                  {c.label}
+                </li>
+              ))}
+            </ul>
+          </div>
           <button
             type="button"
             className="rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50"
@@ -261,155 +360,152 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
             {error}
           </p>
         ) : null}
-        {scanNote ? (
+        {note ? (
           <p className="shrink-0 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200">
-            {scanNote}
+            {note}
           </p>
         ) : null}
-        {chatStatus ? (
-          <div className="shrink-0 flex items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200">
-            <span>{chatStatus}</span>
-            {busy === "chat" ? (
-              <button
-                type="button"
-                className="rounded-md border border-slate-600 bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800"
-                onClick={cancelChat}
-              >
-                Cancel
-              </button>
-            ) : null}
-          </div>
-        ) : null}
 
-        <div className="board-scrollbar grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto lg:grid-cols-2 xl:grid-cols-3 lg:overflow-hidden">
-          {/* Chat */}
-          <section className={`${panel} p-3 sm:p-4`}>
-            <h2 className="mb-2 shrink-0 text-base font-semibold text-white">
-              Chat
-            </h2>
-            {!status?.geminiConfigured || !status?.wikilmGithubConfigured ? (
+        <div className="board-scrollbar grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)] lg:overflow-hidden">
+          {/* Prompt */}
+          <section className={`${panel} min-h-[24rem] p-3 sm:p-4`} aria-label="Assistant">
+            {!status?.geminiConfigured ? (
               <p className="text-sm text-slate-400">
-                Set <code className="text-slate-300">GEMINI_API_KEY</code>,{" "}
-                <code className="text-slate-300">WIKILM_GITHUB_REPO</code>, and{" "}
-                <code className="text-slate-300">WIKILM_GITHUB_TOKEN</code> for
-                wiki-grounded answers.
+                Set <code className="text-slate-300">GEMINI_API_KEY</code> to use
+                the family assistant. Link Google to let it read and update the
+                calendar.
               </p>
             ) : (
               <>
-                <div className="board-scrollbar mb-3 min-h-0 flex-1 space-y-2 overflow-y-auto text-sm">
+                <div className="board-scrollbar mb-3 min-h-0 flex-1 space-y-3 overflow-y-auto text-sm">
                   {chat.length === 0 ? (
-                    <p className="text-slate-500">
-                      Ask about recipes or household notes from your private
-                      GitHub wiki.
-                    </p>
+                    <div className="flex h-full flex-col justify-center gap-3 text-slate-400">
+                      <p>
+                        Ask anything, or tell it what to change. It can read and
+                        update the calendar, manage todos, process the inbox
+                        {status?.wikilmGithubConfigured ? ", and use the family wiki" : ""}.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {SUGGESTIONS.map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            className="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1.5 text-left text-xs text-slate-200 hover:border-slate-500"
+                            onClick={() => void sendPrompt(s)}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ) : (
                     chat.map((m, i) => (
                       <div
                         key={`${m.role}-${i}`}
-                        className={`rounded-lg px-3 py-2 whitespace-pre-wrap ${
-                          m.role === "user"
-                            ? "bg-slate-800 text-slate-100"
-                            : "bg-slate-950/80 text-slate-200"
-                        }`}
+                        className={m.role === "user" ? "flex justify-end" : ""}
                       >
-                        {m.content}
+                        <div
+                          className={`max-w-[90%] rounded-lg px-3 py-2 whitespace-pre-wrap ${
+                            m.role === "user"
+                              ? "bg-slate-800 text-slate-100"
+                              : "bg-slate-950/80 text-slate-200"
+                          }`}
+                        >
+                          {m.actions?.length ? (
+                            <ul className="mb-2 flex flex-wrap gap-1.5">
+                              {m.actions.map((a, j) => (
+                                <li
+                                  key={j}
+                                  className={`rounded-md border px-2 py-0.5 text-xs ${
+                                    a.ok
+                                      ? "border-sky-800/70 bg-sky-950/40 text-sky-200"
+                                      : "border-red-800/70 bg-red-950/40 text-red-200"
+                                  }`}
+                                >
+                                  {a.label}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {m.content}
+                        </div>
                       </div>
                     ))
                   )}
+                  {busy === "chat" ? (
+                    <p className="text-xs text-slate-500">Thinking…</p>
+                  ) : null}
+                  <div ref={chatEndRef} />
                 </div>
+                {chatStatus ? (
+                  <div className="mb-2 flex shrink-0 items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-xs text-slate-200">
+                    <span>{chatStatus}</span>
+                    {busy === "chat" ? (
+                      <button
+                        type="button"
+                        className="rounded-md border border-slate-600 bg-slate-900 px-2.5 py-1 font-medium text-white hover:bg-slate-800"
+                        onClick={() => chatAbortRef.current?.abort()}
+                      >
+                        Cancel
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 <form
                   className="flex shrink-0 gap-2"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    void sendChat();
+                    void sendPrompt();
                   }}
                 >
                   <input
-                    className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-slate-500"
-                    placeholder="Ask about recipes…"
+                    className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-slate-500"
+                    placeholder="e.g. Piano lessons every… / What's Saturday look like?"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     disabled={busy === "chat"}
+                    aria-label="Ask the family assistant"
                   />
+                  {chat.length > 0 && busy !== "chat" ? (
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
+                      onClick={() => {
+                        setChat([]);
+                        setChatStatus(null);
+                      }}
+                    >
+                      New
+                    </button>
+                  ) : null}
                   <button
                     type="submit"
-                    className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-900 disabled:opacity-50"
+                    className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-900 disabled:opacity-50"
                     disabled={busy === "chat" || !input.trim()}
                   >
-                    {busy === "chat" ? "Working…" : "Ask"}
+                    {busy === "chat" ? "Working…" : "Send"}
                   </button>
                 </form>
               </>
             )}
           </section>
 
-          {/* Wiki save + pages */}
-          <section className={`${panel} p-3 sm:p-4`}>
-            <h2 className="mb-2 shrink-0 text-base font-semibold text-white">
-              Wiki
-            </h2>
-            {!status?.wikilmGithubConfigured ? (
-              <p className="text-sm text-slate-400">
-                Knowledge is stored only in your private GitHub repo. Configure{" "}
-                <code className="text-slate-300">WIKILM_GITHUB_REPO</code> and{" "}
-                <code className="text-slate-300">WIKILM_GITHUB_TOKEN</code>.
-              </p>
-            ) : (
-              <>
-                <ul className="mb-3 max-h-28 shrink-0 space-y-1 overflow-y-auto text-sm text-slate-300">
-                  {pages.length === 0 ? (
-                    <li className="text-slate-500">No markdown pages yet.</li>
-                  ) : (
-                    pages.map((p) => (
-                      <li key={p.path} className="truncate" title={p.path}>
-                        {p.title}
-                      </li>
-                    ))
-                  )}
-                </ul>
-                <input
-                  className="mb-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-slate-500"
-                  placeholder="Page title"
-                  value={saveTitle}
-                  onChange={(e) => setSaveTitle(e.target.value)}
-                  disabled={Boolean(busy)}
-                />
-                <textarea
-                  className="mb-2 min-h-28 w-full flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-slate-500"
-                  placeholder="Markdown to save to GitHub…"
-                  value={saveContent}
-                  onChange={(e) => setSaveContent(e.target.value)}
-                  disabled={Boolean(busy)}
-                />
-                <button
-                  type="button"
-                  className="shrink-0 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-                  disabled={
-                    busy === "save" ||
-                    !saveTitle.trim() ||
-                    !saveContent.trim()
-                  }
-                  onClick={() => void savePage()}
-                >
-                  {busy === "save" ? "Saving…" : "Save to wiki"}
-                </button>
-              </>
-            )}
-          </section>
-
-          {/* Inbox + Todos */}
-          <section className={`${panel} gap-4 p-3 sm:p-4 lg:col-span-2 xl:col-span-1`}>
-            <div className="min-h-0 flex-1">
+          {/* Side column */}
+          <div className="board-scrollbar flex min-h-0 flex-col gap-3 lg:overflow-y-auto">
+            <section className={`${panel} shrink-0 p-3`}>
               <div className="mb-2 flex items-center justify-between gap-2">
-                <h2 className="text-base font-semibold text-white">Inbox</h2>
+                <h2 className="text-base font-semibold text-white">
+                  Inbox
+                  {unprocessed ? (
+                    <span className="ml-2 text-xs font-normal text-slate-400">
+                      {unprocessed} new
+                    </span>
+                  ) : null}
+                </h2>
                 <button
                   type="button"
-                  className="rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-                  disabled={
-                    Boolean(busy) ||
-                    !status?.gmailReady ||
-                    !status?.geminiConfigured
-                  }
+                  className={smallBtn}
+                  disabled={Boolean(busy) || !status?.gmailReady || !status?.geminiConfigured}
                   onClick={() => void scanInbox()}
                 >
                   {busy === "scan" ? "Scanning…" : "Scan inbox"}
@@ -422,59 +518,65 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 </p>
               ) : !status?.gmailReady ? (
                 <p className="text-sm text-slate-400">
-                  <a
-                    className="text-sky-300 underline"
-                    href="/api/auth/google"
-                  >
+                  <a className="text-sky-300 underline" href="/api/auth/google">
                     Link Google
                   </a>{" "}
                   to use the inbox drop-box.
                 </p>
               ) : (
-                <ul className="board-scrollbar max-h-40 space-y-2 overflow-y-auto text-sm sm:max-h-48">
-                  {messages.length === 0 ? (
-                    <li className="text-slate-500">
-                      Forward actionable mail here, then Scan inbox.
-                    </li>
-                  ) : (
-                    messages.map((m) => (
-                      <li
-                        key={m.id}
-                        className="rounded-lg border border-slate-800 bg-slate-950/50 px-2.5 py-2"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="font-medium text-slate-100">
-                            {m.subject}
-                          </span>
-                          {m.processed ? (
-                            <span className="shrink-0 text-xs text-slate-500">
-                              processed
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="truncate text-xs text-slate-400">
-                          {m.from}
-                        </div>
-                        <div className="line-clamp-2 text-xs text-slate-500">
-                          {m.snippet}
-                        </div>
+                <>
+                  <p className="mb-2 text-xs text-slate-500">
+                    Forwarded mail becomes todos and calendar events
+                    {status.inboxAutoScanMinutes
+                      ? ` · auto-scan every ${status.inboxAutoScanMinutes} min`
+                      : ""}
+                    .
+                  </p>
+                  <ul className="board-scrollbar max-h-40 space-y-2 overflow-y-auto text-sm">
+                    {messages.length === 0 ? (
+                      <li className="text-slate-500">
+                        Forward actionable mail here, then Scan inbox.
                       </li>
-                    ))
-                  )}
-                </ul>
+                    ) : (
+                      messages.slice(0, 8).map((m) => (
+                        <li
+                          key={m.id}
+                          className="rounded-lg border border-slate-800 bg-slate-950/50 px-2.5 py-1.5"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="truncate font-medium text-slate-100">
+                              {m.subject}
+                            </span>
+                            {m.processed ? (
+                              <span className="shrink-0 text-xs text-slate-500">done</span>
+                            ) : null}
+                          </div>
+                          <div className="truncate text-xs text-slate-400">{m.from}</div>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </>
               )}
-            </div>
+            </section>
 
-            <div className="min-h-0 flex-1 border-t border-slate-800 pt-3">
-              <h2 className="mb-2 text-base font-semibold text-white">Todos</h2>
-              <ul className="board-scrollbar max-h-48 space-y-2 overflow-y-auto text-sm">
+            <section className={`${panel} shrink-0 p-3`}>
+              <h2 className="mb-2 text-base font-semibold text-white">
+                Todos
+                {openTodos.length ? (
+                  <span className="ml-2 text-xs font-normal text-slate-400">
+                    {openTodos.length} open
+                  </span>
+                ) : null}
+              </h2>
+              <ul className="board-scrollbar max-h-56 space-y-1.5 overflow-y-auto text-sm">
                 {todos.length === 0 ? (
                   <li className="text-slate-500">No todos yet.</li>
                 ) : (
-                  todos.map((t) => (
+                  [...openTodos, ...doneTodos].map((t) => (
                     <li
                       key={t.id}
-                      className="flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-950/50 px-2.5 py-2"
+                      className="flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-950/50 px-2.5 py-1.5"
                     >
                       <input
                         type="checkbox"
@@ -482,10 +584,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                         checked={t.done}
                         disabled={busy === `todo-${t.id}`}
                         onChange={() =>
-                          void todoAction(
-                            t.done ? "uncomplete" : "complete",
-                            t.id,
-                          )
+                          void todoAction(t.done ? "uncomplete" : "complete", t.id)
                         }
                         aria-label={t.done ? "Mark incomplete" : "Mark complete"}
                       />
@@ -499,9 +598,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                           <div className="text-xs text-slate-400">{t.notes}</div>
                         ) : null}
                         {t.dueHint ? (
-                          <div className="text-xs text-slate-500">
-                            Due hint: {t.dueHint}
-                          </div>
+                          <div className="text-xs text-slate-500">Due: {t.dueHint}</div>
                         ) : null}
                       </div>
                       <button
@@ -516,8 +613,164 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                   ))
                 )}
               </ul>
-            </div>
-          </section>
+            </section>
+
+            <section className={`${panel} shrink-0 p-3`} aria-label="Signal">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h2 className="text-base font-semibold text-white">Signal</h2>
+                {signal?.registered ? (
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      className={smallBtn}
+                      disabled={Boolean(busy)}
+                      onClick={() => void signalAction("poll_now")}
+                    >
+                      {busy === "signal-poll_now" ? "Checking…" : "Check now"}
+                    </button>
+                    <button
+                      type="button"
+                      className={smallBtn}
+                      disabled={Boolean(busy) || !signal.allowedSenders?.length}
+                      onClick={() => void signalAction("send_hello")}
+                    >
+                      {busy === "signal-send_hello" ? "Sending…" : "Say hello"}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+              {!status?.signalConfigured ? (
+                <p className="text-sm text-slate-400">
+                  Text the assistant from Signal. Run{" "}
+                  <code className="text-slate-300">signal-cli-rest-api</code> on
+                  TrueNAS, then set{" "}
+                  <code className="text-slate-300">SIGNAL_API_URL</code>,{" "}
+                  <code className="text-slate-300">SIGNAL_NUMBER</code>, and{" "}
+                  <code className="text-slate-300">SIGNAL_ALLOWED_SENDERS</code>{" "}
+                  (see docs/SIGNAL_SETUP.md).
+                </p>
+              ) : !signal ? (
+                <p className="text-sm text-slate-500">Loading…</p>
+              ) : !signal.reachable ? (
+                <p className="text-sm text-amber-200">
+                  {signal.error ?? "Signal API unreachable."}
+                </p>
+              ) : signal.registered ? (
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                  <dt className="text-slate-500">Number</dt>
+                  <dd className="tabular-nums text-slate-200">{signal.number}</dd>
+                  <dt className="text-slate-500">Family</dt>
+                  <dd className="text-slate-200">
+                    {signal.allowedSenders?.length ? (
+                      signal.allowedSenders.join(", ")
+                    ) : (
+                      <span className="text-amber-200">
+                        No one allowed — set SIGNAL_ALLOWED_SENDERS
+                      </span>
+                    )}
+                  </dd>
+                  <dt className="text-slate-500">Listening</dt>
+                  <dd className="text-slate-200">
+                    {signal.bot?.running
+                      ? `yes · polled ${timeAgo(signal.bot.lastPollAt)}`
+                      : "no (restart the app)"}
+                  </dd>
+                  <dt className="text-slate-500">Replies</dt>
+                  <dd className="tabular-nums text-slate-200">
+                    {signal.bot?.handled ?? 0}
+                    {signal.bot?.lastMessageAt
+                      ? ` · last ${timeAgo(signal.bot.lastMessageAt)}`
+                      : ""}
+                  </dd>
+                  {signal.bot?.lastError ? (
+                    <>
+                      <dt className="text-slate-500">Error</dt>
+                      <dd className="text-amber-200">{signal.bot.lastError}</dd>
+                    </>
+                  ) : null}
+                </dl>
+              ) : !codeSent ? (
+                <form
+                  className="space-y-2 text-sm"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void signalAction("register", { captcha, useVoice });
+                  }}
+                >
+                  <p className="text-slate-400">
+                    Register <span className="tabular-nums text-slate-200">{signal.number}</span>{" "}
+                    as the family bot. Solve the{" "}
+                    <a
+                      className="text-sky-300 underline"
+                      href={SIGNAL_CAPTCHA_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Signal captcha
+                    </a>
+                    , then copy the “Open Signal” link and paste it here.
+                  </p>
+                  <input
+                    className={field}
+                    placeholder="signalcaptcha://…"
+                    value={captcha}
+                    onChange={(e) => setCaptcha(e.target.value)}
+                    disabled={Boolean(busy)}
+                  />
+                  <label className="flex items-center gap-2 text-xs text-slate-400">
+                    <input
+                      type="checkbox"
+                      checked={useVoice}
+                      onChange={(e) => setUseVoice(e.target.checked)}
+                    />
+                    Call with the code instead of SMS (landlines)
+                  </label>
+                  <button type="submit" className={smallBtn} disabled={Boolean(busy) || !captcha.trim()}>
+                    {busy === "signal-register" ? "Requesting…" : "Send code"}
+                  </button>
+                </form>
+              ) : (
+                <form
+                  className="space-y-2 text-sm"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void signalAction("verify", { code, pin });
+                  }}
+                >
+                  <p className="text-slate-400">
+                    Enter the code Signal sent to {signal.number}.
+                  </p>
+                  <input
+                    className={`${field} tabular-nums`}
+                    placeholder="123-456"
+                    inputMode="numeric"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    disabled={Boolean(busy)}
+                  />
+                  <input
+                    className={field}
+                    placeholder="Registration lock PIN (only if set)"
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value)}
+                    disabled={Boolean(busy)}
+                  />
+                  <div className="flex gap-2">
+                    <button type="submit" className={smallBtn} disabled={Boolean(busy) || !code.trim()}>
+                      {busy === "signal-verify" ? "Verifying…" : "Verify"}
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs text-slate-500 hover:text-slate-300"
+                      onClick={() => setCodeSent(false)}
+                    >
+                      Start over
+                    </button>
+                  </div>
+                </form>
+              )}
+            </section>
+          </div>
         </div>
       </div>
     </div>
