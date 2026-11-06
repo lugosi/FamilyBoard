@@ -198,6 +198,12 @@ async function main() {
   }
   await check("GET /api/gmail", "/api/gmail", gmailAllowed);
 
+  // 502 = SIGNAL_* set but the signal-cli-rest-api container is unreachable.
+  const signalOk = statusBody.signalConfigured
+    ? new Set([200, 502])
+    : new Set([501]);
+  await check("GET /api/signal", "/api/signal", signalOk);
+
   printAndExit();
 }
 
