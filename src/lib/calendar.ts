@@ -1,6 +1,5 @@
 import {
   getCalendarClient,
-  getDefaultCalendarId,
   getDefaultTimeZone,
   getOAuth2WithRefresh,
 } from "./google";
@@ -141,9 +140,23 @@ async function client(redirectUri: string) {
   return getCalendarClient(auth);
 }
 
-function resolveCalendarId(id?: string): string {
+/**
+ * Where new events go when the user names no calendar. Must match Board's
+ * `pickDefaultCalendarId` (prefers "berkeley") or agent-created events won't show on the board.
+ */
+export async function resolveDefaultCalendarId(redirectUri: string): Promise<string> {
+  const explicit = process.env.GOOGLE_CALENDAR_ID?.trim();
+  if (explicit) return explicit;
+  const calendars = await listCalendars(redirectUri);
+  const berkeley = calendars.find(
+    (c) => c.writable && c.summary.trim().toLowerCase() === "berkeley",
+  );
+  return berkeley?.id ?? calendars.find((c) => c.primary)?.id ?? "primary";
+}
+
+async function resolveCalendarId(redirectUri: string, id?: string): Promise<string> {
   const trimmed = id?.trim();
-  if (!trimmed || trimmed === "__all__") return getDefaultCalendarId();
+  if (!trimmed || trimmed === "__all__") return resolveDefaultCalendarId(redirectUri);
   return trimmed;
 }
 
@@ -219,7 +232,7 @@ export async function createCalendarEvent(
   if (!summary) throw new Error("summary is required");
   const tz = getDefaultTimeZone();
   const times = buildTimes(input, tz, true);
-  const calendarId = resolveCalendarId(input.calendarId);
+  const calendarId = await resolveCalendarId(redirectUri, input.calendarId);
   const calendar = await client(redirectUri);
   const created = await calendar.events.insert({
     calendarId,
@@ -262,7 +275,7 @@ export async function updateCalendarEvent(
   if (Object.keys(patch).length === 0) {
     throw new Error("Nothing to update");
   }
-  const calendarId = resolveCalendarId(input.calendarId);
+  const calendarId = await resolveCalendarId(redirectUri, input.calendarId);
   const calendar = await client(redirectUri);
   const updated = await calendar.events.patch({
     calendarId,
@@ -283,7 +296,7 @@ export async function deleteCalendarEvent(
   input: { eventId: string; calendarId?: string },
 ) {
   if (!input.eventId?.trim()) throw new Error("eventId is required");
-  const calendarId = resolveCalendarId(input.calendarId);
+  const calendarId = await resolveCalendarId(redirectUri, input.calendarId);
   const calendar = await client(redirectUri);
   await calendar.events.delete({ calendarId, eventId: input.eventId.trim() });
   return { id: input.eventId, calendarId };

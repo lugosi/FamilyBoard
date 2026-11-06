@@ -198,6 +198,7 @@ export function startSignalBot(): boolean {
 export function wakeSignalBot(): void {
   const b = bot();
   if (!b.state.running || !b.loop) return;
+  if (b.state.lastError?.startsWith("Poll:")) b.state.lastError = null;
   b.wakeRequested = true;
   if (b.inLoop) return;
   if (b.timer) clearTimeout(b.timer);

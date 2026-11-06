@@ -13,10 +13,11 @@ import {
   deleteCalendarEvent,
   listCalendars,
   listEventsInRange,
+  resolveDefaultCalendarId,
   todayDateKey,
   updateCalendarEvent,
 } from "./calendar";
-import { getDefaultCalendarId, getDefaultTimeZone, readGoogleTokens } from "./google";
+import { getDefaultTimeZone, readGoogleTokens } from "./google";
 import { scanInboxToTodos } from "./gmail";
 import { addTodo, listTodos, setTodoDone } from "./todos";
 import {
@@ -114,7 +115,10 @@ const calendarTools: Tool[] = [
     async run(_args, ctx) {
       const calendars = await listCalendars(ctx.redirectUri);
       return {
-        response: { calendars, defaultCalendarId: getDefaultCalendarId() },
+        response: {
+          calendars,
+          defaultCalendarId: await resolveDefaultCalendarId(ctx.redirectUri),
+        },
         label: `Listed ${calendars.length} calendar(s)`,
       };
     },
