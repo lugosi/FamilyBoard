@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
+import { WikiBrowser } from "@/components/WikiBrowser";
 
 type Status = {
   googleLinked?: boolean;
@@ -60,6 +61,35 @@ const SUGGESTIONS = [
   "Move Saturday's soccer to 10am",
   "Check the inbox",
 ];
+const WIKI_SUGGESTIONS = ["Remember that Maya's shoe size is 2", "What's the Wi-Fi password?"];
+
+type AiView = "chat" | "wiki";
+
+const VIEW_STORAGE_KEY = "familyboard-ai-view";
+const WIKI_WRITE_TOOLS = new Set([
+  "create_wiki_page",
+  "edit_wiki_section",
+  "rewrite_wiki_page",
+  "move_wiki_page",
+  "delete_wiki_page",
+]);
+
+function parseView(raw: string | null | undefined): AiView | null {
+  return raw === "chat" || raw === "wiki" ? raw : null;
+}
+
+// Same rule as AppShell: query wins, else localStorage; never rewrite the URL.
+function readInitialView(): AiView {
+  try {
+    const fromQuery = parseView(new URLSearchParams(window.location.search).get("view"));
+    if (fromQuery) return fromQuery;
+    return parseView(localStorage.getItem(VIEW_STORAGE_KEY)) ?? "chat";
+  } catch {
+    return "chat";
+  }
+}
+
+const subscribeNoop = () => () => {};
 
 async function parseJsonSafe<T>(res: Response): Promise<T> {
   const ct = res.headers.get("content-type") ?? "";
@@ -91,6 +121,10 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [chatStatus, setChatStatus] = useState<string | null>(null);
+  const initialView = useSyncExternalStore(subscribeNoop, readInitialView, () => null);
+  const [pickedView, setPickedView] = useState<AiView | null>(null);
+  const view: AiView = pickedView ?? initialView ?? "chat";
+  const [wikiRefreshKey, setWikiRefreshKey] = useState(0);
   const loadedOnceRef = useRef(false);
   const chatAbortRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -179,7 +213,14 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         ...nextChat,
         { role: "model", content: json.reply || "", actions: json.actions ?? [] },
       ]);
-      if (json.actions?.some((a) => a.ok && a.tool !== "find_events")) {
+      if (json.actions?.some((a) => a.ok && WIKI_WRITE_TOOLS.has(a.tool))) {
+        setWikiRefreshKey((k) => k + 1);
+      }
+      if (
+        json.actions?.some(
+          (a) => a.ok && !a.tool.includes("wiki") && a.tool !== "find_events",
+        )
+      ) {
         void refresh();
       }
     } catch (e) {
@@ -315,8 +356,44 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
 
         <div className="board-scrollbar grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)] lg:overflow-hidden">
           {/* Prompt */}
-          <section className={`${panel} min-h-[24rem] p-3 sm:p-4`} aria-label="Assistant">
-            {!status?.geminiConfigured ? (
+          <section
+            className={`${panel} min-h-[24rem] p-3 sm:p-4`}
+            aria-label={view === "wiki" ? "Family wiki" : "Assistant"}
+          >
+            <div
+              role="tablist"
+              aria-label="Assistant view"
+              className="mb-3 flex shrink-0 gap-0.5 self-start rounded-lg border border-slate-800 bg-slate-950/60 p-0.5 text-sm"
+            >
+              {(["chat", "wiki"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === v}
+                  className={`rounded-md px-3 py-1 font-medium ${
+                    view === v ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                  onClick={() => {
+                    setPickedView(v);
+                    try {
+                      localStorage.setItem(VIEW_STORAGE_KEY, v);
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                >
+                  {v === "chat" ? "Chat" : "Wiki"}
+                </button>
+              ))}
+            </div>
+            {view === "wiki" ? (
+              <WikiBrowser
+                active={active && view === "wiki"}
+                configured={Boolean(status?.wikilmGithubConfigured)}
+                refreshKey={wikiRefreshKey}
+              />
+            ) : !status?.geminiConfigured ? (
               <p className="text-sm text-slate-400">
                 Set <code className="text-slate-300">GEMINI_API_KEY</code> to use
                 the family assistant. Link Google to let it read and update the
@@ -330,10 +407,13 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                       <p>
                         Ask anything, or tell it what to change. It can read and
                         update the calendar, manage todos, process the inbox
-                        {status?.wikilmGithubConfigured ? ", and use the family wiki" : ""}.
+                        {status?.wikilmGithubConfigured
+                          ? ", and remember things in the family wiki (people, house, school, health…)"
+                          : ""}
+                        .
                       </p>
                       <div className="flex flex-wrap gap-2">
-                        {SUGGESTIONS.map((s) => (
+                        {[...SUGGESTIONS, ...(status?.wikilmGithubConfigured ? WIKI_SUGGESTIONS : [])].map((s) => (
                           <button
                             key={s}
                             type="button"

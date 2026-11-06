@@ -1,7 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+const linkClass = "text-sky-300 underline underline-offset-2 hover:text-sky-200";
 
 const components: Components = {
   p: ({ children }) => <p className="my-1.5 first:mt-0 last:mb-0">{children}</p>,
@@ -26,7 +29,7 @@ const components: Components = {
   ol: ({ children }) => <ol className="my-1.5 list-decimal space-y-0.5 pl-5 marker:text-slate-500">{children}</ol>,
   li: ({ children }) => <li className="pl-0.5">{children}</li>,
   a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noreferrer" className="text-sky-300 underline underline-offset-2 hover:text-sky-200">
+    <a href={href} target="_blank" rel="noreferrer" className={linkClass}>
       {children}
     </a>
   ),
@@ -59,11 +62,41 @@ const components: Components = {
   ),
 };
 
-/** Assistant replies: GitHub-flavored Markdown, no raw HTML. */
-export function ChatMarkdown({ children }: { children: string }) {
+/**
+ * GitHub-flavored Markdown with no raw HTML. `onRelativeLink` receives links
+ * without a scheme (e.g. wiki cross-links like `../people/maya.md`).
+ */
+export function ChatMarkdown({
+  children,
+  onRelativeLink,
+}: {
+  children: string;
+  onRelativeLink?: (href: string) => void;
+}) {
+  const merged = useMemo<Components>(() => {
+    if (!onRelativeLink) return components;
+    return {
+      ...components,
+      a: ({ href, children: label }) =>
+        href && !/^[a-z][a-z0-9+.-]*:|^\/\/|^#/i.test(href) ? (
+          <button
+            type="button"
+            className={`${linkClass} cursor-pointer`}
+            onClick={() => onRelativeLink(href)}
+          >
+            {label}
+          </button>
+        ) : (
+          <a href={href} target="_blank" rel="noreferrer" className={linkClass}>
+            {label}
+          </a>
+        ),
+    };
+  }, [onRelativeLink]);
+
   return (
     <div className="break-words leading-relaxed">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={merged}>
         {children}
       </ReactMarkdown>
     </div>

@@ -20,15 +20,12 @@ import {
 import { getDefaultTimeZone, readGoogleTokens } from "./google";
 import { scanInboxToTodos } from "./gmail";
 import { addTodo, listTodos, setTodoDone } from "./todos";
-import {
-  buildWikiContext,
-  commitWikiPage,
-  isWikilmGithubConfigured,
-  loadWikiPages,
-} from "./wikilm-github";
+import { wikiTools } from "./agent-wiki-tools";
+import { buildWikiIndex, WIKI_CATEGORIES } from "./wiki-format";
+import { isWikilmGithubConfigured, listWikiPages } from "./wikilm-github";
 
-const MAX_TOOL_ROUNDS = 6;
-const WIKI_CONTEXT_BUDGET = 60_000;
+const MAX_TOOL_ROUNDS = 8;
+const WIKI_INDEX_BUDGET = 12_000;
 
 export type AgentChannel = "board" | "slack";
 
@@ -43,9 +40,11 @@ export type AgentResult = {
   actions: AgentAction[];
 };
 
-type ToolContext = {
+export type AgentToolContext = {
   redirectUri: string;
   timeZone: string;
+  /** Wiki pages read during this request (lowercased path key → exact path + sha). */
+  wikiReads: Map<string, { path: string; sha: string }>;
 };
 
 type ToolOutcome = {
@@ -53,10 +52,13 @@ type ToolOutcome = {
   label: string;
 };
 
-type Tool = {
+export type AgentTool = {
   declaration: GeminiFunctionDeclaration;
-  run: (args: Record<string, unknown>, ctx: ToolContext) => Promise<ToolOutcome>;
+  run: (args: Record<string, unknown>, ctx: AgentToolContext) => Promise<ToolOutcome>;
 };
+
+type Tool = AgentTool;
+type ToolContext = AgentToolContext;
 
 const str = (v: unknown): string | undefined =>
   typeof v === "string" && v.trim() ? v.trim() : undefined;
@@ -338,31 +340,6 @@ const todoTools: Tool[] = [
   },
 ];
 
-const wikiTools: Tool[] = [
-  {
-    declaration: {
-      name: "save_wiki_page",
-      description:
-        "Save or overwrite a markdown page in the private family wiki (recipes, household notes). Only when the user asks to save or remember something.",
-      parameters: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          content: { type: "string", description: "Full markdown content" },
-        },
-        required: ["title", "content"],
-      },
-    },
-    async run(args) {
-      const page = await commitWikiPage({
-        title: str(args.title) ?? "",
-        content: str(args.content) ?? "",
-      });
-      return { response: { page }, label: `Saved wiki page “${page.title}”` };
-    },
-  },
-];
-
 function nowDescription(timeZone: string): string {
   return new Intl.DateTimeFormat("en-US", {
     timeZone,
@@ -380,13 +357,14 @@ function buildSystemPrompt(input: {
   timeZone: string;
   googleLinked: boolean;
   wikiConfigured: boolean;
-  wikiContext: string | null;
+  wikiIndex: string | null;
   senderName?: string;
 }): string {
   const lines = [
     "You are the FamilyBoard home assistant for one family. Be brief, warm, and practical.",
     `It is now ${nowDescription(input.timeZone)} (${input.timeZone}, today ${todayDateKey(input.timeZone)}). Resolve relative dates ("tomorrow", "next Tuesday") against this. Weeks start Monday.`,
     "Use tools to act; never claim you changed the calendar, todos, or wiki unless a tool call succeeded.",
+    "Todos are short-term tasks; the wiki is long-term family knowledge. Don't mix them up.",
     "Calendar: times are local wall-clock in the family timezone with no offset. If an event length is not given, assume 1 hour. To change or delete an event, call find_events first and use its eventId and calendarId. If several events match, ask which one.",
     "Only delete an event when the user explicitly asked to remove or cancel it. If a request is ambiguous (missing day or time), ask one short question instead of guessing.",
     "After acting, confirm in one or two sentences with the day and time.",
@@ -405,10 +383,14 @@ function buildSystemPrompt(input: {
   }
   if (input.wikiConfigured) {
     lines.push(
-      "Answer household questions (recipes, notes) from the private family wiki below. If the wiki lacks the answer, say so; do not invent private family facts.",
-      "=== FAMILY WIKI ===",
-      input.wikiContext || "(wiki is empty or unavailable)",
-      "=== END WIKI ===",
+      "Family wiki: private markdown pages holding anything worth remembering (people, house, school, health, travel, recipes, notes). Folders:",
+      ...WIKI_CATEGORIES.map((c) => `  ${c.id}/ — ${c.hint}`),
+      "The index below lists every page as \"path — title: summary [tags]\". It has no page contents: call read_wiki_page before answering from a page, and search_wiki when the index doesn't point to an obvious page. If the wiki doesn't have the answer, say so; never invent private family facts.",
+      "Save to the wiki only when someone asks you to save, remember, or note something, or agrees when you offer. Look for an existing page on that topic first (e.g. the person's page) and add to it with edit_wiki_section: mode append under the fitting heading, or replace to correct a section. Otherwise create_wiki_page in the best folder with a one-line summary, a few tags, and ## sections. Prefer one page per person or topic over many tiny pages.",
+      "Use rewrite_wiki_page only to restructure a page you read in this request. Move or delete pages only when explicitly asked. After saving, say which page you changed.",
+      "=== WIKI INDEX ===",
+      input.wikiIndex || "(wiki unavailable right now; tools may still work)",
+      "=== END WIKI INDEX ===",
     );
   }
   return lines.join("\n");
@@ -426,12 +408,12 @@ export async function runFamilyAgent(input: {
   const googleLinked = Boolean((await readGoogleTokens())?.refresh_token);
   const wikiConfigured = isWikilmGithubConfigured();
 
-  let wikiContext: string | null = null;
+  let wikiIndex: string | null = null;
   if (wikiConfigured) {
     try {
-      wikiContext = buildWikiContext(await loadWikiPages(), WIKI_CONTEXT_BUDGET);
+      wikiIndex = buildWikiIndex(await listWikiPages(), WIKI_INDEX_BUDGET);
     } catch {
-      wikiContext = null;
+      wikiIndex = null;
     }
   }
 
@@ -446,10 +428,10 @@ export async function runFamilyAgent(input: {
     timeZone,
     googleLinked,
     wikiConfigured,
-    wikiContext,
+    wikiIndex,
     senderName: input.senderName,
   });
-  const ctx: ToolContext = { redirectUri: input.redirectUri, timeZone };
+  const ctx: ToolContext = { redirectUri: input.redirectUri, timeZone, wikiReads: new Map() };
   const contents: GeminiContent[] = toGeminiContents(input.messages);
   const actions: AgentAction[] = [];
 
