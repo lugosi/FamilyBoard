@@ -2,6 +2,8 @@ import { getDefaultTimeZone } from "./google";
 import {
   categoryOf,
   composeNewPage,
+  composeSkillPage,
+  SKILLS_FOLDER,
   slugify,
   editSection,
   existingWikiPath,
@@ -410,6 +412,48 @@ export async function saveWikiPageRaw(input: {
     : newWikiPath(input.path, cfg.basePath);
   const content = withChanges(input.content, { updated: todayInFamilyZone() });
   return putFile(cfg, rel, content, input.sha, `wiki: ${input.sha ? "edit" : "add"} ${rel}`);
+}
+
+/** Save a reusable skill page under skills/; replacing an existing skill must be explicit. */
+export async function saveSkill(input: {
+  name: string;
+  whenToUse: string;
+  inputs?: string;
+  steps: string[];
+  notes?: string;
+  tags?: string[];
+  replaceExisting?: boolean;
+}): Promise<{ page: WikiPage; replaced: boolean }> {
+  const cfg = requireConfig();
+  let content: string;
+  try {
+    content = composeSkillPage({ ...input, updated: todayInFamilyZone() });
+  } catch (e) {
+    throw new WikiError("invalid", e instanceof Error ? e.message : String(e));
+  }
+  const squash = (s: string) => slugify(s).replace(/-/g, "");
+  const twin = (await loadWikiPages()).find(
+    (p) =>
+      p.category === SKILLS_FOLDER &&
+      (squash(p.title) === squash(input.name) ||
+        squash(p.path.split("/").pop()!.replace(/\.md$/i, "")) === squash(input.name)),
+  );
+  const rel = twin?.path ?? pathForNewPage(SKILLS_FOLDER, input.name);
+  const existing = await fetchPage(cfg, rel);
+  if (existing && !input.replaceExisting) {
+    throw new WikiError(
+      "exists",
+      `A skill named “${existing.title}” already exists (${rel}). Ask whether to replace it, then call save_skill with replaceExisting.`,
+    );
+  }
+  const page = await putFile(
+    cfg,
+    rel,
+    content,
+    existing?.sha,
+    `skill: ${existing ? "update" : "add"} ${rel}`,
+  );
+  return { page, replaced: Boolean(existing) };
 }
 
 export async function moveWikiPage(input: { path: string; newPath: string }): Promise<WikiPage> {

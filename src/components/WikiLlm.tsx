@@ -16,11 +16,22 @@ type Status = {
 
 type AgentAction = { tool: string; ok: boolean; label: string };
 
+type ChatAttachment = {
+  name: string;
+  kind: "sheet" | "text";
+  summary: string;
+  text: string;
+  truncated?: boolean;
+};
+
 type ChatTurn = {
   role: "user" | "model";
   content: string;
   actions?: AgentAction[];
+  attachments?: ChatAttachment[];
 };
+
+type SkillMeta = { path: string; title: string; summary: string; category: string };
 
 type GmailMessage = {
   id: string;
@@ -72,7 +83,29 @@ const WIKI_WRITE_TOOLS = new Set([
   "rewrite_wiki_page",
   "move_wiki_page",
   "delete_wiki_page",
+  "save_skill",
 ]);
+const ATTACH_ACCEPT = ".csv,.tsv,.xlsx,.xlsm,.txt,.md,.json,.ics,text/*";
+
+function AttachmentChip({ a, onRemove }: { a: ChatAttachment; onRemove?: () => void }) {
+  return (
+    <li className="flex max-w-full items-center gap-1.5 rounded-md border border-emerald-800/60 bg-emerald-950/30 px-2 py-0.5 text-xs text-emerald-100">
+      <span className="font-medium">{a.kind === "sheet" ? "Sheet" : "File"}</span>
+      <span className="truncate">{a.name}</span>
+      <span className="shrink-0 text-emerald-300/70">· {a.summary}</span>
+      {onRemove ? (
+        <button
+          type="button"
+          className="ml-0.5 shrink-0 text-emerald-300 hover:text-white"
+          onClick={onRemove}
+          aria-label={`Remove ${a.name}`}
+        >
+          ×
+        </button>
+      ) : null}
+    </li>
+  );
+}
 
 function parseView(raw: string | null | undefined): AiView | null {
   return raw === "chat" || raw === "wiki" ? raw : null;
@@ -117,6 +150,12 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   const [slack, setSlack] = useState<SlackSnapshot | null>(null);
   const [chat, setChat] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
+  const [pending, setPending] = useState<ChatAttachment[]>([]);
+  const [skills, setSkills] = useState<SkillMeta[]>([]);
+  const [skillForm, setSkillForm] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const promptRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -155,6 +194,16 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         setMessages([]);
       }
 
+      if (statusJson.wikilmGithubConfigured) {
+        const wikiRes = await fetch("/api/wiki/pages", { signal: signalArg });
+        if (wikiRes.ok) {
+          const w = (await wikiRes.json()) as { pages: SkillMeta[] };
+          setSkills((w.pages ?? []).filter((p) => p.category === "skills"));
+        }
+      } else {
+        setSkills([]);
+      }
+
       if (statusJson.slackConfigured) {
         const slackRes = await fetch("/api/slack", { signal: signalArg });
         setSlack(await parseJsonSafe<SlackSnapshot>(slackRes));
@@ -180,15 +229,47 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     chatEndRef.current?.scrollIntoView({ block: "end" });
   }, [chat, busy]);
 
+  async function attachFiles(files: FileList | File[]) {
+    const list = Array.from(files);
+    if (!list.length || busy) return;
+    if (pending.length + list.length > 3) {
+      setError("Attach up to 3 files per message.");
+      return;
+    }
+    setBusy("attach");
+    setError(null);
+    try {
+      const form = new FormData();
+      for (const f of list) form.append("file", f);
+      const res = await fetch("/api/agent/attachments", { method: "POST", body: form });
+      const json = await parseJsonSafe<{ attachments?: ChatAttachment[]; errors?: string[]; error?: string }>(res);
+      if (!res.ok) throw new Error(json.error || `Upload failed (${res.status})`);
+      setPending((prev) => [...prev, ...(json.attachments ?? [])]);
+      if (json.errors?.length) setError(json.errors.join(" "));
+      promptRef.current?.focus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "upload_error");
+    } finally {
+      setBusy(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   async function sendPrompt(raw?: string) {
     const text = (raw ?? input).trim();
-    if (!text || busy) return;
+    const files = raw === undefined ? pending : [];
+    if ((!text && !files.length) || busy) return;
     setBusy("chat");
     setError(null);
     setChatStatus(null);
-    const nextChat: ChatTurn[] = [...chat, { role: "user", content: text }];
+    setSkillForm(null);
+    const nextChat: ChatTurn[] = [
+      ...chat,
+      { role: "user", content: text, ...(files.length ? { attachments: files } : {}) },
+    ];
     setChat(nextChat);
     setInput("");
+    if (files.length) setPending([]);
     const ac = new AbortController();
     chatAbortRef.current = ac;
     const statusTimer = window.setTimeout(() => {
@@ -199,7 +280,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: nextChat.map(({ role, content }) => ({ role, content })),
+          messages: nextChat.map(({ role, content, attachments }) => ({ role, content, attachments })),
         }),
         signal: ac.signal,
       });
@@ -231,6 +312,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
       }
       setChat(chat);
       setInput(text);
+      if (files.length) setPending(files);
     } finally {
       window.clearTimeout(statusTimer);
       chatAbortRef.current = null;
@@ -357,9 +439,28 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         <div className="board-scrollbar grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)] lg:overflow-hidden">
           {/* Prompt */}
           <section
-            className={`${panel} min-h-[24rem] p-3 sm:p-4`}
+            className={`${panel} relative min-h-[24rem] p-3 sm:p-4`}
             aria-label={view === "wiki" ? "Family wiki" : "Assistant"}
+            onDragOver={(e) => {
+              if (view !== "chat" || !status?.geminiConfigured || !e.dataTransfer.types.includes("Files")) return;
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+            }}
+            onDrop={(e) => {
+              if (view !== "chat" || !e.dataTransfer.files.length) return;
+              e.preventDefault();
+              setDragging(false);
+              void attachFiles(e.dataTransfer.files);
+            }}
           >
+            {dragging ? (
+              <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-emerald-600/70 bg-slate-950/80 text-sm text-emerald-100">
+                Drop a spreadsheet or text file to attach it
+              </div>
+            ) : null}
             <div
               role="tablist"
               aria-label="Assistant view"
@@ -424,6 +525,33 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                           </button>
                         ))}
                       </div>
+                      {skills.length ? (
+                        <div>
+                          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Your skills
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {skills.map((sk) => (
+                              <button
+                                key={sk.path}
+                                type="button"
+                                title={sk.summary}
+                                className="rounded-full border border-emerald-800/60 bg-emerald-950/30 px-3 py-1.5 text-left text-xs text-emerald-100 hover:border-emerald-600"
+                                onClick={() => {
+                                  setInput(`Use the “${sk.title}” skill`);
+                                  promptRef.current?.focus();
+                                }}
+                              >
+                                {sk.title}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      <p className="text-xs text-slate-500">
+                        Attach a spreadsheet (.xlsx, .csv) or paste a Google Sheet link, explain what to do
+                        with it, then save the conversation as a skill to rerun it next time.
+                      </p>
                     </div>
                   ) : (
                     chat.map((m, i) => (
@@ -451,6 +579,13 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                                 >
                                   {a.label}
                                 </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {m.attachments?.length ? (
+                            <ul className="mb-1.5 flex flex-wrap justify-end gap-1.5 whitespace-normal">
+                              {m.attachments.map((a, j) => (
+                                <AttachmentChip key={j} a={a} />
                               ))}
                             </ul>
                           ) : null}
@@ -482,6 +617,55 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                     ) : null}
                   </div>
                 ) : null}
+                {skillForm !== null ? (
+                  <form
+                    className="mb-2 flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-emerald-800/60 bg-emerald-950/20 px-3 py-2 text-xs"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const name = skillForm.trim();
+                      void sendPrompt(
+                        `Save what we just did as a reusable skill${name ? ` called “${name}”` : ""}. Generalize it so it works next time with new data.`,
+                      );
+                    }}
+                  >
+                    <label htmlFor="skill-name" className="text-emerald-100">
+                      Save this conversation as a skill
+                    </label>
+                    <input
+                      id="skill-name"
+                      autoFocus
+                      className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-white outline-none focus:border-slate-500"
+                      placeholder="Name (optional), e.g. Soccer schedule to calendar"
+                      value={skillForm}
+                      onChange={(e) => setSkillForm(e.target.value)}
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-md bg-emerald-200 px-3 py-1.5 font-semibold text-slate-900 hover:bg-emerald-100 disabled:opacity-50"
+                      disabled={Boolean(busy)}
+                    >
+                      Save skill
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-600 px-2.5 py-1.5 text-slate-300 hover:bg-slate-800"
+                      onClick={() => setSkillForm(null)}
+                    >
+                      Cancel
+                    </button>
+                  </form>
+                ) : null}
+                {pending.length ? (
+                  <ul className="mb-2 flex shrink-0 flex-wrap gap-1.5" aria-label="Attached files">
+                    {pending.map((a, j) => (
+                      <AttachmentChip
+                        key={`${a.name}-${j}`}
+                        a={a}
+                        onRemove={() => setPending((prev) => prev.filter((_, k) => k !== j))}
+                      />
+                    ))}
+                  </ul>
+                ) : null}
                 <form
                   className="flex shrink-0 gap-2"
                   onSubmit={(e) => {
@@ -490,13 +674,51 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                   }}
                 >
                   <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept={ATTACH_ACCEPT}
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files) void attachFiles(e.target.files);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+                    disabled={Boolean(busy) || pending.length >= 3}
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-label="Attach a file"
+                    title="Attach a spreadsheet or text file"
+                  >
+                    {busy === "attach" ? "Reading…" : "Attach"}
+                  </button>
+                  <input
+                    ref={promptRef}
                     className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-slate-500"
-                    placeholder="e.g. Piano lessons every… / What's Saturday look like?"
+                    placeholder={
+                      pending.length
+                        ? "What should I do with it?"
+                        : "e.g. Piano lessons every… / What's Saturday look like?"
+                    }
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     disabled={busy === "chat"}
                     aria-label="Ask the family assistant"
                   />
+                  {chat.some((m) => m.role === "model") &&
+                  busy !== "chat" &&
+                  skillForm === null &&
+                  status?.wikilmGithubConfigured ? (
+                    <button
+                      type="button"
+                      className="rounded-lg border border-emerald-800/70 px-3 py-2 text-sm text-emerald-100 hover:bg-emerald-950/40"
+                      onClick={() => setSkillForm("")}
+                      title="Save this conversation as a reusable skill"
+                    >
+                      Save as skill
+                    </button>
+                  ) : null}
                   {chat.length > 0 && busy !== "chat" ? (
                     <button
                       type="button"
@@ -504,6 +726,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                       onClick={() => {
                         setChat([]);
                         setChatStatus(null);
+                        setSkillForm(null);
                       }}
                     >
                       New
@@ -512,7 +735,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                   <button
                     type="submit"
                     className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-900 disabled:opacity-50"
-                    disabled={busy === "chat" || !input.trim()}
+                    disabled={Boolean(busy) || (!input.trim() && !pending.length)}
                   >
                     {busy === "chat" ? "Working…" : "Send"}
                   </button>

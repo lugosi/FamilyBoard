@@ -89,7 +89,7 @@ Read [integrations.md](integrations.md) before touching CatLink, Spotify, Hue, N
 - Knowledge base: **private GitHub markdown only** (`WIKILM_GITHUB_*`) via `src/lib/wikilm-github.ts`. Never store wiki pages in `DATA_DIR`. Layout + template: `docs/WIKI.md`.
   - Prompt gets an **index** (`buildWikiIndex`, 12k chars), never page bodies; the model calls `search_wiki` / `read_wiki_page`.
   - Writes: `edit_wiki_section` (server-side append/replace on the latest version), `create_wiki_page` (template, refuses near-duplicates), `rewrite_wiki_page` (only after `read_wiki_page` in the same request; sha-checked), `move_wiki_page`, `delete_wiki_page`. Every write is a GitHub contents PUT/DELETE with the file `sha` → 409 on conflict.
-  - Pure parsing/editing/search lives in `src/lib/wiki-format.ts` (no imports) with tests: `npm run test:wiki`.
+  - Pure parsing/editing/search lives in `src/lib/wiki-format.ts` (no imports) with tests: `npm test`.
   - The AI tab has a **Chat | Wiki** switch (`WikiBrowser.tsx`): browse/search/edit/move/delete. It is the one deliberate exception to "tools, not panels".
 - Gmail drop-box: `scan_to_todos` / `scan` → todos (`DATA_DIR/todos.json`) **and** calendar events (tagged `extendedProperties.private.familyboardGmailId`), then `FamilyBoard/Processed` label. Optional `GMAIL_AUTO_SCAN_MINUTES`.
 - Slack: same agent via Socket Mode (`src/lib/slack.ts`, `slack-bot.ts`), started from `src/instrumentation.ts`. Answers DMs and channel @mentions (thread replies); open to the whole workspace. Setup + manifest: `docs/SLACK_SETUP.md`.

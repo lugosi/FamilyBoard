@@ -62,6 +62,43 @@ function requireConfig(): SlackConfig {
   return cfg;
 }
 
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+function isSlackFileHost(url: URL): boolean {
+  if (url.origin === new URL(apiBase()).origin) return true;
+  return (
+    url.protocol === "https:" &&
+    (url.hostname === "files.slack.com" || url.hostname.endsWith(".slack.com"))
+  );
+}
+
+/** Download a file shared with the bot (needs the files:read scope). The token is only sent to Slack. */
+export async function downloadSlackFile(fileUrl: string): Promise<Buffer> {
+  const { botToken } = requireConfig();
+  let url: URL;
+  try {
+    url = new URL(fileUrl);
+  } catch {
+    throw new Error("Bad Slack file URL");
+  }
+  if (!isSlackFileHost(url)) throw new Error("Refusing to send the Slack token to a non-Slack host");
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${botToken}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`Slack file download: HTTP ${res.status}`);
+  // Without files:read Slack answers with its HTML sign-in page instead of the file.
+  if ((res.headers.get("content-type") ?? "").includes("text/html")) {
+    throw new Error("missing_files_read_scope");
+  }
+  const size = Number(res.headers.get("content-length") ?? 0);
+  if (size > MAX_FILE_BYTES) throw new Error("File is larger than 5 MB");
+  const data = Buffer.from(await res.arrayBuffer());
+  if (data.length > MAX_FILE_BYTES) throw new Error("File is larger than 5 MB");
+  return data;
+}
+
 export async function slackAuthTest(): Promise<{
   team: string;
   teamId: string;

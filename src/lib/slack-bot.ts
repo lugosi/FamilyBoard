@@ -1,8 +1,16 @@
 import { getBackgroundGoogleRedirectUri } from "./app-url";
 import { isGeminiConfigured, type GeminiMessage } from "./gemini";
 import { runFamilyAgent } from "./agent";
+import {
+  AttachmentError,
+  attachmentsToPrompt,
+  fileToAttachment,
+  MAX_ATTACHMENTS,
+  type ChatAttachment,
+} from "./attachments";
 import { clearChatHistory, getChatHistory, saveChatHistory } from "./chat-memory";
 import {
+  downloadSlackFile,
   getSlackConfig,
   getSlackUserName,
   openSlackSocketUrl,
@@ -15,6 +23,14 @@ import {
 const MAX_BACKOFF_MS = 60_000;
 const WORKING_REACTION = "eyes";
 const RESET_WORDS = new Set(["reset", "/reset", "new", "/new"]);
+const READ_ONLY_TOOLS = new Set([
+  "find_events",
+  "list_todos",
+  "list_calendars",
+  "search_wiki",
+  "read_wiki_page",
+  "read_google_sheet",
+]);
 
 export type SlackBotState = {
   running: boolean;
@@ -28,7 +44,18 @@ export type SlackBotState = {
   botName: string | null;
 };
 
+type SlackFile = {
+  id?: string;
+  name?: string;
+  title?: string;
+  mimetype?: string;
+  size?: number;
+  url_private_download?: string;
+  url_private?: string;
+};
+
 type SlackMessageEvent = {
+  files?: SlackFile[];
   type?: string;
   subtype?: string;
   user?: string;
@@ -89,6 +116,7 @@ type Incoming = {
   /** Set for channel mentions: replies (and memory) live in this thread. */
   threadTs?: string;
   text: string;
+  files: SlackFile[];
 };
 
 /** DMs to the bot, and @mentions in channels it was invited to. Everything else is ignored. */
@@ -99,9 +127,14 @@ export function toIncoming(
   if (!event?.user || !event.channel || !event.ts || event.bot_id) return null;
   if (event.user === botUserId) return null;
   const text = slackTextToPlain(event.text ?? "", botUserId ?? undefined);
-  if (!text) return null;
-  if (event.type === "message" && event.channel_type === "im" && !event.subtype) {
-    return { user: event.user, channel: event.channel, ts: event.ts, text };
+  const files = (event.files ?? []).filter((f) => f.url_private_download || f.url_private);
+  if (!text && !files.length) return null;
+  const isDm =
+    event.type === "message" &&
+    event.channel_type === "im" &&
+    (!event.subtype || event.subtype === "file_share");
+  if (isDm) {
+    return { user: event.user, channel: event.channel, ts: event.ts, text, files };
   }
   if (event.type === "app_mention") {
     return {
@@ -110,9 +143,35 @@ export function toIncoming(
       ts: event.ts,
       threadTs: event.thread_ts ?? event.ts,
       text,
+      files,
     };
   }
   return null;
+}
+
+async function readSlackFiles(
+  files: SlackFile[],
+): Promise<{ attachments: ChatAttachment[]; problems: string[] }> {
+  const attachments: ChatAttachment[] = [];
+  const problems: string[] = [];
+  for (const file of files.slice(0, MAX_ATTACHMENTS)) {
+    const name = file.name || file.title || "file";
+    try {
+      const data = await downloadSlackFile(file.url_private_download ?? file.url_private!);
+      attachments.push(await fileToAttachment(name, file.mimetype ?? "", data));
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      problems.push(
+        message === "missing_files_read_scope"
+          ? `I can't open ${name} yet: add the files:read scope to the Slack app and reinstall it.`
+          : e instanceof AttachmentError
+            ? message
+            : `I couldn't download ${name} (${message}).`,
+      );
+    }
+  }
+  if (files.length > MAX_ATTACHMENTS) problems.push(`I only read the first ${MAX_ATTACHMENTS} files.`);
+  return { attachments, problems };
 }
 
 async function handle(msg: Incoming): Promise<void> {
@@ -132,13 +191,20 @@ async function handle(msg: Incoming): Promise<void> {
     return;
   }
 
-  const name = await getSlackUserName(msg.user);
-  // Threads are shared by the family, so label who said what.
-  const content = msg.threadTs && name ? `${name}: ${msg.text}` : msg.text;
-  const turns: GeminiMessage[] = [...(await getChatHistory(key)), { role: "user", content }];
-
   await setSlackReaction({ channel: msg.channel, ts: msg.ts, name: WORKING_REACTION, on: true });
   try {
+    const { attachments, problems } = await readSlackFiles(msg.files);
+    if (!msg.text && !attachments.length) {
+      await reply(problems.join("\n") || "I couldn't read that file.");
+      return;
+    }
+    const name = await getSlackUserName(msg.user);
+    // Threads are shared by the family, so label who said what.
+    const said = msg.text || "(see attached)";
+    let content = msg.threadTs && name ? `${name}: ${said}` : said;
+    if (attachments.length) content += `\n\n${attachmentsToPrompt(attachments)}`;
+    const turns: GeminiMessage[] = [...(await getChatHistory(key)), { role: "user", content }];
+
     const result = await runFamilyAgent({
       messages: turns,
       redirectUri: getBackgroundGoogleRedirectUri(),
@@ -146,11 +212,12 @@ async function handle(msg: Incoming): Promise<void> {
       senderName: name,
     });
     await saveChatHistory(key, [...turns, { role: "model", content: result.reply }]);
-    const changed = result.actions.filter((a) => a.tool !== "find_events" && a.tool !== "list_todos" && a.tool !== "list_calendars");
+    const changed = result.actions.filter((a) => !a.ok || !READ_ONLY_TOOLS.has(a.tool));
     const footer = changed.length
       ? `\n${changed.map((a) => `${a.ok ? "✅" : "⚠️"} ${a.label}`).join("\n")}`
       : "";
-    await reply(`${result.reply}${footer}`);
+    const fileNotes = problems.length ? `\n${problems.map((p) => `⚠️ ${p}`).join("\n")}` : "";
+    await reply(`${result.reply}${footer}${fileNotes}`);
     state.handled += 1;
   } catch (e) {
     state.lastError = `Agent: ${e instanceof Error ? e.message : String(e)}`;

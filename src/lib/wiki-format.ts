@@ -30,9 +30,19 @@ export const WIKI_CATEGORIES: WikiCategory[] = [
     hint: "trips, packing lists, documents, loyalty numbers",
   },
   { id: "notes", label: "Notes", hint: "anything that fits nowhere else" },
+  {
+    id: "skills",
+    label: "Skills",
+    hint: "saved how-tos the assistant reruns, e.g. turning a schedule spreadsheet into calendar events",
+  },
 ];
 
 export const DEFAULT_WIKI_CATEGORY = "notes";
+export const SKILLS_FOLDER = "skills";
+
+export function isSkillPath(path: string): boolean {
+  return path.toLowerCase().startsWith(`${SKILLS_FOLDER}/`);
+}
 const MAX_PATH_DEPTH = 3;
 
 export type WikiFrontmatter = {
@@ -199,6 +209,42 @@ export function composeNewPage(input: {
     },
     extra: [],
     body,
+  });
+}
+
+/** Template for a saved skill: a reusable procedure the assistant follows next time. */
+export function composeSkillPage(input: {
+  name: string;
+  whenToUse: string;
+  inputs?: string;
+  steps: readonly string[];
+  notes?: string;
+  tags?: string[];
+  updated: string;
+}): string {
+  const name = input.name.replace(/\s+/g, " ").trim();
+  const steps = input.steps
+    .map((step) => normalizeNewlines(step).trim().replace(/^(\d+[.)]|[-*+])\s+/, ""))
+    .filter(Boolean);
+  if (!name) throw new Error("A skill name is required");
+  if (!steps.length) throw new Error("A skill needs at least one step");
+  const whenToUse = normalizeNewlines(input.whenToUse).trim();
+  const sections = [
+    `# ${name}`,
+    `## When to use\n\n${whenToUse}`,
+    input.inputs?.trim() ? `## Inputs\n\n${normalizeNewlines(input.inputs).trim()}` : "",
+    `## Steps\n\n${steps.map((step, i) => `${i + 1}. ${step.replace(/\n/g, "\n   ")}`).join("\n")}`,
+    input.notes?.trim() ? `## Notes\n\n${normalizeNewlines(input.notes).trim()}` : "",
+  ].filter(Boolean);
+  return renderPage({
+    meta: {
+      title: name,
+      summary: whenToUse.split("\n")[0].slice(0, 200),
+      tags: ["skill", ...(input.tags ?? [])],
+      updated: input.updated,
+    },
+    extra: [],
+    body: sections.join("\n\n"),
   });
 }
 

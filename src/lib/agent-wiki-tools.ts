@@ -1,5 +1,5 @@
 import type { AgentTool, AgentToolContext } from "./agent";
-import { WIKI_CATEGORIES } from "./wiki-format";
+import { SKILLS_FOLDER, WIKI_CATEGORIES } from "./wiki-format";
 import {
   createWikiPage,
   deleteWikiPage,
@@ -7,6 +7,7 @@ import {
   moveWikiPage,
   readWikiPage,
   rewriteWikiPage,
+  saveSkill,
   searchWiki,
   WikiError,
 } from "./wikilm-github";
@@ -30,6 +31,7 @@ function rememberRead(ctx: AgentToolContext, path: string, sha: string | undefin
   if (sha) ctx.wikiReads.set(readKey(path), { path, sha });
 }
 
+const pageCategories = WIKI_CATEGORIES.filter((c) => c.id !== SKILLS_FOLDER);
 const categoryIds = WIKI_CATEGORIES.map((c) => c.id);
 
 export const wikiTools: AgentTool[] = [
@@ -103,8 +105,8 @@ export const wikiTools: AgentTool[] = [
         properties: {
           category: {
             type: "string",
-            enum: categoryIds,
-            description: WIKI_CATEGORIES.map((c) => `${c.id}: ${c.hint}`).join("; "),
+            enum: pageCategories.map((c) => c.id),
+            description: pageCategories.map((c) => `${c.id}: ${c.hint}`).join("; "),
           },
           title: { type: "string", description: "Short page title, e.g. 'Maya' or 'Wi-Fi'" },
           summary: { type: "string", description: "One line describing what the page holds" },
@@ -199,6 +201,57 @@ export const wikiTools: AgentTool[] = [
       });
       rememberRead(ctx, page.path, page.sha);
       return { response: { path: page.path, title: page.title }, label: `Rewrote wiki page “${page.title}”` };
+    },
+  },
+  {
+    declaration: {
+      name: "save_skill",
+      description:
+        "Save what was done in this conversation as a reusable skill (skills/ folder) so it can be rerun next time with new data. Only when someone asks to save it as a skill or agrees when you offer.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Short action name, e.g. 'Soccer schedule to calendar'" },
+          whenToUse: {
+            type: "string",
+            description: "One or two sentences: what request or input should trigger this skill",
+          },
+          inputs: {
+            type: "string",
+            description:
+              "Markdown describing what the skill needs: file or Google Sheet link, its columns and what each means, example row",
+          },
+          steps: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Ordered, generic steps naming the tools to call and the rules agreed in the conversation (calendar, title format, durations, duplicate checks, what to ask). No one-off values from this run.",
+          },
+          notes: { type: "string", description: "Gotchas, edge cases, and preferences" },
+          tags: { type: "array", items: { type: "string" } },
+          replaceExisting: {
+            type: "boolean",
+            description: "True only after the user confirmed replacing an existing skill with the same name",
+          },
+        },
+        required: ["name", "whenToUse", "steps"],
+      },
+    },
+    async run(args, ctx) {
+      const { page, replaced } = await saveSkill({
+        name: str(args.name) ?? "",
+        whenToUse: str(args.whenToUse) ?? "",
+        inputs: str(args.inputs),
+        steps: strList(args.steps) ?? [],
+        notes: str(args.notes),
+        tags: strList(args.tags),
+        replaceExisting: args.replaceExisting === true || args.replaceExisting === "true",
+      });
+      rememberRead(ctx, page.path, page.sha);
+      return {
+        response: { path: page.path, name: page.title, replaced },
+        label: `${replaced ? "Updated" : "Saved"} skill “${page.title}”`,
+      };
     },
   },
   {

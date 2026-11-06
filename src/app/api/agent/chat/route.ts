@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { getGoogleRedirectUri } from "@/lib/app-url";
 import { isGeminiConfigured } from "@/lib/gemini";
 import { runFamilyAgent } from "@/lib/agent";
+import { attachmentsToPrompt, sanitizeAttachments } from "@/lib/attachments";
 
 type ChatMessage = {
   role?: "user" | "model" | "assistant" | "system";
   content?: string;
+  /** Files converted by POST /api/agent/attachments, echoed back with each turn. */
+  attachments?: unknown;
 };
 
 type ChatBody = {
@@ -26,14 +29,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
   const messages = (body.messages ?? [])
-    .filter((m) => m.content?.trim() && m.role !== "system")
-    .map((m) => ({
-      role:
-        m.role === "model" || m.role === "assistant"
-          ? ("model" as const)
-          : ("user" as const),
-      content: m.content!.trim(),
-    }))
+    .filter((m) => m.role !== "system")
+    .map((m) => {
+      const role =
+        m.role === "model" || m.role === "assistant" ? ("model" as const) : ("user" as const);
+      const files = role === "user" ? sanitizeAttachments(m.attachments) : [];
+      const text = m.content?.trim() ?? "";
+      const content = files.length
+        ? `${text || "(see attached)"}\n\n${attachmentsToPrompt(files)}`
+        : text;
+      return { role, content };
+    })
+    .filter((m) => m.content)
     .slice(-MAX_HISTORY);
   if (messages.length === 0 || messages[messages.length - 1].role !== "user") {
     return NextResponse.json(
