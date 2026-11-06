@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
 import {
   formatSheetDate,
   gridsToAttachment,
@@ -48,7 +48,9 @@ function cellText(value: ExcelJS.CellValue): string {
 }
 
 async function workbookGrids(data: Buffer): Promise<SheetGrid[]> {
-  const wb = new ExcelJS.Workbook();
+  // Loaded on demand so a broken optional dependency can't take down the Slack bot or other routes.
+  const { default: Excel } = await import("exceljs");
+  const wb = new Excel.Workbook();
   try {
     await wb.xlsx.load(data as unknown as ArrayBuffer);
   } catch {
