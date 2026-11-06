@@ -1,4 +1,5 @@
 const DEFAULT_MODEL = "gemini-3.6-flash";
+const MAX_RETRY_DELAY_MS = 12_000;
 
 export function getGeminiApiKey(): string | null {
   return process.env.GEMINI_API_KEY?.trim() || null;
@@ -113,9 +114,11 @@ export async function generateGeminiText(input: {
       break;
     }
 
-    const backoffMs =
+    const backoffMs = Math.min(
+      MAX_RETRY_DELAY_MS,
       parseRetryDelayMs(text) ??
-      Math.min(12_000, 1000 * 2 ** attempt) + Math.floor(Math.random() * 400);
+        1000 * 2 ** attempt + Math.floor(Math.random() * 400),
+    );
     await sleep(backoffMs, input.signal);
   }
 
