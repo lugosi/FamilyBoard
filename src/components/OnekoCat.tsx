@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
 /**
  * Classic Neko-style cat that follows the pointer (same spirit as Windows 3.x / X11 xneko).
@@ -97,13 +97,23 @@ function setSprite(
   el.style.backgroundPosition = `${sprite[0] * SPRITE}px ${sprite[1] * SPRITE}px`;
 }
 
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+function subscribeReducedMotion(onChange: () => void) {
+  const mq = window.matchMedia(REDUCED_MOTION_QUERY);
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+
 export function OnekoCat({ enabled }: { enabled: boolean }) {
   const elRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
-  const [allowMotion] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  });
+  // false during SSR and hydration so server and client markup match.
+  const allowMotion = useSyncExternalStore(
+    subscribeReducedMotion,
+    () => !window.matchMedia(REDUCED_MOTION_QUERY).matches,
+    () => false,
+  );
 
   useEffect(() => {
     if (!enabled || !allowMotion) return;
