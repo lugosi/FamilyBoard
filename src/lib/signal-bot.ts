@@ -34,6 +34,9 @@ type BotGlobal = {
   state: SignalBotState;
   timer: ReturnType<typeof setTimeout> | null;
   polling: Promise<number> | null;
+  loop: (() => Promise<void>) | null;
+  inLoop: boolean;
+  wakeRequested: boolean;
 };
 
 const g = globalThis as typeof globalThis & { __familyboardSignalBot?: BotGlobal };
@@ -50,6 +53,9 @@ function bot(): BotGlobal {
     },
     timer: null,
     polling: null,
+    loop: null,
+    inLoop: false,
+    wakeRequested: false,
   };
   return g.__familyboardSignalBot;
 }
@@ -149,6 +155,7 @@ export function pollSignalOnce(): Promise<number> {
     try {
       const messages = await receiveSignalMessages();
       b.state.lastPollAt = new Date().toISOString();
+      if (b.state.lastError?.startsWith("Poll:")) b.state.lastError = null;
       for (const msg of messages) {
         try {
           await handleMessage(msg);
@@ -169,18 +176,30 @@ export function startSignalBot(): boolean {
   if (b.state.running || !getSignalConfig()) return b.state.running;
   b.state.running = true;
 
-  const loop = async () => {
+  b.loop = async () => {
+    b.inLoop = true;
+    b.wakeRequested = false;
     let delay = pollIntervalMs();
     try {
       await pollSignalOnce();
-      if (b.state.lastError?.startsWith("Poll:")) b.state.lastError = null;
     } catch (e) {
       b.state.lastError = `Poll: ${e instanceof Error ? e.message : String(e)}`;
       delay = ERROR_BACKOFF_MS;
     }
-    b.timer = setTimeout(() => void loop(), delay);
+    b.inLoop = false;
+    b.timer = setTimeout(() => void b.loop?.(), b.wakeRequested ? 500 : delay);
   };
-  b.timer = setTimeout(() => void loop(), 1000);
+  b.timer = setTimeout(() => void b.loop?.(), 1000);
   console.log("[signal] bot polling started");
   return true;
+}
+
+/** Skip any error backoff, e.g. right after the number is registered. */
+export function wakeSignalBot(): void {
+  const b = bot();
+  if (!b.state.running || !b.loop) return;
+  b.wakeRequested = true;
+  if (b.inLoop) return;
+  if (b.timer) clearTimeout(b.timer);
+  b.timer = setTimeout(() => void b.loop?.(), 500);
 }

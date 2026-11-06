@@ -7,7 +7,7 @@ import {
   setSignalProfile,
   verifySignalNumber,
 } from "@/lib/signal";
-import { pollSignalOnce } from "@/lib/signal-bot";
+import { pollSignalOnce, wakeSignalBot } from "@/lib/signal-bot";
 
 type ControlBody = {
   action?: "register" | "verify" | "set_profile" | "poll_now" | "send_hello";
@@ -47,6 +47,7 @@ export async function POST(request: Request) {
           name: process.env.SIGNAL_BOT_NAME?.trim() || "FamilyBoard",
           about: "Family calendar + todos assistant",
         }).catch(() => undefined);
+        wakeSignalBot();
         return NextResponse.json({ ok: true });
       case "set_profile":
         await setSignalProfile({
