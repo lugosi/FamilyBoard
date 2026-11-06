@@ -139,11 +139,10 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         setSaveContent(json.reply);
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : "chat_error";
-      if (message === "Gemini request cancelled") {
+      if (ac.signal.aborted) {
         setChatStatus("Chat cancelled.");
       } else {
-        setError(message);
+        setError(e instanceof Error ? e.message : "chat_error");
       }
       setChat(chat);
     } finally {
