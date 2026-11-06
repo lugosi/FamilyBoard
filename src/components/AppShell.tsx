@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Board } from "@/components/Board";
 import { WikiLlm } from "@/components/WikiLlm";
 
@@ -13,33 +13,48 @@ function parseTab(raw: string | null | undefined): AppTab | null {
   return null;
 }
 
-export function AppShell() {
-  const [tab, setTab] = useState<AppTab>(() => {
-    // Avoid useEffect+setState (eslint react-hooks/set-state-in-effect).
-    // This component is client-rendered in practice; during SSR we fall back to "board".
-    if (typeof window === "undefined") return "board";
-
-    const fromQuery = (() => {
-      try {
-        return parseTab(new URLSearchParams(window.location.search).get("tab"));
-      } catch {
-        return null;
-      }
-    })();
+// Query wins, else localStorage. Do not router.replace — URL changes can
+// re-trigger Chrome cert / "not private" interstitials on LAN HTTPS.
+function readInitialTab(): AppTab {
+  try {
+    const fromQuery = parseTab(
+      new URLSearchParams(window.location.search).get("tab"),
+    );
     if (fromQuery) return fromQuery;
+  } catch {
+    /* ignore */
+  }
+  try {
+    return parseTab(localStorage.getItem(TAB_STORAGE_KEY)) ?? "board";
+  } catch {
+    return "board";
+  }
+}
 
+const subscribeNoop = () => () => {};
+
+export function AppShell() {
+  // null during SSR and hydration so server and client markup match.
+  const initialTab = useSyncExternalStore(
+    subscribeNoop,
+    readInitialTab,
+    () => null,
+  );
+  const [pickedTab, setPickedTab] = useState<AppTab | null>(null);
+  const ready = initialTab !== null;
+  const tab: AppTab = pickedTab ?? initialTab ?? "board";
+
+  useEffect(() => {
+    if (!initialTab) return;
     try {
-      const stored = parseTab(localStorage.getItem(TAB_STORAGE_KEY));
-      if (stored) return stored;
+      localStorage.setItem(TAB_STORAGE_KEY, initialTab);
     } catch {
       /* ignore */
     }
-
-    return "board";
-  });
+  }, [initialTab]);
 
   const selectTab = useCallback((next: AppTab) => {
-    setTab(next);
+    setPickedTab(next);
     try {
       localStorage.setItem(TAB_STORAGE_KEY, next);
     } catch {
@@ -81,7 +96,7 @@ export function AppShell() {
         {/* Keep both mounted so Board does not remount/blank on every tab switch */}
         <div
           className={
-            tab === "board"
+            ready && tab === "board"
               ? "h-full min-h-0"
               : "pointer-events-none invisible absolute inset-0 h-full min-h-0"
           }
@@ -91,7 +106,7 @@ export function AppShell() {
         </div>
         <div
           className={
-            tab === "ai"
+            ready && tab === "ai"
               ? "h-full min-h-0"
               : "pointer-events-none invisible absolute inset-0 h-full min-h-0"
           }
