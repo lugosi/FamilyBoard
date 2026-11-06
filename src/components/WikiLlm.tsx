@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ChatMarkdown } from "@/components/ChatMarkdown";
 
 type Status = {
   googleLinked?: boolean;
@@ -351,9 +352,9 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                         className={m.role === "user" ? "flex justify-end" : ""}
                       >
                         <div
-                          className={`max-w-[90%] rounded-lg px-3 py-2 whitespace-pre-wrap ${
+                          className={`max-w-[90%] rounded-lg px-3 py-2 ${
                             m.role === "user"
-                              ? "bg-slate-800 text-slate-100"
+                              ? "bg-slate-800 text-slate-100 whitespace-pre-wrap"
                               : "bg-slate-950/80 text-slate-200"
                           }`}
                         >
@@ -373,7 +374,11 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                               ))}
                             </ul>
                           ) : null}
-                          {m.content}
+                          {m.role === "model" ? (
+                            <ChatMarkdown>{m.content}</ChatMarkdown>
+                          ) : (
+                            m.content
+                          )}
                         </div>
                       </div>
                     ))
