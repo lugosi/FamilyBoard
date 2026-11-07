@@ -1,4 +1,5 @@
-const DEFAULT_MODEL = "gemini-3.6-flash";
+/** Free-tier friendly default (AI Studio free accounts). Override with GEMINI_MODEL. */
+const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 const DEFAULT_API_BASE = "https://generativelanguage.googleapis.com";
 const MAX_RETRY_DELAY_MS = 12_000;
 
