@@ -7,14 +7,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "qa:smoke": "node scripts/qa-smoke.mjs"
+    "qa:smoke": "node scripts/qa-smoke.mjs",
+    "test:wiki": "node --test scripts/wiki-format.test.mjs"
   },
   "dependencies": {
     "docker": "^1.0.0",
     "googleapis": "^171.4.0",
     "next": "16.2.4",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

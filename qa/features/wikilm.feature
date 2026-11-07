@@ -48,6 +48,38 @@ Feature: WikiLLM AI tab
     When I open the AI tab
     Then the Slack panel shows the workspace, the bot name, and "Connected: yes"
 
-  # Knowledge base lives only in the private GitHub repo (not DATA_DIR).
+  Scenario: Wiki setup when GitHub is not configured
+    Given auth status has wikilmGithubConfigured false
+    When I open the AI tab and switch to "Wiki"
+    Then the wiki view mentions WIKILM_GITHUB_REPO and WIKILM_GITHUB_TOKEN
+
+  Scenario: Browse and search the wiki
+    Given auth status has wikilmGithubConfigured true
+    When I open the AI tab and switch to "Wiki"
+    Then I see pages grouped by folder (People, House, Recipes, …; top-level pages under "Unfiled") with counts
+    And opening a page shows its title, path, updated date, tags, summary, and rendered markdown
+    And relative links between pages open inside the Wiki view
+    When I type a search such as "guest password"
+    Then matching pages show with a text snippet
+
+  Scenario: Edit, create, move, delete in the Wiki view
+    Given auth status has wikilmGithubConfigured true
+    When I edit a page's markdown and Save
+    Then I see "Saved." and the page's updated date is today
+    And saving a page that changed elsewhere shows a conflict with "Reload latest" instead of overwriting
+    When I create a page with "New" (folder, title, summary, tags, body)
+    Then it opens and appears under its folder
+    And Move and Delete (with confirmation) work and the list updates
+
+  Scenario: Assistant remembers and looks things up
+    Given auth status has wikilmGithubConfigured true and geminiConfigured true
+    When I send "Remember that Maya's shoe size is 3"
+    Then the reply shows action chips "Read wiki page" and "Updated “Sizes” in “Maya”"
+    And only that section of the page changed
+    When I send "What's the Wi-Fi password?"
+    Then the reply cites the Wi-Fi page after "Searched the wiki" / "Read wiki page" chips
+
+  # Knowledge base lives only in the private GitHub repo (not DATA_DIR). QA against a real repo
+  # creates commits; prefer a scratch repo or the local mock (WIKILM_GITHUB_API_BASE_URL).
   # Todos from email scans are local DATA_DIR/todos.json — not wiki content.
   # Default QA does not send email, create real calendar events, or message Slack.
