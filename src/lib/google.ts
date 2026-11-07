@@ -109,8 +109,9 @@ export function getDefaultCalendarId(): string {
   return process.env.GOOGLE_CALENDAR_ID?.trim() || "primary";
 }
 
+/** Family wall-clock zone. Defaults to Pacific — never UTC (the model and board both assume local times). */
 export function getDefaultTimeZone(): string {
-  return process.env.DEFAULT_TIMEZONE?.trim() || "UTC";
+  return process.env.DEFAULT_TIMEZONE?.trim() || "America/Los_Angeles";
 }
 
 export function getNestProjectId(): string | null {

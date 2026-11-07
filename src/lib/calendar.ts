@@ -3,11 +3,16 @@ import {
   getDefaultTimeZone,
   getOAuth2WithRefresh,
 } from "./google";
+import {
+  addDaysToDateKey,
+  defaultEndFromStart,
+  isDateKey,
+  toFamilyLocalDateTime,
+} from "./calendar-time";
+
+export { addDaysToDateKey, defaultEndFromStart, toFamilyLocalDateTime } from "./calendar-time";
 
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
-/** Local wall-clock time without offset, e.g. 2026-11-10T15:00 or 2026-11-10T15:00:00. */
-const LOCAL_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
-const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
 export type CalendarEventSummary = {
   id: string;
@@ -78,12 +83,6 @@ export function zonedDateKeyToIso(dateKey: string, timeZone: string): string {
   return new Date(guess - offset).toISOString();
 }
 
-export function addDaysToDateKey(dateKey: string, days: number): string {
-  const [y, m, d] = dateKey.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d + days));
-  return dt.toISOString().slice(0, 10);
-}
-
 export function todayDateKey(timeZone: string, now = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -94,10 +93,7 @@ export function todayDateKey(timeZone: string, now = new Date()): string {
 }
 
 function normalizeTimed(value: string, field: string): string {
-  const v = value.trim();
-  if (LOCAL_DATE_TIME.test(v)) return v.length === 16 ? `${v}:00` : v;
-  if (ISO_WITH_OFFSET.test(v)) return v;
-  throw new Error(`${field} must be a local date-time like 2026-11-10T15:00`);
+  return toFamilyLocalDateTime(value, field);
 }
 
 function buildTimes(
@@ -124,11 +120,11 @@ function buildTimes(
     if (required) throw new Error("Provide start and end, or allDay with startDate");
     return {};
   }
-  if (!input.start || !input.end) {
-    throw new Error("Timed events need both start and end");
+  if (!input.start) {
+    throw new Error("Timed events need a start (end defaults to +1 hour)");
   }
   const start = normalizeTimed(input.start, "start");
-  const end = normalizeTimed(input.end, "end");
+  const end = input.end ? normalizeTimed(input.end, "end") : defaultEndFromStart(start);
   return {
     start: { dateTime: start, timeZone: tz },
     end: { dateTime: end, timeZone: tz },
@@ -154,7 +150,16 @@ export async function resolveDefaultCalendarId(redirectUri: string): Promise<str
   return berkeley?.id ?? calendars.find((c) => c.primary)?.id ?? "primary";
 }
 
-async function resolveCalendarId(redirectUri: string, id?: string): Promise<string> {
+/**
+ * Resolve a calendar id. For *new* events (`forceDefault`), always use Berkeley /
+ * GOOGLE_CALENDAR_ID so the agent cannot write to primary by accident.
+ */
+async function resolveCalendarId(
+  redirectUri: string,
+  id?: string,
+  opts?: { forceDefault?: boolean },
+): Promise<string> {
+  if (opts?.forceDefault) return resolveDefaultCalendarId(redirectUri);
   const trimmed = id?.trim();
   if (!trimmed || trimmed === "__all__") return resolveDefaultCalendarId(redirectUri);
   return trimmed;
@@ -232,7 +237,10 @@ export async function createCalendarEvent(
   if (!summary) throw new Error("summary is required");
   const tz = getDefaultTimeZone();
   const times = buildTimes(input, tz, true);
-  const calendarId = await resolveCalendarId(redirectUri, input.calendarId);
+  // New events always land on Berkeley (or GOOGLE_CALENDAR_ID), matching the board.
+  const calendarId = await resolveCalendarId(redirectUri, input.calendarId, {
+    forceDefault: true,
+  });
   const calendar = await client(redirectUri);
   const created = await calendar.events.insert({
     calendarId,
