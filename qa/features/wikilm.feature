@@ -51,7 +51,7 @@ Feature: WikiLLM AI tab
   Scenario: Wiki setup when GitHub is not configured
     Given auth status has wikilmGithubConfigured false
     When I open the AI tab and switch to "Wiki"
-    Then the wiki view mentions WIKILM_GITHUB_REPO and WIKILM_GITHUB_TOKEN
+    Then the wiki view mentions WIKILM_GITHUB_TOKEN
 
   Scenario: Browse and search the wiki
     Given auth status has wikilmGithubConfigured true

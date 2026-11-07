@@ -6,10 +6,10 @@ The assistant's long-term memory is a folder of markdown files in a **private Gi
 
 | Env var | Value |
 |---------|-------|
-| `WIKILM_GITHUB_REPO` | `owner/repo` of a private repo |
-| `WIKILM_GITHUB_TOKEN` | Fine-grained token, that repo only, **Contents: Read and write** |
+| `WIKILM_GITHUB_TOKEN` | **Required.** Fine-grained PAT on `lugosi/family-wiki`, **Contents: Read and write** |
+| `WIKILM_GITHUB_REPO` | Optional, default `lugosi/family-wiki` |
 | `WIKILM_GITHUB_BRANCH` | Optional, default `main` |
-| `WIKILM_GITHUB_PATH` | Optional folder inside the repo, default `wiki` |
+| `WIKILM_GITHUB_PATH` | Optional folder inside the repo, default `wiki` (use `.` for repo root) |
 
 Every save is a normal commit (`wiki: add people/maya.md`), so history, diffs, and undo live in GitHub. Deleted pages stay in git history.
 

@@ -69,17 +69,23 @@ let pagesLoading: Promise<WikiPage[]> | null = null;
 /** Blob sha → file text; blobs are immutable so this never goes stale. */
 const blobCache = new Map<string, string>();
 
+/** Default private family wiki; override with WIKILM_GITHUB_REPO if needed. */
+export const DEFAULT_WIKILM_GITHUB_REPO = "lugosi/family-wiki";
+
 export function getWikilmGithubConfig(): WikiConfig | null {
-  const repoFull = process.env.WIKILM_GITHUB_REPO?.trim();
   const token = process.env.WIKILM_GITHUB_TOKEN?.trim();
-  if (!repoFull || !token) return null;
+  if (!token) return null;
+  const repoFull =
+    process.env.WIKILM_GITHUB_REPO?.trim() || DEFAULT_WIKILM_GITHUB_REPO;
   const [owner, repo] = repoFull.split("/");
   if (!owner || !repo) return null;
   const branch = process.env.WIKILM_GITHUB_BRANCH?.trim() || "main";
-  const basePath = (process.env.WIKILM_GITHUB_PATH?.trim() || "wiki").replace(
-    /^\/+|\/+$/g,
-    "",
-  );
+  // Empty string / "." = repo root; unset defaults to a wiki/ folder.
+  const pathEnv = process.env.WIKILM_GITHUB_PATH;
+  const basePath =
+    pathEnv === undefined
+      ? "wiki"
+      : pathEnv.trim().replace(/^\/+|\/+$/g, "").replace(/^\.$/, "");
   return { owner, repo, token, branch, basePath };
 }
 
@@ -92,7 +98,7 @@ function requireConfig(): WikiConfig {
   if (!cfg) {
     throw new WikiError(
       "not_configured",
-      "Set WIKILM_GITHUB_REPO and WIKILM_GITHUB_TOKEN for the private wiki",
+      "Set WIKILM_GITHUB_TOKEN for the private wiki (fine-grained PAT with Contents read/write on lugosi/family-wiki)",
     );
   }
   return cfg;

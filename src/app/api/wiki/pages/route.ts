@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         error:
-          "Set WIKILM_GITHUB_REPO and WIKILM_GITHUB_TOKEN for the private wiki",
+          "Set WIKILM_GITHUB_TOKEN for the private wiki",
       },
       { status: 501 },
     );

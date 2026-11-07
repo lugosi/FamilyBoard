@@ -254,9 +254,9 @@ export function WikiBrowser({
       <div className="text-sm text-slate-400">
         <p>
           The family wiki lives in a private GitHub repo. Set{" "}
-          <code className="text-slate-300">WIKILM_GITHUB_REPO</code> and{" "}
-          <code className="text-slate-300">WIKILM_GITHUB_TOKEN</code> (fine-grained token with
-          Contents read/write on that repo) to browse and edit it here.
+          <code className="text-slate-300">WIKILM_GITHUB_TOKEN</code> (fine-grained PAT with
+          Contents read/write on <code className="text-slate-300">lugosi/family-wiki</code>) to
+          browse and edit it here.
         </p>
       </div>
     );

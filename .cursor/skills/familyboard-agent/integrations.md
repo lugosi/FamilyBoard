@@ -107,7 +107,7 @@ Env: `CATLINK_PHONE`, `CATLINK_PASSWORD`, `CATLINK_PHONE_IAC`, `CATLINK_API_BASE
 
 ## WikiLLM + Gmail drop-box
 
-- UI: `AppShell` → `WikiLlm.tsx` (AI tab). Knowledge: private GitHub repo only (`WIKILM_GITHUB_REPO` + `WIKILM_GITHUB_TOKEN`, optional `WIKILM_GITHUB_PATH=wiki`).
+- UI: `AppShell` → `WikiLlm.tsx` (AI tab). Knowledge: private GitHub repo (`WIKILM_GITHUB_TOKEN` required; repo defaults to `lugosi/family-wiki`, optional `WIKILM_GITHUB_PATH=wiki`).
 - Gemini: `GEMINI_API_KEY` / optional `GEMINI_MODEL`. Chat routes under `/api/wiki/*`.
 - Google scopes include `gmail.readonly` + `gmail.modify`. Enable Gmail API; **re-link Google** after deploy.
 - Flow: forward mail to linked inbox → **Scan inbox** (button, agent `scan_inbox`, or `GMAIL_AUTO_SCAN_MINUTES`) → Gemini extracts todos + events → `todos.json` + Google Calendar. No send-from-board in v1.
