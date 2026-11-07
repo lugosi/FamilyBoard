@@ -1,10 +1,16 @@
 /** Free-tier friendly default (AI Studio free accounts). Override with GEMINI_MODEL. */
 const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 /**
- * Google Search grounding is free on 2.5 Flash (up to ~500 RPD) but not on 3.5 Flash-Lite's free API tier.
- * Search uses this model in a separate call so the main agent can keep function calling.
+ * Prefer models that still offer Google Search grounding when the key allows them.
+ * 2.5 Flash is gated/deprecated for many free keys; 3.x Search needs billing.
+ * If none work, searchWebWithGemini falls back to DuckDuckGo (+ ESPN for scores).
  */
-const DEFAULT_SEARCH_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+const DEFAULT_SEARCH_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.6-flash",
+  "gemini-3.8-flash",
+];
 const DEFAULT_API_BASE = "https://generativelanguage.googleapis.com";
 const MAX_RETRY_DELAY_MS = 12_000;
 
@@ -230,9 +236,16 @@ export async function generateGeminiContent(input: {
   throw lastError ?? new Error("Gemini error");
 }
 
+function isSearchModelUnavailable(message: string): boolean {
+  return /404|NOT_FOUND|not found|not supported|no longer available|deprecated|google_search|Google Search|PERMISSION_DENIED|403|FAILED_PRECONDITION|Search Grounding is not supported/i.test(
+    message,
+  );
+}
+
 /**
- * Look up live public info (scores, news, hours) via Grounding with Google Search.
- * Uses a search-capable free-tier model separately from the main tool loop.
+ * Look up live public info (scores, news, hours).
+ * Tries Gemini Google Search grounding, then a free DuckDuckGo (+ ESPN scoreboard) fallback
+ * summarized by the main chat model — so free-tier keys still work without 2.5 Flash.
  */
 export async function searchWebWithGemini(
   query: string,
@@ -256,26 +269,54 @@ export async function searchWebWithGemini(
       if (!answer) throw new Error("Search returned an empty answer");
       return {
         answer,
-        queries: result.grounding?.queries ?? [],
+        queries: result.grounding?.queries ?? [q],
         sources: result.grounding?.sources ?? [],
         model,
       };
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
-      const msg = lastError.message;
-      // Try the next search model when this one lacks grounding or isn't available.
-      if (/404|NOT_FOUND|not found|not supported|google_search|Google Search|PERMISSION_DENIED|403/i.test(msg)) {
-        continue;
-      }
+      if (isSearchModelUnavailable(lastError.message)) continue;
       throw lastError;
     }
   }
-  throw (
-    lastError ??
-    new Error(
-      "Google Search grounding isn't available on this API key/model. Set GEMINI_SEARCH_MODEL=gemini-2.5-flash (free tier supports Search).",
-    )
-  );
+
+  // Free fallback: public pages + main Gemini model (no Search grounding required).
+  const { duckDuckGoSearch, espnScoreboardBlurb, formatHitsForPrompt } = await import("./web-search");
+  const espn = await espnScoreboardBlurb(q, { signal: opts?.signal }).catch(() => null);
+  const hits = await duckDuckGoSearch(q, { signal: opts?.signal, limit: 5 }).catch(() => []);
+  if (!espn && hits.length === 0) {
+    throw (
+      lastError ??
+      new Error(
+        "Web search isn't available right now (Gemini Search needs a billed key or a still-enabled 2.5 Flash model).",
+      )
+    );
+  }
+  const sources = [
+    ...(espn ? [{ title: "ESPN scoreboard", uri: espn.uri }] : []),
+    ...hits.map((h) => ({ title: h.title, uri: h.uri })),
+  ];
+  const context = [
+    espn ? `Official scoreboard data:\n${espn.text}` : "",
+    hits.length ? `Web results:\n${formatHitsForPrompt(hits)}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const summarized = await generateGeminiContent({
+    model: getGeminiModel(),
+    system:
+      "You are a family home assistant. Answer ONLY from the provided search/scoreboard excerpts. Be brief. For sports, give the score and status. If the excerpts don't contain the answer, say you couldn't find it — never invent scores.",
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: `Question: ${q}\n\n${context}` }],
+      },
+    ],
+    signal: opts?.signal,
+  });
+  const answer = textFromParts(summarized.parts);
+  if (!answer) throw new Error("Search fallback returned an empty answer");
+  return { answer, queries: [q], sources, model: `fallback+${getGeminiModel()}` };
 }
 
 export function textFromParts(parts: GeminiPart[]): string {
