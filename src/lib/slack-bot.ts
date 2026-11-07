@@ -32,6 +32,7 @@ const READ_ONLY_TOOLS = new Set([
   "search_wiki",
   "read_wiki_page",
   "read_google_sheet",
+  "search_web",
 ]);
 
 export type SlackBotState = {
