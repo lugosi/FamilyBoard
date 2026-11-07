@@ -37,7 +37,7 @@ export function defaultEndFromStart(start: string): string {
   const m = local.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
   if (!m) throw new Error("start must be a local date-time like 2026-11-10T15:00");
   let hh = Number(m[2]);
-  let mm = Number(m[3]);
+  const mm = Number(m[3]);
   let day = m[1];
   hh += 1;
   if (hh >= 24) {

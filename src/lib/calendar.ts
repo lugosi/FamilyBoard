@@ -12,8 +12,6 @@ import {
 
 export { addDaysToDateKey, defaultEndFromStart, toFamilyLocalDateTime } from "./calendar-time";
 
-const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
-
 export type CalendarEventSummary = {
   id: string;
   calendarId: string;
@@ -106,11 +104,11 @@ function buildTimes(
 } {
   if (input.allDay) {
     const startDate = input.startDate?.trim();
-    if (!startDate || !DATE_KEY.test(startDate)) {
+    if (!startDate || !isDateKey(startDate)) {
       throw new Error("All-day events need startDate as YYYY-MM-DD");
     }
     const endDate = input.endDate?.trim() || addDaysToDateKey(startDate, 1);
-    if (!DATE_KEY.test(endDate)) throw new Error("endDate must be YYYY-MM-DD");
+    if (!isDateKey(endDate)) throw new Error("endDate must be YYYY-MM-DD");
     if (endDate <= startDate) {
       throw new Error("endDate must be after startDate (end is exclusive)");
     }
@@ -185,7 +183,7 @@ export async function listEventsInRange(
   toDate: string,
   opts?: { query?: string; max?: number },
 ): Promise<CalendarEventSummary[]> {
-  if (!DATE_KEY.test(fromDate) || !DATE_KEY.test(toDate)) {
+  if (!isDateKey(fromDate) || !isDateKey(toDate)) {
     throw new Error("from and to must be YYYY-MM-DD");
   }
   const tz = getDefaultTimeZone();
