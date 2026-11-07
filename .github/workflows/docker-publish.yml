@@ -14,7 +14,9 @@ permissions:
 
 concurrency:
   group: docker-publish-${{ github.ref }}
-  cancel-in-progress: true
+  # Don't cancel an in-flight publish when another main push lands — that left
+  # TrueNAS on a stale :latest after stacked merges.
+  cancel-in-progress: false
 
 jobs:
   build-and-push:

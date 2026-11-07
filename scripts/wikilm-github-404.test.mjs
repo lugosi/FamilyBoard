@@ -17,7 +17,7 @@ test("write 404 when token cannot see repo explains access", () => {
   assert.doesNotMatch(msg, /contents#create/i);
 });
 
-test("write 404 on empty repo explains creating a README", () => {
+test("write 404 on empty repo points at token Contents write", () => {
   const msg = diagnoseContentsWrite404({
     owner: "lugosi",
     repo: "family-wiki",
@@ -29,7 +29,7 @@ test("write 404 on empty repo explains creating a README", () => {
     defaultBranch: "main",
   });
   assert.match(msg, /is empty/i);
-  assert.match(msg, /README/i);
+  assert.match(msg, /Contents: Read and write/i);
 });
 
 test("write 404 on wrong branch names the default branch", () => {
@@ -45,4 +45,21 @@ test("write 404 on wrong branch names the default branch", () => {
   });
   assert.match(msg, /branch “main” not found/i);
   assert.match(msg, /master/);
+});
+
+test("write 404 fallback tells you to recreate the PAT", () => {
+  const msg = diagnoseContentsWrite404({
+    owner: "lugosi",
+    repo: "family-wiki",
+    branch: "main",
+    fullPath: "wiki/people/maya.md",
+    putBodyText:
+      '{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/contents#create-or-update-file-contents","status":"404"}',
+    repoStatus: 200,
+    repoSize: 12,
+    defaultBranch: "main",
+  });
+  assert.match(msg, /Contents write was refused/i);
+  assert.match(msg, /WIKILM_GITHUB_TOKEN/);
+  assert.doesNotMatch(msg, /documentation_url/);
 });
