@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { getHueBridgeIp, hueBridgeFetch, readHueUsername } from "@/lib/hue";
-
-const HUE_THEME_ACTIONS: Record<string, Record<string, number | boolean>> = {
-  bright: { on: true, bri: 254, ct: 250 },
-  relax: { on: true, bri: 170, ct: 367 },
-  focus: { on: true, bri: 220, ct: 233 },
-  nightlight: { on: true, bri: 25, ct: 447 },
-};
+import {
+  controlHueArea,
+  getHueBridgeIp,
+  HUE_THEMES,
+  listHueAreas,
+  readHueUsername,
+} from "@/lib/hue";
 
 export async function PATCH(
   request: Request,
@@ -25,35 +24,34 @@ export async function PATCH(
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  const hasOn = typeof body.on === "boolean";
-  const theme = (body.theme ?? "").trim().toLowerCase();
-  const hasTheme = Boolean(theme);
-  if (!hasOn && !hasTheme) {
-    return NextResponse.json(
-      { error: "Provide { \"on\": true|false } or { \"theme\": \"bright|relax|focus|nightlight\" }" },
-      { status: 400 },
-    );
-  }
-  if (hasTheme && !HUE_THEME_ACTIONS[theme]) {
-    return NextResponse.json(
-      { error: "Unknown theme. Use bright, relax, focus, or nightlight." },
-      { status: 400 },
-    );
-  }
-  const payload = hasTheme ? HUE_THEME_ACTIONS[theme] : { on: Boolean(body.on) };
 
-  const res = await hueBridgeFetch(bridgeIp, username, `/groups/${id}/action`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    return NextResponse.json(
-      { error: `Bridge returned ${res.status}` },
-      { status: 502 },
-    );
+  try {
+    const areas = await listHueAreas();
+    const area = areas.find((a) => a.id === id);
+    if (!area) {
+      return NextResponse.json({ error: "Unknown Hue area" }, { status: 404 });
+    }
+    const theme = (body.theme ?? "").trim().toLowerCase();
+    if (theme && !(theme in HUE_THEMES)) {
+      return NextResponse.json(
+        { error: "Unknown theme. Use bright, relax, focus, or nightlight." },
+        { status: 400 },
+      );
+    }
+    if (typeof body.on !== "boolean" && !theme) {
+      return NextResponse.json(
+        { error: 'Provide { "on": true|false } or { "theme": "bright|relax|focus|nightlight" }' },
+        { status: 400 },
+      );
+    }
+    const result = await controlHueArea({
+      area: area.name,
+      on: body.on,
+      theme: theme || undefined,
+    });
+    return NextResponse.json({ ok: true, ...result });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "hue_error";
+    return NextResponse.json({ error: message }, { status: 502 });
   }
-
-  return NextResponse.json({ ok: true });
 }

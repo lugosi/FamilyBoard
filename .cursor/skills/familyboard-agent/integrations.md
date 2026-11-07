@@ -84,6 +84,7 @@ Env: `CATLINK_PHONE`, `CATLINK_PASSWORD`, `CATLINK_PHONE_IAC`, `CATLINK_API_BASE
 - LAN to bridge; pair via `/api/hue/pair` (press bridge button).
 - Themes: `bright | relax | focus | nightlight`.
 - Persist username in `hue.json`; needs `HUE_BRIDGE_IP`.
+- Agent tools (when paired): `list_lights`, `control_lights` (room name match via `squashHueAreaName`). Also Spotify `spotify_control` and CatLink `catlink_control` when those integrations are ready (`src/lib/agent-device-tools.ts`).
 
 ## Nest (`src/lib/nest-sdm.ts`, `nest-climate-history.ts`)
 

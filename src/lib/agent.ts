@@ -24,6 +24,7 @@ const FAMILY_CALENDAR_SKILL = `skills/family-calendar.md — Family calendar (Be
 import { getDefaultTimeZone, readGoogleTokens } from "./google";
 import { scanInboxToTodos } from "./gmail";
 import { addTodo, listTodos, setTodoDone } from "./todos";
+import { buildDeviceTools, deviceToolsAvailable } from "./agent-device-tools";
 import { wikiTools } from "./agent-wiki-tools";
 import { readGoogleSheet } from "./sheets";
 import { buildWikiIndex, isSkillPath, SKILLS_FOLDER, WIKI_CATEGORIES } from "./wiki-format";
@@ -427,6 +428,7 @@ function buildSystemPrompt(input: {
   wikiConfigured: boolean;
   wikiIndex: string | null;
   skillsIndex: string | null;
+  devices: { hue: boolean; spotify: boolean; catlink: boolean };
   senderName?: string;
 }): string {
   const lines = [
@@ -440,6 +442,25 @@ function buildSystemPrompt(input: {
     "When turning many rows into calendar events: call find_events over the whole date range first and skip rows that already exist; you may call create_event several times in one turn. Report how many you added, skipped, and couldn't parse.",
     "For live public facts (sports scores, news, who won, store hours, anything that needs the current internet), call search_web. Do not say you can't access the internet — you can via that tool. Prefer search_web over guessing.",
   ];
+  if (input.devices.hue || input.devices.spotify || input.devices.catlink) {
+    const bits: string[] = [];
+    if (input.devices.hue) {
+      bits.push(
+        "Hue lights: call list_lights then control_lights with the room name (e.g. Living room). You can turn rooms on/off or set theme bright/relax/focus/nightlight.",
+      );
+    }
+    if (input.devices.spotify) {
+      bits.push("Spotify: spotify_control for play, pause, next, previous, or set_volume.");
+    }
+    if (input.devices.catlink) {
+      bits.push("CatLink litter box: catlink_control for clean_now, refill_litter, change_bag, reset_bin.");
+    }
+    lines.push(
+      "You can control home devices linked on the FamilyBoard:",
+      ...bits,
+      "Only claim you changed a device after the tool succeeds.",
+    );
+  }
   if (input.googleLinked) {
     lines.push(
       "=== FAMILY CALENDAR SKILL ===",
@@ -498,6 +519,7 @@ export async function runFamilyAgent(input: {
   const timeZone = getDefaultTimeZone();
   const googleLinked = Boolean((await readGoogleTokens())?.refresh_token);
   const wikiConfigured = isWikilmGithubConfigured();
+  const devices = await deviceToolsAvailable();
 
   let wikiIndex: string | null = null;
   let skillsIndex: string | null = null;
@@ -516,6 +538,7 @@ export async function runFamilyAgent(input: {
     ...searchTools,
     ...(googleLinked ? [...calendarTools, ...sheetTools] : []),
     ...todoTools,
+    ...buildDeviceTools(devices),
     ...(wikiConfigured ? wikiTools : []),
   ];
   const byName = new Map(tools.map((t) => [t.declaration.name, t]));
@@ -526,6 +549,7 @@ export async function runFamilyAgent(input: {
     wikiConfigured,
     wikiIndex,
     skillsIndex,
+    devices,
     senderName: input.senderName,
   });
   const ctx: ToolContext = { redirectUri: input.redirectUri, timeZone, wikiReads: new Map() };
