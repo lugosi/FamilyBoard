@@ -22,9 +22,17 @@ function getGeminiApiBase(): string {
   );
 }
 
+export type GeminiImage = {
+  mimeType: string;
+  /** Raw base64, no data: URL prefix. */
+  data: string;
+};
+
 export type GeminiMessage = {
   role: "user" | "model" | "system";
   content: string;
+  /** Photos for this turn only (not stored in long chat memory). */
+  images?: GeminiImage[];
 };
 
 export type GeminiFunctionCall = {
@@ -36,6 +44,7 @@ export type GeminiFunctionCall = {
 /** Parts are passed back verbatim so Gemini 3 thought signatures survive tool loops. */
 export type GeminiPart = {
   text?: string;
+  inlineData?: { mimeType: string; data: string };
   functionCall?: GeminiFunctionCall;
   functionResponse?: {
     id?: string;
@@ -90,9 +99,17 @@ export function toGeminiContents(messages: GeminiMessage[]): GeminiContent[] {
   const contents: GeminiContent[] = [];
   for (const m of messages) {
     if (m.role === "system") continue;
+    const parts: GeminiPart[] = [];
+    if (m.content) parts.push({ text: m.content });
+    for (const img of m.images ?? []) {
+      if (img.mimeType && img.data) {
+        parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+      }
+    }
+    if (!parts.length) parts.push({ text: "(see attached)" });
     contents.push({
       role: m.role === "model" ? "model" : "user",
-      parts: [{ text: m.content }],
+      parts,
     });
   }
   return contents;

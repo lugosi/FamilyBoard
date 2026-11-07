@@ -18,10 +18,12 @@ type AgentAction = { tool: string; ok: boolean; label: string };
 
 type ChatAttachment = {
   name: string;
-  kind: "sheet" | "text";
+  kind: "sheet" | "text" | "image";
   summary: string;
   text: string;
   truncated?: boolean;
+  data?: string;
+  mimeType?: string;
 };
 
 type ChatTurn = {
@@ -85,12 +87,12 @@ const WIKI_WRITE_TOOLS = new Set([
   "delete_wiki_page",
   "save_skill",
 ]);
-const ATTACH_ACCEPT = ".csv,.tsv,.xlsx,.xlsm,.txt,.md,.json,.ics,text/*";
+const ATTACH_ACCEPT = ".csv,.tsv,.xlsx,.xlsm,.txt,.md,.json,.ics,.jpg,.jpeg,.png,.gif,.webp,text/*,image/jpeg,image/png,image/gif,image/webp";
 
 function AttachmentChip({ a, onRemove }: { a: ChatAttachment; onRemove?: () => void }) {
   return (
     <li className="flex max-w-full items-center gap-1.5 rounded-md border border-emerald-800/60 bg-emerald-950/30 px-2 py-0.5 text-xs text-emerald-100">
-      <span className="font-medium">{a.kind === "sheet" ? "Sheet" : "File"}</span>
+      <span className="font-medium">{a.kind === "sheet" ? "Sheet" : a.kind === "image" ? "Photo" : "File"}</span>
       <span className="truncate">{a.name}</span>
       <span className="shrink-0 text-emerald-300/70">· {a.summary}</span>
       {onRemove ? (

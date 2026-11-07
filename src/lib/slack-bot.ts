@@ -5,6 +5,8 @@ import {
   AttachmentError,
   attachmentsToPrompt,
   fileToAttachment,
+  imageAttachments,
+  imagePromptNote,
   MAX_ATTACHMENTS,
   type ChatAttachment,
 } from "./attachments";
@@ -202,8 +204,17 @@ async function handle(msg: Incoming): Promise<void> {
     // Threads are shared by the family, so label who said what.
     const said = msg.text || "(see attached)";
     let content = msg.threadTs && name ? `${name}: ${said}` : said;
-    if (attachments.length) content += `\n\n${attachmentsToPrompt(attachments)}`;
-    const turns: GeminiMessage[] = [...(await getChatHistory(key)), { role: "user", content }];
+    const filePrompt = attachmentsToPrompt(attachments);
+    const note = imagePromptNote(attachments);
+    const extras = [filePrompt, note].filter(Boolean).join("\n\n");
+    if (extras) content += `\n\n${extras}`;
+    const images = imageAttachments(attachments).map(({ mimeType, data }) => ({ mimeType, data }));
+    const userTurn: GeminiMessage = {
+      role: "user",
+      content,
+      ...(images.length ? { images } : {}),
+    };
+    const turns: GeminiMessage[] = [...(await getChatHistory(key)), userTurn];
 
     const result = await runFamilyAgent({
       messages: turns,
@@ -211,7 +222,11 @@ async function handle(msg: Incoming): Promise<void> {
       channel: "slack",
       senderName: name,
     });
-    await saveChatHistory(key, [...turns, { role: "model", content: result.reply }]);
+    // Don't keep image bytes in the 30‑minute chat memory.
+    await saveChatHistory(key, [
+      ...turns.map(({ role, content }) => ({ role, content })),
+      { role: "model", content: result.reply },
+    ]);
     const changed = result.actions.filter((a) => !a.ok || !READ_ONLY_TOOLS.has(a.tool));
     const footer = changed.length
       ? `\n${changed.map((a) => `${a.ok ? "✅" : "⚠️"} ${a.label}`).join("\n")}`

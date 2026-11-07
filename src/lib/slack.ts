@@ -87,11 +87,12 @@ export async function downloadSlackFile(fileUrl: string): Promise<Buffer> {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`Slack file download: HTTP ${res.status}`);
-  // Without files:read Slack answers with its HTML sign-in page instead of the file.
-  if ((res.headers.get("content-type") ?? "").includes("text/html")) {
+  // Without files:read Slack returns 403 or an HTML sign-in page instead of the file.
+  const contentType = res.headers.get("content-type") ?? "";
+  if (res.status === 403 || contentType.includes("text/html")) {
     throw new Error("missing_files_read_scope");
   }
+  if (!res.ok) throw new Error(`Slack file download: HTTP ${res.status}`);
   const size = Number(res.headers.get("content-length") ?? 0);
   if (size > MAX_FILE_BYTES) throw new Error("File is larger than 5 MB");
   const data = Buffer.from(await res.arrayBuffer());

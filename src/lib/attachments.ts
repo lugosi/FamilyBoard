@@ -10,10 +10,19 @@ import {
 } from "./tabular";
 
 export type { ChatAttachment } from "./tabular";
-export { attachmentsToPrompt } from "./tabular";
+export { attachmentsToPrompt, imageAttachments, imagePromptNote } from "./tabular";
 
 export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 export const MAX_ATTACHMENTS = 3;
+export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+
+const IMAGE_MIME: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+};
 
 export class AttachmentError extends Error {
   constructor(message: string) {
@@ -109,24 +118,53 @@ export async function fileToAttachment(
       ...(truncated ? { truncated } : {}),
     };
   }
+
+  const imageMime =
+    IMAGE_MIME[ext] ||
+    (type.startsWith("image/") && Object.values(IMAGE_MIME).includes(type) ? type : null);
+  if (imageMime) {
+    if (data.length > MAX_IMAGE_BYTES) {
+      throw new AttachmentError(`${safeName} is larger than 4 MB. Send a smaller photo.`);
+    }
+    return {
+      name: safeName,
+      kind: "image",
+      summary: `${Math.max(1, Math.round(data.length / 1024))} KB · ${imageMime.replace("image/", "")}`,
+      text: "",
+      mimeType: imageMime,
+      data: data.toString("base64"),
+    };
+  }
+  if (ext === "heic" || ext === "heif" || type.includes("heic") || type.includes("heif")) {
+    throw new AttachmentError(`Save ${safeName} as JPEG or PNG first (HEIC isn't supported).`);
+  }
   throw new AttachmentError(
-    `${safeName}: only spreadsheets (.xlsx, .csv, .tsv) and text files are supported. For a Google Sheet, paste its link.`,
+    `${safeName}: only photos (JPEG/PNG/GIF/WebP), spreadsheets (.xlsx, .csv, .tsv), and text files are supported. For a Google Sheet, paste its link.`,
   );
 }
 
 /** Validate attachments echoed back by the browser before they reach the model. */
 export function sanitizeAttachments(input: unknown): ChatAttachment[] {
   if (!Array.isArray(input)) return [];
-  return input
-    .slice(0, MAX_ATTACHMENTS)
-    .filter(
-      (a): a is ChatAttachment =>
-        Boolean(a) && typeof a.name === "string" && typeof a.text === "string",
-    )
-    .map((a) => ({
-      name: a.name.replace(/[\r\n"]/g, " ").slice(0, 120),
+  const out: ChatAttachment[] = [];
+  for (const a of input.slice(0, MAX_ATTACHMENTS)) {
+    if (!a || typeof a.name !== "string") continue;
+    const name = a.name.replace(/[\r\n"]/g, " ").slice(0, 120);
+    const summary = typeof a.summary === "string" ? a.summary.slice(0, 80) : "";
+    if (a.kind === "image" && typeof a.data === "string" && typeof a.mimeType === "string") {
+      const mimeType = a.mimeType.toLowerCase();
+      if (!Object.values(IMAGE_MIME).includes(mimeType)) continue;
+      if (a.data.length > MAX_IMAGE_BYTES * 2) continue;
+      out.push({ name, kind: "image", summary, text: "", mimeType, data: a.data });
+      continue;
+    }
+    if (typeof a.text !== "string") continue;
+    out.push({
+      name,
       kind: a.kind === "sheet" ? "sheet" : "text",
-      summary: typeof a.summary === "string" ? a.summary.slice(0, 80) : "",
+      summary,
       ...truncateLines(a.text),
-    }));
+    });
+  }
+  return out;
 }

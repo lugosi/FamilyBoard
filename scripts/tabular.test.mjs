@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   attachmentsToPrompt,
+  imageAttachments,
+  imagePromptNote,
   formatSheetDate,
   gridsToAttachment,
   parseDelimited,
@@ -77,4 +79,11 @@ test("composeSkillPage writes the skill template", () => {
   assert.match(page, /## Steps\n\n1\. Read the sheet with read_google_sheet\n2\. Call find_events for the season to skip duplicates\n3\. Create one event per game:\n   title “Soccer vs <Opponent>”\n\n## Notes\n\nGames are 1 hour\.\n$/);
   assert.equal(toWikiPage("skills/soccer.md", page).title, "Soccer schedule to calendar");
   assert.throws(() => composeSkillPage({ name: "x", whenToUse: "y", steps: [" "], updated: "d" }));
+});
+
+test("image attachments are labeled, not inlined as text", () => {
+  const imgs = [{ name: "photo.jpg", kind: "image", summary: "12 KB · jpeg", text: "", mimeType: "image/jpeg", data: "abc" }];
+  assert.equal(attachmentsToPrompt(imgs), "");
+  assert.equal(imagePromptNote(imgs), '[Attached image "photo.jpg" (12 KB · jpeg)]');
+  assert.deepEqual(imageAttachments(imgs), [{ name: "photo.jpg", mimeType: "image/jpeg", data: "abc" }]);
 });

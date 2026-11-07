@@ -2,11 +2,15 @@
 
 export type ChatAttachment = {
   name: string;
-  kind: "sheet" | "text";
-  /** Short human description, e.g. "2 sheets, 41 rows". */
+  kind: "sheet" | "text" | "image";
+  /** Short human description, e.g. "2 sheets, 41 rows" or "photo · image/jpeg". */
   summary: string;
+  /** Spreadsheet/text body; empty for images. */
   text: string;
   truncated?: boolean;
+  /** Base64 (no data: prefix) for kind "image". */
+  data?: string;
+  mimeType?: string;
 };
 
 export const MAX_ATTACHMENT_CHARS = 60_000;
@@ -114,13 +118,30 @@ export function formatSheetDate(d: Date): string {
   return h || m ? `${date} ${pad(h)}:${pad(m)}` : date;
 }
 
-/** Block appended to a user message so the model sees the file's contents. */
+/** Text blocks for spreadsheet/text files. Images are sent as Gemini inlineData, not here. */
 export function attachmentsToPrompt(attachments: readonly ChatAttachment[]): string {
   return attachments
+    .filter((a) => a.kind !== "image")
     .map((a) => {
       const label = a.kind === "sheet" ? "spreadsheet" : "file";
       const fence = a.text.includes("```") ? "~~~~" : "```";
       return `[Attached ${label} "${a.name}" (${a.summary})]\n${fence}${a.kind === "sheet" ? "csv" : ""}\n${a.text}\n${fence}`;
     })
     .join("\n\n");
+}
+
+export function imageAttachments(attachments: readonly ChatAttachment[]): {
+  name: string;
+  mimeType: string;
+  data: string;
+}[] {
+  return attachments
+    .filter((a) => a.kind === "image" && a.data && a.mimeType)
+    .map((a) => ({ name: a.name, mimeType: a.mimeType!, data: a.data! }));
+}
+
+export function imagePromptNote(attachments: readonly ChatAttachment[]): string {
+  const images = attachments.filter((a) => a.kind === "image");
+  if (!images.length) return "";
+  return images.map((a) => `[Attached image "${a.name}" (${a.summary})]`).join("\n");
 }

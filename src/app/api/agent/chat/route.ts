@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { getGoogleRedirectUri } from "@/lib/app-url";
-import { isGeminiConfigured } from "@/lib/gemini";
+import { isGeminiConfigured, type GeminiMessage } from "@/lib/gemini";
 import { runFamilyAgent } from "@/lib/agent";
-import { attachmentsToPrompt, sanitizeAttachments } from "@/lib/attachments";
+import {
+  attachmentsToPrompt,
+  imageAttachments,
+  imagePromptNote,
+  sanitizeAttachments,
+} from "@/lib/attachments";
 
 type ChatMessage = {
   role?: "user" | "model" | "assistant" | "system";
@@ -28,19 +33,25 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  const messages = (body.messages ?? [])
+  const messages: GeminiMessage[] = (body.messages ?? [])
     .filter((m) => m.role !== "system")
     .map((m) => {
       const role =
         m.role === "model" || m.role === "assistant" ? ("model" as const) : ("user" as const);
       const files = role === "user" ? sanitizeAttachments(m.attachments) : [];
       const text = m.content?.trim() ?? "";
-      const content = files.length
-        ? `${text || "(see attached)"}\n\n${attachmentsToPrompt(files)}`
-        : text;
-      return { role, content };
+      const note = imagePromptNote(files);
+      const filePrompt = attachmentsToPrompt(files);
+      const extras = [filePrompt, note].filter(Boolean).join("\n\n");
+      const content = extras ? `${text || "(see attached)"}\n\n${extras}` : text;
+      const images = imageAttachments(files).map(({ mimeType, data }) => ({ mimeType, data }));
+      return {
+        role,
+        content,
+        ...(images.length ? { images } : {}),
+      };
     })
-    .filter((m) => m.content)
+    .filter((m) => m.content || m.images?.length)
     .slice(-MAX_HISTORY);
   if (messages.length === 0 || messages[messages.length - 1].role !== "user") {
     return NextResponse.json(
