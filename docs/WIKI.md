@@ -17,10 +17,11 @@ Every save is a normal commit (`wiki: add people/maya.md`), so history, diffs, a
 
 GitHub’s Contents API often answers **404** when the token can’t see the repo (not when the file is missing). Checklist:
 
-1. Fine-grained PAT includes **`lugosi/family-wiki`** (or your `WIKILM_GITHUB_REPO`) — “All repositories” or that repo selected.
-2. Permission **Contents: Read and write** (Metadata read alone is not enough).
-3. The repo is **not empty** — create a README on GitHub once so the default branch exists.
-4. Leave `WIKILM_GITHUB_BRANCH` unset unless you intentionally use a non-default branch.
+1. Create the private repo **`lugosi/family-wiki`** on GitHub if it does not exist yet (empty is fine — FamilyBoard seeds the first commit).
+2. Fine-grained PAT includes that repo — **Only select repositories** → `family-wiki` (or “All repositories”).
+3. Permission **Contents: Read and write** (Metadata read alone is not enough).
+4. On TrueNAS, set only `WIKILM_GITHUB_TOKEN`, pull `ghcr.io/lugosi/familyboard:latest`, and restart the app.
+5. Leave `WIKILM_GITHUB_BRANCH` unset unless you intentionally use a non-default branch.
 
 ## Layout
 

@@ -358,6 +358,61 @@ export async function readWikiPage(path: string): Promise<WikiPage> {
   return retry;
 }
 
+/**
+ * Contents API cannot create the first file in an empty repo (404). Seed the
+ * default branch with a single commit via the Git Data API instead.
+ */
+async function putFirstCommit(
+  cfg: WikiConfig,
+  rel: string,
+  content: string,
+  message: string,
+): Promise<WikiPage> {
+  const full = repoPath(cfg, rel);
+  const blob = await gh<{ sha?: string }>(cfg, "POST", `/repos/${cfg.owner}/${cfg.repo}/git/blobs`, {
+    content,
+    encoding: "utf-8",
+  });
+  if (blob.status !== 201 || !blob.json?.sha) throw await explainWrite404(cfg, rel, blob.text);
+
+  const tree = await gh<{ sha?: string }>(cfg, "POST", `/repos/${cfg.owner}/${cfg.repo}/git/trees`, {
+    tree: [{ path: full, mode: "100644", type: "blob", sha: blob.json.sha }],
+  });
+  if (tree.status !== 201 || !tree.json?.sha) throw await explainWrite404(cfg, rel, tree.text);
+
+  const commit = await gh<{ sha?: string }>(cfg, "POST", `/repos/${cfg.owner}/${cfg.repo}/git/commits`, {
+    message,
+    tree: tree.json.sha,
+    parents: [],
+  });
+  if (commit.status !== 201 || !commit.json?.sha) throw await explainWrite404(cfg, rel, commit.text);
+
+  const ref = await gh(cfg, "POST", `/repos/${cfg.owner}/${cfg.repo}/git/refs`, {
+    ref: `refs/heads/${cfg.branch}`,
+    sha: commit.json.sha,
+  });
+  // 422: ref already exists (race) — fall back to Contents on the next attempt.
+  if (ref.status !== 201 && ref.status !== 200) throw await explainWrite404(cfg, rel, ref.text);
+
+  // Blob sha from git/blobs is the file sha Contents would return.
+  blobCache.set(blob.json.sha, content);
+  pagesCache = null;
+  defaultBranchCache.set(`${cfg.owner}/${cfg.repo}`, cfg.branch);
+  return toWikiPage(rel, content, blob.json.sha);
+}
+
+async function repoLooksEmpty(cfg: WikiConfig): Promise<boolean> {
+  const meta = await gh<{ size?: number }>(cfg, "GET", `/repos/${cfg.owner}/${cfg.repo}`);
+  if (meta.status === 404) return false;
+  if (meta.status === 200 && (meta.json?.size ?? 0) === 0) return true;
+  const tree = await gh(
+    cfg,
+    "GET",
+    `/repos/${cfg.owner}/${cfg.repo}/git/trees/${encodeURIComponent(cfg.branch)}`,
+  );
+  return tree.status === 409;
+}
+
 async function putFile(
   cfgIn: WikiConfig,
   rel: string,
@@ -366,6 +421,10 @@ async function putFile(
   message: string,
 ): Promise<WikiPage> {
   const cfg = await withBranch(cfgIn);
+  // Empty repos: skip Contents (always 404) and create the first commit directly.
+  if (!sha && (await repoLooksEmpty(cfg))) {
+    return putFirstCommit(cfg, rel, content, message);
+  }
   const res = await gh<{ content?: { sha?: string } }>(cfg, "PUT", contentsUrl(cfg, rel), {
     message,
     content: Buffer.from(content, "utf8").toString("base64"),
@@ -376,7 +435,13 @@ async function putFile(
     throw new WikiError("conflict", `${rel} changed since it was read; reload and try again`);
   }
   if (res.status === 422) throw new WikiError("exists", `A page already exists at ${rel}`);
-  if (res.status === 404) throw await explainWrite404(cfg, rel, res.text);
+  if (res.status === 404) {
+    // Race: repo became empty, or Contents refused while Git Data still works for empty seed.
+    if (!sha && (await repoLooksEmpty(cfg))) {
+      return putFirstCommit(cfg, rel, content, message);
+    }
+    throw await explainWrite404(cfg, rel, res.text);
+  }
   if ((res.status !== 200 && res.status !== 201) || !res.json) throw upstream(res.status, res.text);
   const newSha = res.json.content?.sha;
   if (newSha) blobCache.set(newSha, content);
