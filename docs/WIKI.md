@@ -8,10 +8,19 @@ The assistant's long-term memory is a folder of markdown files in a **private Gi
 |---------|-------|
 | `WIKILM_GITHUB_TOKEN` | **Required.** Fine-grained PAT on `lugosi/family-wiki`, **Contents: Read and write** |
 | `WIKILM_GITHUB_REPO` | Optional, default `lugosi/family-wiki` |
-| `WIKILM_GITHUB_BRANCH` | Optional, default `main` |
+| `WIKILM_GITHUB_BRANCH` | Optional; defaults to the repo’s default branch (usually `main`) |
 | `WIKILM_GITHUB_PATH` | Optional folder inside the repo, default `wiki` (use `.` for repo root) |
 
 Every save is a normal commit (`wiki: add people/maya.md`), so history, diffs, and undo live in GitHub. Deleted pages stay in git history.
+
+### If writes return 404
+
+GitHub’s Contents API often answers **404** when the token can’t see the repo (not when the file is missing). Checklist:
+
+1. Fine-grained PAT includes **`lugosi/family-wiki`** (or your `WIKILM_GITHUB_REPO`) — “All repositories” or that repo selected.
+2. Permission **Contents: Read and write** (Metadata read alone is not enough).
+3. The repo is **not empty** — create a README on GitHub once so the default branch exists.
+4. Leave `WIKILM_GITHUB_BRANCH` unset unless you intentionally use a non-default branch.
 
 ## Layout
 

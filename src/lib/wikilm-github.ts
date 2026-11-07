@@ -1,4 +1,5 @@
 import { getDefaultTimeZone } from "./google";
+import { diagnoseContentsWrite404 } from "./wikilm-diagnose";
 import {
   categoryOf,
   composeNewPage,
@@ -20,6 +21,8 @@ import {
   type WikiPageMeta,
   type WikiSearchResult,
 } from "./wiki-format";
+
+export { diagnoseContentsWrite404 } from "./wikilm-diagnose";
 
 export type { WikiPage, WikiPageMeta, WikiSearchResult } from "./wiki-format";
 
@@ -79,7 +82,8 @@ export function getWikilmGithubConfig(): WikiConfig | null {
     process.env.WIKILM_GITHUB_REPO?.trim() || DEFAULT_WIKILM_GITHUB_REPO;
   const [owner, repo] = repoFull.split("/");
   if (!owner || !repo) return null;
-  const branch = process.env.WIKILM_GITHUB_BRANCH?.trim() || "main";
+  // Empty / unset → resolved from the repo's default branch on first GitHub call.
+  const branch = process.env.WIKILM_GITHUB_BRANCH?.trim() || "";
   // Empty string / "." = repo root; unset defaults to a wiki/ folder.
   const pathEnv = process.env.WIKILM_GITHUB_PATH;
   const basePath =
@@ -87,6 +91,54 @@ export function getWikilmGithubConfig(): WikiConfig | null {
       ? "wiki"
       : pathEnv.trim().replace(/^\/+|\/+$/g, "").replace(/^\.$/, "");
   return { owner, repo, token, branch, basePath };
+}
+
+/** Cache of owner/repo → default branch (when WIKILM_GITHUB_BRANCH is unset). */
+const defaultBranchCache = new Map<string, string>();
+
+async function withBranch(cfg: WikiConfig): Promise<WikiConfig> {
+  if (cfg.branch) return cfg;
+  const key = `${cfg.owner}/${cfg.repo}`;
+  let branch = defaultBranchCache.get(key);
+  if (!branch) {
+    const meta = await gh<{ default_branch?: string; message?: string }>(
+      cfg,
+      "GET",
+      `/repos/${cfg.owner}/${cfg.repo}`,
+    );
+    if (meta.status === 404) {
+      throw new WikiError(
+        "upstream",
+        `GitHub can't see ${key}. Check WIKILM_GITHUB_TOKEN: fine-grained PAT must include that repo with Contents read/write (404 often means no access, not a missing file).`,
+      );
+    }
+    if (meta.status !== 200) throw upstream(meta.status, meta.text);
+    branch = meta.json?.default_branch?.trim() || "main";
+    defaultBranchCache.set(key, branch);
+  }
+  return { ...cfg, branch };
+}
+
+async function explainWrite404(cfg: WikiConfig, rel: string, text: string): Promise<WikiError> {
+  const full = repoPath(cfg, rel);
+  const meta = await gh<{ default_branch?: string; size?: number }>(
+    cfg,
+    "GET",
+    `/repos/${cfg.owner}/${cfg.repo}`,
+  );
+  return new WikiError(
+    "upstream",
+    diagnoseContentsWrite404({
+      owner: cfg.owner,
+      repo: cfg.repo,
+      branch: cfg.branch,
+      fullPath: full,
+      putBodyText: text,
+      repoStatus: meta.status,
+      repoSize: meta.json?.size,
+      defaultBranch: meta.json?.default_branch,
+    }),
+  );
 }
 
 export function isWikilmGithubConfigured(): boolean {
@@ -183,14 +235,40 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return out;
 }
 
-async function fetchAllPages(cfg: WikiConfig): Promise<WikiPage[]> {
+async function fetchAllPages(cfgIn: WikiConfig): Promise<WikiPage[]> {
+  const cfg = await withBranch(cfgIn);
   const tree = await gh<{ tree?: { path: string; type: string; sha: string }[] }>(
     cfg,
     "GET",
     `/repos/${cfg.owner}/${cfg.repo}/git/trees/${encodeURIComponent(cfg.branch)}?recursive=1`,
   );
-  // 404: branch missing; 409: empty repository.
-  if (tree.status === 404 || tree.status === 409) return [];
+  // 409: empty repository (no commits yet) — treat as no pages.
+  if (tree.status === 409) return [];
+  if (tree.status === 404) {
+    // Branch missing, or token can't see the repo. Prefer a clear error over a fake empty wiki.
+    const meta = await gh<{ default_branch?: string }>(
+      cfg,
+      "GET",
+      `/repos/${cfg.owner}/${cfg.repo}`,
+    );
+    if (meta.status === 404) {
+      throw new WikiError(
+        "upstream",
+        `GitHub can't see ${cfg.owner}/${cfg.repo}. Check WIKILM_GITHUB_TOKEN: fine-grained PAT must include that repo with Contents read/write.`,
+      );
+    }
+    const def = meta.json?.default_branch;
+    if (def && cfg.branch && def !== cfg.branch) {
+      throw new WikiError(
+        "upstream",
+        `Branch “${cfg.branch}” not found (repo default is “${def}”). Set WIKILM_GITHUB_BRANCH=${def} or unset it.`,
+      );
+    }
+    throw new WikiError(
+      "upstream",
+      `GitHub can't read branch “${cfg.branch}” on ${cfg.owner}/${cfg.repo}. Check WIKILM_GITHUB_BRANCH and token access.`,
+    );
+  }
   if (tree.status !== 200 || !tree.json) throw upstream(tree.status, tree.text);
 
   const prefix = cfg.basePath ? `${cfg.basePath}/` : "";
@@ -250,7 +328,8 @@ export async function searchWiki(
   return searchPages(await loadWikiPages(), query, opts);
 }
 
-async function fetchPage(cfg: WikiConfig, rel: string): Promise<WikiPage | null> {
+async function fetchPage(cfgIn: WikiConfig, rel: string): Promise<WikiPage | null> {
+  const cfg = await withBranch(cfgIn);
   const res = await gh<{ type?: string; content?: string; encoding?: string; sha?: string }>(
     cfg,
     "GET",
@@ -280,12 +359,13 @@ export async function readWikiPage(path: string): Promise<WikiPage> {
 }
 
 async function putFile(
-  cfg: WikiConfig,
+  cfgIn: WikiConfig,
   rel: string,
   content: string,
   sha: string | undefined,
   message: string,
 ): Promise<WikiPage> {
+  const cfg = await withBranch(cfgIn);
   const res = await gh<{ content?: { sha?: string } }>(cfg, "PUT", contentsUrl(cfg, rel), {
     message,
     content: Buffer.from(content, "utf8").toString("base64"),
@@ -296,6 +376,7 @@ async function putFile(
     throw new WikiError("conflict", `${rel} changed since it was read; reload and try again`);
   }
   if (res.status === 422) throw new WikiError("exists", `A page already exists at ${rel}`);
+  if (res.status === 404) throw await explainWrite404(cfg, rel, res.text);
   if ((res.status !== 200 && res.status !== 201) || !res.json) throw upstream(res.status, res.text);
   const newSha = res.json.content?.sha;
   if (newSha) blobCache.set(newSha, content);
@@ -303,7 +384,8 @@ async function putFile(
   return toWikiPage(rel, content, newSha);
 }
 
-async function deleteFile(cfg: WikiConfig, rel: string, sha: string, message: string): Promise<void> {
+async function deleteFile(cfgIn: WikiConfig, rel: string, sha: string, message: string): Promise<void> {
+  const cfg = await withBranch(cfgIn);
   const res = await gh(cfg, "DELETE", contentsUrl(cfg, rel), {
     message,
     sha,
