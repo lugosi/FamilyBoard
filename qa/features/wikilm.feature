@@ -21,7 +21,7 @@ Feature: WikiLLM AI tab
     Given auth status has geminiConfigured true
     When I open the AI tab
     Then I see one prompt input labelled "Ask the family assistant" and a "Send" button
-    And I see suggestion chips such as "House dashboard" and "What's on the calendar this week?"
+    And I see action chips such as "House dashboard" (only real actions, no fake example appointments)
     And capability pills show Calendar, Inbox, Wiki, Slack (green when available)
 
   Scenario: House dashboard from chat or Slack

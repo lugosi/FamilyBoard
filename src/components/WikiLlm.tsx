@@ -70,14 +70,22 @@ type SlackSnapshot = {
   error?: string;
 };
 
-const SUGGESTIONS = [
-  "House dashboard",
-  "What's on the calendar this week?",
-  "Add dentist for Maya next Tuesday at 3pm",
-  "Move Saturday's soccer to 10am",
-  "Check the inbox",
+/** Only real, safe actions — never fake family names / appointments. */
+type QuickPrompt = { label: string; prompt: string; when?: (s: Status) => boolean };
+
+const QUICK_PROMPTS: QuickPrompt[] = [
+  { label: "House dashboard", prompt: "House dashboard" },
+  {
+    label: "This week’s calendar",
+    prompt: "What's on the calendar this week?",
+    when: (s) => Boolean(s.googleLinked),
+  },
+  {
+    label: "Scan the inbox",
+    prompt: "Check the inbox",
+    when: (s) => Boolean(s.gmailReady),
+  },
 ];
-const WIKI_SUGGESTIONS = ["Remember that Maya's shoe size is 2", "What's the Wi-Fi password?"];
 
 type AiView = "chat" | "wiki";
 
@@ -558,16 +566,18 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2.5">
-                        {[...SUGGESTIONS, ...(status?.wikilmGithubConfigured ? WIKI_SUGGESTIONS : [])].map((s) => (
-                          <button
-                            key={s}
-                            type="button"
-                            className={chipBtn}
-                            onClick={() => void sendPrompt(s)}
-                          >
-                            {s}
-                          </button>
-                        ))}
+                        {QUICK_PROMPTS.filter((q) => !q.when || (status ? q.when(status) : false)).map(
+                          (q) => (
+                            <button
+                              key={q.label}
+                              type="button"
+                              className={chipBtn}
+                              onClick={() => void sendPrompt(q.prompt)}
+                            >
+                              {q.label}
+                            </button>
+                          ),
+                        )}
                       </div>
                       {skills.length ? (
                         <div>
