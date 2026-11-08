@@ -68,11 +68,11 @@ function bodyWithoutTitle(page: WikiPage): string {
 }
 
 const inputClass =
-  "w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-slate-500";
+  "w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-base text-white outline-none focus:border-slate-500";
 const btn =
-  "rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50";
+  "rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50";
 const primaryBtn =
-  "rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-white disabled:opacity-50";
+  "rounded-xl bg-slate-100 px-3.5 py-2 text-sm font-semibold text-slate-900 hover:bg-white disabled:opacity-50";
 
 export function WikiBrowser({
   active,
