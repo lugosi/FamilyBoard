@@ -1,5 +1,6 @@
 import type { AgentTool } from "./agent";
 import { executeCatlinkAction, getCatlinkConfig, type CatlinkAction } from "./catlink";
+import { fetchHouseDashboard, formatHouseDashboardText } from "./house-dashboard";
 import { controlHueArea, isHueConfigured, listHueAreas } from "./hue";
 import { readSpotifyTokens, requireSpotifyOAuthEnv, spotifyApiFetch } from "./spotify";
 
@@ -46,7 +47,28 @@ export function buildDeviceTools(ready: {
   spotify: boolean;
   catlink: boolean;
 }): AgentTool[] {
-  const tools: AgentTool[] = [];
+  const tools: AgentTool[] = [
+    {
+      declaration: {
+        name: "house_dashboard",
+        description:
+          "Show a live house dashboard: lights, litter box, Spotify, and outdoor weather, plus suggested follow-up actions. Call this when someone asks for the house status, dashboard, what's on, or a home overview.",
+        parameters: { type: "object", properties: {} },
+      },
+      async run(_args, ctx) {
+        const channel = ctx.channel ?? "board";
+        const dash = await fetchHouseDashboard();
+        return {
+          response: {
+            ...dash,
+            summary: formatHouseDashboardText(dash, channel),
+          },
+          label: "House dashboard",
+          quickActions: dash.quickActions,
+        };
+      },
+    },
+  ];
 
   if (ready.hue) {
     tools.push(
