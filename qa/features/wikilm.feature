@@ -10,7 +10,7 @@ Feature: WikiLLM AI tab
   Scenario: Board and AI tabs exist
     Then I see main navigation with "Board" and "AI"
     When I select the "AI" tab
-    Then I see the heading "Assistant"
+    Then I see Chat / Wiki controls on the AI tab
 
   Scenario: Assistant setup when Gemini is missing
     Given auth status has geminiConfigured false

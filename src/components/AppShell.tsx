@@ -80,7 +80,7 @@ export function AppShell() {
               key={id}
               type="button"
               onClick={() => selectTab(id)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-semibold tracking-wide sm:text-base ${
+              className={`rounded-lg px-3.5 py-2 text-base font-semibold tracking-wide ${
                 active
                   ? "bg-slate-800 text-white"
                   : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
