@@ -7,7 +7,7 @@ import {
   hashGateToken,
   isValidGateSession,
   secretFingerprint,
-} from "../src/lib/gate-sessions.ts";
+} from "../src/lib/gate-sessions";
 
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), "fb-gate-"));
 process.env.DATA_DIR = dir;
