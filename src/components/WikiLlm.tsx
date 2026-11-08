@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { WikiBrowser } from "@/components/WikiBrowser";
 
@@ -136,6 +136,8 @@ function readInitialView(): AiView {
   }
 }
 
+const subscribeNoop = () => () => {};
+
 async function parseJsonSafe<T>(res: Response): Promise<T> {
   const ct = res.headers.get("content-type") ?? "";
   if (ct.toLowerCase().includes("application/json")) {
@@ -182,15 +184,13 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   const [chatStatus, setChatStatus] = useState<string | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [wikiFocus, setWikiFocus] = useState<{ path: string; nonce: number } | null>(null);
-  const [view, setView] = useState<AiView>("chat");
+  const storedView = useSyncExternalStore(subscribeNoop, readInitialView, () => "chat" as AiView);
+  const [pickedView, setPickedView] = useState<AiView | null>(null);
+  const view = pickedView ?? storedView;
   const [wikiRefreshKey, setWikiRefreshKey] = useState(0);
 
-  useEffect(() => {
-    setView(readInitialView());
-  }, []);
-
   const selectView = useCallback((next: AiView) => {
-    setView(next);
+    setPickedView(next);
     try {
       localStorage.setItem(VIEW_STORAGE_KEY, next);
     } catch {

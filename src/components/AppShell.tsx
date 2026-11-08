@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { Board } from "@/components/Board";
 import { WikiLlm } from "@/components/WikiLlm";
 
@@ -31,23 +31,17 @@ function readInitialTab(): AppTab {
   }
 }
 
-export function AppShell() {
-  // SSR + first paint show Board so the shell is never blank; after mount we
-  // honor ?tab= / localStorage (may briefly flash Board on AI deep links).
-  const [tab, setTab] = useState<AppTab>("board");
+const subscribeNoop = () => () => {};
 
-  useEffect(() => {
-    const next = readInitialTab();
-    setTab(next);
-    try {
-      localStorage.setItem(TAB_STORAGE_KEY, next);
-    } catch {
-      /* ignore */
-    }
-  }, []);
+export function AppShell() {
+  // Server snapshot is always Board so SSR markup is stable; client snapshot
+  // reads ?tab= / localStorage. Picked tab overrides after the user clicks.
+  const storedTab = useSyncExternalStore(subscribeNoop, readInitialTab, () => "board");
+  const [pickedTab, setPickedTab] = useState<AppTab | null>(null);
+  const tab = pickedTab ?? storedTab;
 
   const selectTab = useCallback((next: AppTab) => {
-    setTab(next);
+    setPickedTab(next);
     try {
       localStorage.setItem(TAB_STORAGE_KEY, next);
     } catch {

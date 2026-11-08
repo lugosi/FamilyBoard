@@ -66,7 +66,7 @@ async function saveWikiTodos(todos: FamilyTodo[], sha?: string): Promise<void> {
 }
 
 /** Prefer the wiki checklist when GitHub wiki is configured; else local JSON. */
-async function useWiki(): Promise<boolean> {
+async function wikiBackendEnabled(): Promise<boolean> {
   return isWikilmGithubConfigured();
 }
 
@@ -86,7 +86,7 @@ async function ensureWikiSeeded(): Promise<{ todos: FamilyTodo[]; sha?: string }
 }
 
 export async function listTodos(): Promise<FamilyTodo[]> {
-  if (await useWiki()) {
+  if (await wikiBackendEnabled()) {
     const { todos } = await ensureWikiSeeded();
     return [...todos].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
@@ -110,7 +110,7 @@ export async function addTodo(input: {
     createdAt: new Date().toISOString(),
   };
 
-  if (await useWiki()) {
+  if (await wikiBackendEnabled()) {
     const { todos, sha } = await ensureWikiSeeded();
     todos.push(todo);
     await saveWikiTodos(todos, sha);
@@ -134,7 +134,7 @@ export async function addTodos(
   const cleaned = items.filter((i) => i.title?.trim());
   if (!cleaned.length) return [];
 
-  if (await useWiki()) {
+  if (await wikiBackendEnabled()) {
     const { todos, sha } = await ensureWikiSeeded();
     const added: FamilyTodo[] = [];
     for (const item of cleaned) {
@@ -163,7 +163,7 @@ export async function setTodoDone(
   id: string,
   done: boolean,
 ): Promise<FamilyTodo | null> {
-  if (await useWiki()) {
+  if (await wikiBackendEnabled()) {
     const { todos, sha } = await ensureWikiSeeded();
     const todo = todos.find((t) => t.id === id);
     if (!todo) return null;
@@ -181,7 +181,7 @@ export async function setTodoDone(
 }
 
 export async function removeTodo(id: string): Promise<boolean> {
-  if (await useWiki()) {
+  if (await wikiBackendEnabled()) {
     const { todos, sha } = await ensureWikiSeeded();
     const next = todos.filter((t) => t.id !== id);
     if (next.length === todos.length) return false;

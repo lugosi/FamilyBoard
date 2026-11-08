@@ -2,11 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { getDataDir } from "./data-dir";
-import {
-  formatPendingSummary,
-  WRITE_TOOLS_NEEDING_APPROVAL,
-  type PendingWriteItem,
-} from "./agent-pending-writes-format";
+import { formatPendingSummary, type PendingWriteItem } from "./agent-pending-writes-format";
 
 export {
   formatPendingSummary,
