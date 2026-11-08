@@ -94,10 +94,10 @@ const ATTACH_ACCEPT = ".csv,.tsv,.xlsx,.xlsm,.txt,.md,.json,.ics,.jpg,.jpeg,.png
 
 function AttachmentChip({ a, onRemove }: { a: ChatAttachment; onRemove?: () => void }) {
   return (
-    <li className="flex max-w-full items-center gap-1.5 rounded-md border border-emerald-800/60 bg-emerald-950/30 px-2 py-0.5 text-xs text-emerald-100">
+    <li className="flex max-w-full items-center gap-2 rounded-lg border border-emerald-800/60 bg-emerald-950/30 px-2.5 py-1 text-sm text-emerald-50">
       <span className="font-medium">{a.kind === "sheet" ? "Sheet" : a.kind === "image" ? "Photo" : "File"}</span>
       <span className="truncate">{a.name}</span>
-      <span className="shrink-0 text-emerald-300/70">· {a.summary}</span>
+      <span className="shrink-0 text-emerald-200/70">· {a.summary}</span>
       {onRemove ? (
         <button
           type="button"
@@ -148,6 +148,15 @@ function timeAgo(iso: string | null | undefined): string {
   return `${Math.round(sec / 3600)}h ago`;
 }
 
+/** Safari/WebKit often surfaces fetch failures as the opaque "Load failed". */
+function friendlyChatError(e: unknown): string {
+  if (!(e instanceof Error)) return "Something went wrong. Try again.";
+  if (/load failed|failed to fetch|networkerror|network request failed/i.test(e.message)) {
+    return "Couldn't reach the assistant (connection dropped). Wait a moment and try again — long replies sometimes time out.";
+  }
+  return e.message || "Something went wrong. Try again.";
+}
+
 export function WikiLlm({ active = true }: { active?: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [messages, setMessages] = useState<GmailMessage[]>([]);
@@ -160,7 +169,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   const [skillForm, setSkillForm] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const promptRef = useRef<HTMLInputElement | null>(null);
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -336,7 +345,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
       if (ac.signal.aborted) {
         setChatStatus("Cancelled.");
       } else {
-        setError(e instanceof Error ? e.message : "chat_error");
+        setError(friendlyChatError(e));
       }
       setChat(chat);
       setInput(text);
@@ -406,9 +415,11 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   }
 
   const panel =
-    "flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 shadow-lg shadow-slate-950/40";
-  const smallBtn =
-    "rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-700 disabled:opacity-50";
+    "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/60 shadow-lg shadow-slate-950/40";
+  const sideBtn =
+    "rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50";
+  const chipBtn =
+    "rounded-xl border border-slate-600 bg-slate-950/70 px-3.5 py-2.5 text-left text-sm leading-snug text-slate-100 hover:border-slate-400 hover:bg-slate-900 disabled:opacity-50 sm:text-base";
   const unprocessed = messages.filter((m) => !m.processed).length;
   const openTodos = todos.filter((t) => !t.done);
   const doneTodos = todos.filter((t) => t.done);
@@ -421,20 +432,20 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   ];
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-base text-slate-100">
-      <div className="box-border flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-2 py-2 sm:px-4 sm:py-3 lg:px-6">
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-lg font-bold tracking-tight text-white sm:text-xl">
-              WikiLLM
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-base text-slate-100 sm:text-lg">
+      <div className="box-border flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-3 py-3 sm:gap-4 sm:px-5 sm:py-4 lg:px-8">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-4">
+            <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+              Assistant
             </h1>
-            <ul className="flex flex-wrap gap-1.5 text-xs" aria-label="Assistant capabilities">
+            <ul className="flex flex-wrap gap-2 text-sm" aria-label="Assistant capabilities">
               {capabilities.map((c) => (
                 <li
                   key={c.label}
-                  className={`rounded-full border px-2 py-0.5 ${
+                  className={`rounded-full border px-3 py-1 ${
                     c.on
-                      ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-200"
+                      ? "border-emerald-700/60 bg-emerald-950/40 text-emerald-100"
                       : "border-slate-700 bg-slate-900 text-slate-500"
                   }`}
                 >
@@ -445,7 +456,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
           </div>
           <button
             type="button"
-            className="rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+            className="rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-2 text-base text-slate-100 hover:bg-slate-700 disabled:opacity-50"
             disabled={Boolean(busy)}
             onClick={() => void refresh()}
             aria-label="Refresh AI tab"
@@ -455,20 +466,20 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         </div>
 
         {error ? (
-          <p className="shrink-0 rounded-lg border border-amber-800/60 bg-amber-950/40 px-3 py-2 text-sm text-amber-100">
+          <p className="shrink-0 rounded-xl border border-amber-800/60 bg-amber-950/40 px-4 py-3 text-base text-amber-50">
             {error}
           </p>
         ) : null}
         {note ? (
-          <p className="shrink-0 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200">
+          <p className="shrink-0 rounded-xl border border-slate-700 bg-slate-800/50 px-4 py-3 text-base text-slate-100">
             {note}
           </p>
         ) : null}
 
-        <div className="board-scrollbar grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)] lg:overflow-hidden">
+        <div className="board-scrollbar grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto lg:grid-cols-[minmax(0,2.2fr)_minmax(20rem,1fr)] lg:overflow-hidden">
           {/* Prompt */}
           <section
-            className={`${panel} relative min-h-[24rem] p-3 sm:p-4`}
+            className={`${panel} relative min-h-[28rem] p-4 sm:p-5`}
             aria-label={view === "wiki" ? "Family wiki" : "Assistant"}
             onDragOver={(e) => {
               if (view !== "chat" || !status?.geminiConfigured || !e.dataTransfer.types.includes("Files")) return;
@@ -486,14 +497,14 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
             }}
           >
             {dragging ? (
-              <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-emerald-600/70 bg-slate-950/80 text-sm text-emerald-100">
+              <div className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-emerald-600/70 bg-slate-950/85 text-base text-emerald-100 sm:text-lg">
                 Drop a spreadsheet or text file to attach it
               </div>
             ) : null}
             <div
               role="tablist"
               aria-label="Assistant view"
-              className="mb-3 flex shrink-0 gap-0.5 self-start rounded-lg border border-slate-800 bg-slate-950/60 p-0.5 text-sm"
+              className="mb-4 flex shrink-0 gap-1 self-start rounded-xl border border-slate-800 bg-slate-950/60 p-1 text-base"
             >
               {(["chat", "wiki"] as const).map((v) => (
                 <button
@@ -501,7 +512,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                   type="button"
                   role="tab"
                   aria-selected={view === v}
-                  className={`rounded-md px-3 py-1 font-medium ${
+                  className={`rounded-lg px-4 py-2 font-medium ${
                     view === v ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"
                   }`}
                   onClick={() => {
@@ -524,30 +535,34 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 refreshKey={wikiRefreshKey}
               />
             ) : !status?.geminiConfigured ? (
-              <p className="text-sm text-slate-400">
-                Set <code className="text-slate-300">GEMINI_API_KEY</code> to use
+              <p className="text-base text-slate-300 sm:text-lg">
+                Set <code className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-100">GEMINI_API_KEY</code> to use
                 the family assistant. Link Google to let it read and update the
                 calendar.
               </p>
             ) : (
               <>
-                <div className="board-scrollbar mb-3 min-h-0 flex-1 space-y-3 overflow-y-auto text-sm">
+                <div className="board-scrollbar mb-4 min-h-0 flex-1 space-y-4 overflow-y-auto">
                   {chat.length === 0 ? (
-                    <div className="flex h-full flex-col justify-center gap-3 text-slate-400">
-                      <p>
-                        Ask anything, or tell it what to change. It can read and
-                        update the calendar, manage todos, process the inbox
-                        {status?.wikilmGithubConfigured
-                          ? ", and remember things in the family wiki (people, house, school, health…)"
-                          : ""}
-                        .
-                      </p>
-                      <div className="flex flex-wrap gap-2">
+                    <div className="flex h-full flex-col justify-center gap-5 text-slate-300">
+                      <div className="space-y-2">
+                        <p className="text-xl font-medium text-white sm:text-2xl">
+                          What do you need?
+                        </p>
+                        <p className="max-w-2xl text-base leading-relaxed text-slate-400 sm:text-lg">
+                          Ask about the calendar, control lights or litter, check the house
+                          {status?.wikilmGithubConfigured
+                            ? ", or save something to the family wiki"
+                            : ""}
+                          .
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2.5">
                         {[...SUGGESTIONS, ...(status?.wikilmGithubConfigured ? WIKI_SUGGESTIONS : [])].map((s) => (
                           <button
                             key={s}
                             type="button"
-                            className="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1.5 text-left text-xs text-slate-200 hover:border-slate-500"
+                            className={chipBtn}
                             onClick={() => void sendPrompt(s)}
                           >
                             {s}
@@ -556,16 +571,16 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                       </div>
                       {skills.length ? (
                         <div>
-                          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
                             Your skills
                           </p>
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-2.5">
                             {skills.map((sk) => (
                               <button
                                 key={sk.path}
                                 type="button"
                                 title={sk.summary}
-                                className="rounded-full border border-emerald-800/60 bg-emerald-950/30 px-3 py-1.5 text-left text-xs text-emerald-100 hover:border-emerald-600"
+                                className="rounded-xl border border-emerald-800/60 bg-emerald-950/30 px-3.5 py-2.5 text-left text-sm text-emerald-50 hover:border-emerald-600 sm:text-base"
                                 onClick={() => {
                                   setInput(`Use the “${sk.title}” skill`);
                                   promptRef.current?.focus();
@@ -577,9 +592,8 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                           </div>
                         </div>
                       ) : null}
-                      <p className="text-xs text-slate-500">
-                        Attach a spreadsheet (.xlsx, .csv) or paste a Google Sheet link, explain what to do
-                        with it, then save the conversation as a skill to rerun it next time.
+                      <p className="text-sm text-slate-500 sm:text-base">
+                        Tip: attach a spreadsheet, say what to do with it, then save the chat as a skill.
                       </p>
                     </div>
                   ) : (
@@ -589,21 +603,21 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                         className={m.role === "user" ? "flex justify-end" : ""}
                       >
                         <div
-                          className={`max-w-[90%] rounded-lg px-3 py-2 ${
+                          className={`max-w-[min(100%,42rem)] rounded-2xl px-4 py-3 sm:px-5 sm:py-3.5 ${
                             m.role === "user"
-                              ? "bg-slate-800 text-slate-100 whitespace-pre-wrap"
-                              : "bg-slate-950/80 text-slate-200"
+                              ? "bg-slate-800 text-base leading-relaxed text-slate-50 whitespace-pre-wrap sm:text-lg"
+                              : "bg-slate-950/85 text-slate-100"
                           }`}
                         >
                           {m.actions?.length ? (
-                            <ul className="mb-2 flex flex-wrap gap-1.5">
+                            <ul className="mb-2.5 flex flex-wrap gap-2">
                               {m.actions.map((a, j) => (
                                 <li
                                   key={j}
-                                  className={`rounded-md border px-2 py-0.5 text-xs ${
+                                  className={`rounded-lg border px-2.5 py-1 text-sm ${
                                     a.ok
-                                      ? "border-sky-800/70 bg-sky-950/40 text-sky-200"
-                                      : "border-red-800/70 bg-red-950/40 text-red-200"
+                                      ? "border-sky-800/70 bg-sky-950/40 text-sky-100"
+                                      : "border-red-800/70 bg-red-950/40 text-red-100"
                                   }`}
                                 >
                                   {a.label}
@@ -612,7 +626,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                             </ul>
                           ) : null}
                           {m.attachments?.length ? (
-                            <ul className="mb-1.5 flex flex-wrap justify-end gap-1.5 whitespace-normal">
+                            <ul className="mb-2 flex flex-wrap justify-end gap-2 whitespace-normal">
                               {m.attachments.map((a, j) => (
                                 <AttachmentChip key={j} a={a} />
                               ))}
@@ -624,12 +638,12 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                             m.content
                           )}
                           {m.role === "model" && m.quickActions?.length ? (
-                            <div className="mt-2 flex flex-wrap gap-1.5">
+                            <div className="mt-3 flex flex-wrap gap-2">
                               {m.quickActions.map((qa) => (
                                 <button
                                   key={qa.id}
                                   type="button"
-                                  className="rounded-md border border-amber-700/70 bg-amber-950/40 px-2.5 py-1 text-xs font-medium text-amber-100 hover:border-amber-500 disabled:opacity-50"
+                                  className="rounded-xl border border-amber-600/70 bg-amber-950/45 px-3.5 py-2 text-sm font-medium text-amber-50 hover:border-amber-400 disabled:opacity-50 sm:text-base"
                                   disabled={Boolean(busy)}
                                   onClick={() => void sendPrompt(qa.prompt)}
                                 >
@@ -643,17 +657,17 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                     ))
                   )}
                   {busy === "chat" ? (
-                    <p className="text-xs text-slate-500">Thinking…</p>
+                    <p className="text-base text-slate-400">Thinking…</p>
                   ) : null}
                   <div ref={chatEndRef} />
                 </div>
                 {chatStatus ? (
-                  <div className="mb-2 flex shrink-0 items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-xs text-slate-200">
+                  <div className="mb-3 flex shrink-0 items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-800/50 px-4 py-3 text-base text-slate-100">
                     <span>{chatStatus}</span>
                     {busy === "chat" ? (
                       <button
                         type="button"
-                        className="rounded-md border border-slate-600 bg-slate-900 px-2.5 py-1 font-medium text-white hover:bg-slate-800"
+                        className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 font-medium text-white hover:bg-slate-800"
                         onClick={() => chatAbortRef.current?.abort()}
                       >
                         Cancel
@@ -663,7 +677,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 ) : null}
                 {skillForm !== null ? (
                   <form
-                    className="mb-2 flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-emerald-800/60 bg-emerald-950/20 px-3 py-2 text-xs"
+                    className="mb-3 flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-emerald-800/60 bg-emerald-950/20 px-4 py-3 text-base"
                     onSubmit={(e) => {
                       e.preventDefault();
                       const name = skillForm.trim();
@@ -672,27 +686,27 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                       );
                     }}
                   >
-                    <label htmlFor="skill-name" className="text-emerald-100">
+                    <label htmlFor="skill-name" className="text-emerald-50">
                       Save this conversation as a skill
                     </label>
                     <input
                       id="skill-name"
                       autoFocus
-                      className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-white outline-none focus:border-slate-500"
+                      className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-slate-500"
                       placeholder="Name (optional), e.g. Soccer schedule to calendar"
                       value={skillForm}
                       onChange={(e) => setSkillForm(e.target.value)}
                     />
                     <button
                       type="submit"
-                      className="rounded-md bg-emerald-200 px-3 py-1.5 font-semibold text-slate-900 hover:bg-emerald-100 disabled:opacity-50"
+                      className="rounded-xl bg-emerald-200 px-4 py-2.5 font-semibold text-slate-900 hover:bg-emerald-100 disabled:opacity-50"
                       disabled={Boolean(busy)}
                     >
                       Save skill
                     </button>
                     <button
                       type="button"
-                      className="rounded-md border border-slate-600 px-2.5 py-1.5 text-slate-300 hover:bg-slate-800"
+                      className="rounded-xl border border-slate-600 px-3 py-2.5 text-slate-200 hover:bg-slate-800"
                       onClick={() => {
                         setSkillForm(null);
                         focusPrompt();
@@ -703,7 +717,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                   </form>
                 ) : null}
                 {pending.length ? (
-                  <ul className="mb-2 flex shrink-0 flex-wrap gap-1.5" aria-label="Attached files">
+                  <ul className="mb-3 flex shrink-0 flex-wrap gap-2" aria-label="Attached files">
                     {pending.map((a, j) => (
                       <AttachmentChip
                         key={`${a.name}-${j}`}
@@ -714,7 +728,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                   </ul>
                 ) : null}
                 <form
-                  className="flex shrink-0 gap-2"
+                  className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-end"
                   onSubmit={(e) => {
                     e.preventDefault();
                     void sendPrompt();
@@ -732,7 +746,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                   />
                   <button
                     type="button"
-                    className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+                    className="rounded-xl border border-slate-700 px-4 py-3 text-base text-slate-200 hover:bg-slate-800 disabled:opacity-50 sm:self-stretch"
                     disabled={Boolean(busy) || pending.length >= 3}
                     onClick={() => fileInputRef.current?.click()}
                     aria-label="Attach a file"
@@ -740,73 +754,82 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                   >
                     {busy === "attach" ? "Reading…" : "Attach"}
                   </button>
-                  <input
+                  <textarea
                     ref={promptRef}
-                    className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-slate-500 disabled:opacity-60"
+                    rows={2}
+                    className="min-h-[3.25rem] min-w-0 flex-1 resize-y rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-base leading-relaxed text-white outline-none focus:border-slate-400 disabled:opacity-60 sm:min-h-[4rem] sm:text-lg"
                     placeholder={
                       busy === "chat"
                         ? "Still thinking… type the next message"
                         : pending.length
                           ? "What should I do with it?"
-                          : "e.g. Piano lessons every… / What's Saturday look like?"
+                          : "Ask anything — Enter to send, Shift+Enter for a new line"
                     }
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void sendPrompt();
+                      }
+                    }}
                     aria-label="Ask the family assistant"
                   />
-                  {chat.some((m) => m.role === "model") &&
-                  busy !== "chat" &&
-                  skillForm === null &&
-                  status?.wikilmGithubConfigured ? (
+                  <div className="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
+                    {chat.some((m) => m.role === "model") &&
+                    busy !== "chat" &&
+                    skillForm === null &&
+                    status?.wikilmGithubConfigured ? (
+                      <button
+                        type="button"
+                        className="rounded-xl border border-emerald-800/70 px-4 py-3 text-base text-emerald-50 hover:bg-emerald-950/40"
+                        onClick={() => setSkillForm("")}
+                        title="Save this conversation as a reusable skill"
+                      >
+                        Save skill
+                      </button>
+                    ) : null}
+                    {chat.length > 0 && busy !== "chat" ? (
+                      <button
+                        type="button"
+                        className="rounded-xl border border-slate-700 px-4 py-3 text-base text-slate-200 hover:bg-slate-800"
+                        onClick={() => {
+                          setChat([]);
+                          setChatStatus(null);
+                          setSkillForm(null);
+                        }}
+                      >
+                        New chat
+                      </button>
+                    ) : null}
                     <button
-                      type="button"
-                      className="rounded-lg border border-emerald-800/70 px-3 py-2 text-sm text-emerald-100 hover:bg-emerald-950/40"
-                      onClick={() => setSkillForm("")}
-                      title="Save this conversation as a reusable skill"
+                      type="submit"
+                      className="rounded-xl bg-slate-100 px-5 py-3 text-base font-semibold text-slate-900 hover:bg-white disabled:opacity-50"
+                      disabled={Boolean(busy) || (!input.trim() && !pending.length)}
                     >
-                      Save as skill
+                      {busy === "chat" ? "Working…" : "Send"}
                     </button>
-                  ) : null}
-                  {chat.length > 0 && busy !== "chat" ? (
-                    <button
-                      type="button"
-                      className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
-                      onClick={() => {
-                        setChat([]);
-                        setChatStatus(null);
-                        setSkillForm(null);
-                      }}
-                    >
-                      New
-                    </button>
-                  ) : null}
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-900 disabled:opacity-50"
-                    disabled={Boolean(busy) || (!input.trim() && !pending.length)}
-                  >
-                    {busy === "chat" ? "Working…" : "Send"}
-                  </button>
+                  </div>
                 </form>
               </>
             )}
           </section>
 
           {/* Side column */}
-          <div className="board-scrollbar flex min-h-0 flex-col gap-3 lg:overflow-y-auto">
-            <section className={`${panel} shrink-0 p-3`}>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <h2 className="text-base font-semibold text-white">
+          <div className="board-scrollbar flex min-h-0 flex-col gap-4 lg:overflow-y-auto">
+            <section className={`${panel} shrink-0 p-4`}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold text-white sm:text-xl">
                   Inbox
                   {unprocessed ? (
-                    <span className="ml-2 text-xs font-normal text-slate-400">
+                    <span className="ml-2 text-sm font-normal text-slate-400">
                       {unprocessed} new
                     </span>
                   ) : null}
                 </h2>
                 <button
                   type="button"
-                  className={smallBtn}
+                  className={sideBtn}
                   disabled={Boolean(busy) || !status?.gmailReady || !status?.geminiConfigured}
                   onClick={() => void scanInbox()}
                 >
@@ -814,12 +837,12 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 </button>
               </div>
               {!status?.googleConfigured ? (
-                <p className="text-sm text-slate-400">
+                <p className="text-base text-slate-400">
                   Configure Google OAuth, then Link Google (re-link after enabling
                   Gmail API + scopes).
                 </p>
               ) : !status?.gmailReady ? (
-                <p className="text-sm text-slate-400">
+                <p className="text-base text-slate-400">
                   <a className="text-sky-300 underline" href="/api/auth/google">
                     Link Google
                   </a>{" "}
@@ -827,14 +850,14 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 </p>
               ) : (
                 <>
-                  <p className="mb-2 text-xs text-slate-500">
+                  <p className="mb-3 text-sm text-slate-500">
                     Forwarded mail becomes todos and calendar events
                     {status.inboxAutoScanMinutes
                       ? ` · auto-scan every ${status.inboxAutoScanMinutes} min`
                       : ""}
                     .
                   </p>
-                  <ul className="board-scrollbar max-h-40 space-y-2 overflow-y-auto text-sm">
+                  <ul className="board-scrollbar max-h-48 space-y-2.5 overflow-y-auto text-base">
                     {messages.length === 0 ? (
                       <li className="text-slate-500">
                         Forward actionable mail here, then Scan inbox.
@@ -843,17 +866,17 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                       messages.slice(0, 8).map((m) => (
                         <li
                           key={m.id}
-                          className="rounded-lg border border-slate-800 bg-slate-950/50 px-2.5 py-1.5"
+                          className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5"
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <span className="truncate font-medium text-slate-100">
+                            <span className="truncate font-medium text-slate-50">
                               {m.subject}
                             </span>
                             {m.processed ? (
-                              <span className="shrink-0 text-xs text-slate-500">done</span>
+                              <span className="shrink-0 text-sm text-slate-500">done</span>
                             ) : null}
                           </div>
-                          <div className="truncate text-xs text-slate-400">{m.from}</div>
+                          <div className="truncate text-sm text-slate-400">{m.from}</div>
                         </li>
                       ))
                     )}
@@ -862,27 +885,27 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
               )}
             </section>
 
-            <section className={`${panel} shrink-0 p-3`}>
-              <h2 className="mb-2 text-base font-semibold text-white">
+            <section className={`${panel} shrink-0 p-4`}>
+              <h2 className="mb-3 text-lg font-semibold text-white sm:text-xl">
                 Todos
                 {openTodos.length ? (
-                  <span className="ml-2 text-xs font-normal text-slate-400">
+                  <span className="ml-2 text-sm font-normal text-slate-400">
                     {openTodos.length} open
                   </span>
                 ) : null}
               </h2>
-              <ul className="board-scrollbar max-h-56 space-y-1.5 overflow-y-auto text-sm">
+              <ul className="board-scrollbar max-h-64 space-y-2 overflow-y-auto text-base">
                 {todos.length === 0 ? (
                   <li className="text-slate-500">No todos yet.</li>
                 ) : (
                   [...openTodos, ...doneTodos].map((t) => (
                     <li
                       key={t.id}
-                      className="flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-950/50 px-2.5 py-1.5"
+                      className="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5"
                     >
                       <input
                         type="checkbox"
-                        className="mt-1"
+                        className="mt-1.5 h-4 w-4"
                         checked={t.done}
                         disabled={busy === `todo-${t.id}`}
                         onChange={() =>
@@ -892,20 +915,20 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                       />
                       <div className="min-w-0 flex-1">
                         <div
-                          className={`font-medium ${t.done ? "text-slate-500 line-through" : "text-slate-100"}`}
+                          className={`font-medium leading-snug ${t.done ? "text-slate-500 line-through" : "text-slate-50"}`}
                         >
                           {t.title}
                         </div>
                         {t.notes ? (
-                          <div className="text-xs text-slate-400">{t.notes}</div>
+                          <div className="mt-0.5 text-sm text-slate-400">{t.notes}</div>
                         ) : null}
                         {t.dueHint ? (
-                          <div className="text-xs text-slate-500">Due: {t.dueHint}</div>
+                          <div className="text-sm text-slate-500">Due: {t.dueHint}</div>
                         ) : null}
                       </div>
                       <button
                         type="button"
-                        className="shrink-0 text-xs text-slate-500 hover:text-red-300"
+                        className="shrink-0 text-sm text-slate-500 hover:text-red-300"
                         disabled={busy === `todo-${t.id}`}
                         onClick={() => void todoAction("remove", t.id)}
                       >
@@ -917,26 +940,26 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
               </ul>
             </section>
 
-            <section className={`${panel} shrink-0 p-3`} aria-label="Slack">
-              <h2 className="mb-2 text-base font-semibold text-white">Slack</h2>
+            <section className={`${panel} shrink-0 p-4`} aria-label="Slack">
+              <h2 className="mb-3 text-lg font-semibold text-white sm:text-xl">Slack</h2>
               {!status?.slackConfigured ? (
-                <p className="text-sm text-slate-400">
+                <p className="text-base text-slate-400">
                   Chat with the assistant from the Slack app: DM the bot or
                   @mention it in a channel. Set{" "}
-                  <code className="text-slate-300">SLACK_BOT_TOKEN</code> and{" "}
-                  <code className="text-slate-300">SLACK_APP_TOKEN</code> (see
+                  <code className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-200">SLACK_BOT_TOKEN</code> and{" "}
+                  <code className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-200">SLACK_APP_TOKEN</code> (see
                   docs/SLACK_SETUP.md).
                 </p>
               ) : !slack ? (
-                <p className="text-sm text-slate-500">Loading…</p>
+                <p className="text-base text-slate-500">Loading…</p>
               ) : (
-                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-base">
                   <dt className="text-slate-500">Workspace</dt>
-                  <dd className="text-slate-200">{slack.team || "—"}</dd>
+                  <dd className="text-slate-100">{slack.team || "—"}</dd>
                   <dt className="text-slate-500">Bot</dt>
-                  <dd className="text-slate-200">{slack.botName ? `@${slack.botName}` : "—"}</dd>
+                  <dd className="text-slate-100">{slack.botName ? `@${slack.botName}` : "—"}</dd>
                   <dt className="text-slate-500">Connected</dt>
-                  <dd className={slack.bot?.connected ? "text-slate-200" : "text-amber-200"}>
+                  <dd className={slack.bot?.connected ? "text-slate-100" : "text-amber-200"}>
                     {slack.bot?.connected
                       ? `yes (connected ${timeAgo(slack.bot.connectedAt)})`
                       : slack.bot?.running
@@ -944,7 +967,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                         : "no (restart the app)"}
                   </dd>
                   <dt className="text-slate-500">Replies</dt>
-                  <dd className="tabular-nums text-slate-200">
+                  <dd className="tabular-nums text-slate-100">
                     {slack.bot?.handled ?? 0}
                     {slack.bot?.lastEventAt ? ` · last ${timeAgo(slack.bot.lastEventAt)}` : ""}
                   </dd>
