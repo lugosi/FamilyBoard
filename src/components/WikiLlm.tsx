@@ -16,6 +16,12 @@ type Status = {
 
 type AgentAction = { tool: string; ok: boolean; label: string };
 type AgentQuickAction = { id: string; label: string; prompt: string };
+type PendingApproval = {
+  id: string;
+  summary: string;
+  items: { tool: string; label: string }[];
+  expiresAt: string;
+};
 
 type ChatAttachment = {
   name: string;
@@ -33,6 +39,9 @@ type ChatTurn = {
   actions?: AgentAction[];
   quickActions?: AgentQuickAction[];
   attachments?: ChatAttachment[];
+  pendingApproval?: PendingApproval;
+  /** Once resolved, hide Approve/Cancel and show the outcome. */
+  approvalResolved?: "approved" | "rejected";
 };
 
 type SkillMeta = { path: string; title: string; summary: string; category: string };
@@ -89,6 +98,7 @@ const WIKI_WRITE_TOOLS = new Set([
   "delete_wiki_page",
   "save_skill",
 ]);
+const CALENDAR_WRITE_TOOLS = new Set(["create_event", "update_event", "delete_event"]);
 const ATTACH_ACCEPT = ".csv,.tsv,.xlsx,.xlsm,.txt,.md,.json,.ics,.jpg,.jpeg,.png,.gif,.webp,text/*,image/jpeg,image/png,image/gif,image/webp";
 
 function AttachmentChip({ a, onRemove }: { a: ChatAttachment; onRemove?: () => void }) {
@@ -322,6 +332,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         reply?: string;
         actions?: AgentAction[];
         quickActions?: AgentQuickAction[];
+        pendingApproval?: PendingApproval;
         error?: string;
       }>(res);
       if (!res.ok) throw new Error(json.error || `Assistant failed (${res.status})`);
@@ -332,14 +343,17 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
           content: json.reply || "",
           actions: json.actions ?? [],
           ...(json.quickActions?.length ? { quickActions: json.quickActions } : {}),
+          ...(json.pendingApproval ? { pendingApproval: json.pendingApproval } : {}),
         },
       ]);
-      if (json.actions?.some((a) => a.ok && WIKI_WRITE_TOOLS.has(a.tool))) {
-        setWikiRefreshKey((k) => k + 1);
-      }
+      // Writes to calendar/wiki are staged until Approve — don't refresh as if applied.
       if (
         json.actions?.some(
-          (a) => a.ok && !a.tool.includes("wiki") && a.tool !== "find_events",
+          (a) =>
+            a.ok &&
+            !a.label.startsWith("Proposed:") &&
+            !a.tool.includes("wiki") &&
+            a.tool !== "find_events",
         )
       ) {
         void refresh();
@@ -358,6 +372,62 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
       chatAbortRef.current = null;
       setBusy(null);
       setChatStatus((prev) => (prev === "Cancelled." ? prev : null));
+      focusPrompt();
+    }
+  }
+
+  async function resolveApproval(
+    turnIndex: number,
+    decision: "approve" | "reject",
+    pending: PendingApproval,
+  ) {
+    if (busy) return;
+    setBusy(`approve-${pending.id}`);
+    setError(null);
+    try {
+      const res = await fetch("/api/agent/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: pending.id, decision }),
+      });
+      const json = await parseJsonSafe<{
+        reply?: string;
+        actions?: AgentAction[];
+        error?: string;
+      }>(res);
+      if (!res.ok) throw new Error(json.error || `Could not ${decision} (${res.status})`);
+      setChat((prev) => {
+        const next = [...prev];
+        const turn = next[turnIndex];
+        if (!turn || turn.role !== "model") return prev;
+        next[turnIndex] = {
+          ...turn,
+          approvalResolved: decision === "approve" ? "approved" : "rejected",
+          actions: [...(turn.actions ?? []), ...(json.actions ?? [])],
+        };
+        next.push({
+          role: "model",
+          content: json.reply || (decision === "approve" ? "Applied." : "Cancelled."),
+          actions: json.actions ?? [],
+        });
+        return next;
+      });
+      if (
+        decision === "approve" &&
+        json.actions?.some((a) => a.ok && WIKI_WRITE_TOOLS.has(a.tool))
+      ) {
+        setWikiRefreshKey((k) => k + 1);
+      }
+      if (
+        decision === "approve" &&
+        json.actions?.some((a) => a.ok && CALENDAR_WRITE_TOOLS.has(a.tool))
+      ) {
+        void refresh();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "approve_error");
+    } finally {
+      setBusy(null);
       focusPrompt();
     }
   }
@@ -622,6 +692,46 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                                 {qa.label}
                               </button>
                             ))}
+                          </div>
+                        ) : null}
+                        {m.role === "model" && m.pendingApproval ? (
+                          <div className="mt-4 rounded-2xl border border-amber-700/50 bg-amber-950/30 px-4 py-3.5 text-base leading-relaxed text-amber-50">
+                            <p className="mb-2 font-semibold text-amber-50">
+                              {m.approvalResolved === "approved"
+                                ? "Approved"
+                                : m.approvalResolved === "rejected"
+                                  ? "Cancelled"
+                                  : "Review before writing"}
+                            </p>
+                            <pre className="mb-3 whitespace-pre-wrap font-sans text-[1.05rem] leading-[1.55] text-amber-50/95">
+                              {m.pendingApproval.summary}
+                            </pre>
+                            {!m.approvalResolved ? (
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  className="rounded-xl bg-amber-100 px-4 py-2 text-base font-semibold text-slate-900 hover:bg-white disabled:opacity-50"
+                                  disabled={Boolean(busy)}
+                                  onClick={() =>
+                                    void resolveApproval(i, "approve", m.pendingApproval!)
+                                  }
+                                >
+                                  {busy === `approve-${m.pendingApproval.id}`
+                                    ? "Applying…"
+                                    : "Approve"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-xl border border-amber-700/60 px-4 py-2 text-base font-medium text-amber-50 hover:bg-amber-950/50 disabled:opacity-50"
+                                  disabled={Boolean(busy)}
+                                  onClick={() =>
+                                    void resolveApproval(i, "reject", m.pendingApproval!)
+                                  }
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : null}
                           </div>
                         ) : null}
                       </div>

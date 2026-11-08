@@ -33,8 +33,10 @@ Feature: WikiLLM AI tab
   Scenario: Assistant updates the calendar
     Given auth status has googleLinked true and geminiConfigured true
     When I send "Add dentist next Tuesday at 3pm"
-    Then the reply shows an action chip starting with "Added"
-    And the event appears on the Board calendar after refresh
+    Then the reply shows a Review before writing card with Approve / Cancel
+    And an action chip starting with "Proposed:"
+    When I click Approve
+    Then the reply confirms the add and the event appears on the Board calendar after refresh
 
   Scenario: Inbox drop-box and scan
     Given auth status has gmailReady true
