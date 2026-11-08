@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createGateSession } from "@/lib/gate-sessions";
 import {
-  computeSessionToken,
   getGateConfig,
   getSessionCookieName,
   normalizeUserCode,
@@ -15,7 +15,6 @@ type AttemptState = {
 const WINDOW_MS = 10 * 60 * 1000;
 const BLOCK_MS = 30 * 60 * 1000;
 const MAX_FAILURES = 8;
-const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 const attempts = new Map<string, AttemptState>();
 
 function getClientKey(request: NextRequest): string {
@@ -92,7 +91,7 @@ export async function POST(request: NextRequest) {
   }
 
   attempts.delete(clientKey);
-  const token = await computeSessionToken(config);
+  const { token, maxAgeSeconds } = await createGateSession(config);
   const response = NextResponse.json({ ok: true });
   response.cookies.set({
     name: getSessionCookieName(),
@@ -101,7 +100,7 @@ export async function POST(request: NextRequest) {
     secure: true,
     sameSite: "lax",
     path: "/",
-    maxAge: SESSION_MAX_AGE_SECONDS,
+    maxAge: maxAgeSeconds,
   });
   return response;
 }

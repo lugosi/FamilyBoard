@@ -102,8 +102,8 @@ Env: `CATLINK_PHONE`, `CATLINK_PASSWORD`, `CATLINK_PHONE_IAC`, `CATLINK_API_BASE
 
 ## Unlock gate
 
-- `BOARD_ACCESS_CODE` + `BOARD_ACCESS_SECRET`; cookie `fb_gate`.
-- Keep form in `UnlockForm.tsx` (client child of server page).
+- `BOARD_ACCESS_CODE` + `BOARD_ACCESS_SECRET`; cookie `fb_gate` is a random per-unlock token (hash in `DATA_DIR/gate-sessions.json`). Rotating the secret clears sessions.
+- Keep form in `UnlockForm.tsx` (client child of server page). `src/proxy.ts` validates via `isValidGateSession`.
 
 ## WikiLLM + Gmail drop-box
 

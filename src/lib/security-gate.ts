@@ -29,12 +29,3 @@ export function normalizeUserCode(value: unknown): string {
   }
   return trimmed;
 }
-
-export async function computeSessionToken(config: GateConfig): Promise<string> {
-  const input = new TextEncoder().encode(`${config.code}:${config.secret}`);
-  const digest = await crypto.subtle.digest("SHA-256", input);
-  const bytes = new Uint8Array(digest);
-  return Array.from(bytes)
-    .map((value) => value.toString(16).padStart(2, "0"))
-    .join("");
-}
