@@ -21,7 +21,6 @@ import {
   type CalendarRangeKeys,
   type GEvent,
 } from "@/lib/calendar-layout";
-import { OnekoCat } from "@/components/OnekoCat";
 import {
   WeatherHourlyChart,
   type WeatherHourlyPoint,
@@ -3906,7 +3905,6 @@ export function Board() {
         </div>
       ) : null}
     </div>
-    <OnekoCat enabled />
-    </>
+  </>
   );
 }

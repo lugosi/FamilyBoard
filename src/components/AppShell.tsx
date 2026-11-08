@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useSyncExternalStore } from "react";
 import { Board } from "@/components/Board";
+import { OnekoCat } from "@/components/OnekoCat";
 import { WikiLlm } from "@/components/WikiLlm";
 
 export type AppTab = "board" | "ai";
@@ -102,6 +103,8 @@ export function AppShell() {
           <WikiLlm active={tab === "ai"} />
         </div>
       </div>
+      {/* Outside tab panels so the cat stays on Board and AI. */}
+      <OnekoCat enabled />
     </div>
   );
 }
