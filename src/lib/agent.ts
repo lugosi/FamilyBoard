@@ -21,6 +21,9 @@ import {
 
 /** Always injected so the model treats calendar rules like a saved skill. */
 const FAMILY_CALENDAR_SKILL = `skills/family-calendar.md — Family calendar (Berkeley / Pacific): Always create events on the Berkeley calendar. Times are America/Los_Angeles wall-clock (Pacific) like 2026-11-14T09:00 — never Z, never UTC, never offsets. Default length 1 hour. find_events before bulk creates; skip duplicates. Confirm with the local day and time.`;
+
+/** Shared house-status skill for the AI tab and Slack. */
+const HOUSE_DASHBOARD_SKILL = `skills/house-dashboard.md — House dashboard: When someone asks for the house status, dashboard, overview, "how's the house", what's on, or similar, call house_dashboard first. Present its summary cleanly (sections for lights / litter / music / weather). Call out attention items (waste bin full) first. Offer the returned quickActions as the next step; if they pick one, run the matching device tool. Do not invent device state — only what house_dashboard returned.`;
 import { getDefaultTimeZone, readGoogleTokens } from "./google";
 import { scanInboxToTodos } from "./gmail";
 import { addTodo, listTodos, setTodoDone } from "./todos";
@@ -42,14 +45,23 @@ export type AgentAction = {
   label: string;
 };
 
+export type AgentQuickAction = {
+  id: string;
+  label: string;
+  prompt: string;
+};
+
 export type AgentResult = {
   reply: string;
   actions: AgentAction[];
+  /** Optional follow-up chips (e.g. from house_dashboard) for web UI / Slack. */
+  quickActions?: AgentQuickAction[];
 };
 
 export type AgentToolContext = {
   redirectUri: string;
   timeZone: string;
+  channel?: AgentChannel;
   /** Wiki pages read during this request (lowercased path key → exact path + sha). */
   wikiReads: Map<string, { path: string; sha: string }>;
 };
@@ -57,6 +69,7 @@ export type AgentToolContext = {
 type ToolOutcome = {
   response: Record<string, unknown>;
   label: string;
+  quickActions?: AgentQuickAction[];
 };
 
 export type AgentTool = {
@@ -442,6 +455,11 @@ function buildSystemPrompt(input: {
     "When turning many rows into calendar events: call find_events over the whole date range first and skip rows that already exist; you may call create_event several times in one turn. Report how many you added, skipped, and couldn't parse.",
     "For live public facts (sports scores, news, who won, store hours, anything that needs the current internet), call search_web. Do not say you can't access the internet — you can via that tool. Prefer search_web over guessing.",
   ];
+  lines.push(
+    "=== HOUSE DASHBOARD SKILL ===",
+    HOUSE_DASHBOARD_SKILL.replace(/^skills\/house-dashboard\.md — /, ""),
+    "=== END HOUSE DASHBOARD SKILL ===",
+  );
   if (input.devices.hue || input.devices.spotify || input.devices.catlink) {
     const bits: string[] = [];
     if (input.devices.hue) {
@@ -552,9 +570,15 @@ export async function runFamilyAgent(input: {
     devices,
     senderName: input.senderName,
   });
-  const ctx: ToolContext = { redirectUri: input.redirectUri, timeZone, wikiReads: new Map() };
+  const ctx: ToolContext = {
+    redirectUri: input.redirectUri,
+    timeZone,
+    channel,
+    wikiReads: new Map(),
+  };
   const contents: GeminiContent[] = toGeminiContents(input.messages);
   const actions: AgentAction[] = [];
+  let quickActions: AgentQuickAction[] | undefined;
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     const lastRound = round === MAX_TOOL_ROUNDS;
@@ -572,7 +596,7 @@ export async function runFamilyAgent(input: {
       const reply =
         textFromParts(turn.parts) ||
         (actions.length ? "Done." : "Sorry, I didn't get a reply. Try again?");
-      return { reply, actions };
+      return { reply, actions, ...(quickActions?.length ? { quickActions } : {}) };
     }
 
     const responses: GeminiPart[] = [];
@@ -587,6 +611,7 @@ export async function runFamilyAgent(input: {
           const outcome = await tool.run(call.args ?? {}, ctx);
           response = outcome.response;
           actions.push({ tool: call.name, ok: true, label: outcome.label });
+          if (outcome.quickActions?.length) quickActions = outcome.quickActions;
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
           response = { error: message };
@@ -604,5 +629,5 @@ export async function runFamilyAgent(input: {
     contents.push({ role: "user", parts: responses });
   }
 
-  return { reply: "Done.", actions };
+  return { reply: "Done.", actions, ...(quickActions?.length ? { quickActions } : {}) };
 }

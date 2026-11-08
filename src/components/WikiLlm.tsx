@@ -15,6 +15,7 @@ type Status = {
 };
 
 type AgentAction = { tool: string; ok: boolean; label: string };
+type AgentQuickAction = { id: string; label: string; prompt: string };
 
 type ChatAttachment = {
   name: string;
@@ -30,6 +31,7 @@ type ChatTurn = {
   role: "user" | "model";
   content: string;
   actions?: AgentAction[];
+  quickActions?: AgentQuickAction[];
   attachments?: ChatAttachment[];
 };
 
@@ -69,6 +71,7 @@ type SlackSnapshot = {
 };
 
 const SUGGESTIONS = [
+  "House dashboard",
   "What's on the calendar this week?",
   "Add dentist for Maya next Tuesday at 3pm",
   "Move Saturday's soccer to 10am",
@@ -231,6 +234,22 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     chatEndRef.current?.scrollIntoView({ block: "end" });
   }, [chat, busy]);
 
+  // Keep the prompt ready for the next turn in a conversation (Enter → reply → type again).
+  const focusPrompt = useCallback(() => {
+    if (!active || view !== "chat" || skillForm !== null) return;
+    // rAF: wait until the input is re-enabled / remounted after busy clears.
+    requestAnimationFrame(() => promptRef.current?.focus());
+  }, [active, view, skillForm]);
+
+  useEffect(() => {
+    if (busy === "chat") return;
+    focusPrompt();
+  }, [busy, focusPrompt]);
+
+  useEffect(() => {
+    if (active && view === "chat") focusPrompt();
+  }, [active, view, focusPrompt]);
+
   async function attachFiles(files: FileList | File[]) {
     const list = Array.from(files);
     if (!list.length || busy) return;
@@ -272,6 +291,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     setChat(nextChat);
     setInput("");
     if (files.length) setPending([]);
+    focusPrompt();
     const ac = new AbortController();
     chatAbortRef.current = ac;
     const statusTimer = window.setTimeout(() => {
@@ -289,12 +309,18 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
       const json = await parseJsonSafe<{
         reply?: string;
         actions?: AgentAction[];
+        quickActions?: AgentQuickAction[];
         error?: string;
       }>(res);
       if (!res.ok) throw new Error(json.error || `Assistant failed (${res.status})`);
       setChat([
         ...nextChat,
-        { role: "model", content: json.reply || "", actions: json.actions ?? [] },
+        {
+          role: "model",
+          content: json.reply || "",
+          actions: json.actions ?? [],
+          ...(json.quickActions?.length ? { quickActions: json.quickActions } : {}),
+        },
       ]);
       if (json.actions?.some((a) => a.ok && WIKI_WRITE_TOOLS.has(a.tool))) {
         setWikiRefreshKey((k) => k + 1);
@@ -320,6 +346,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
       chatAbortRef.current = null;
       setBusy(null);
       setChatStatus((prev) => (prev === "Cancelled." ? prev : null));
+      focusPrompt();
     }
   }
 
@@ -596,6 +623,21 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                           ) : (
                             m.content
                           )}
+                          {m.role === "model" && m.quickActions?.length ? (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {m.quickActions.map((qa) => (
+                                <button
+                                  key={qa.id}
+                                  type="button"
+                                  className="rounded-md border border-amber-700/70 bg-amber-950/40 px-2.5 py-1 text-xs font-medium text-amber-100 hover:border-amber-500 disabled:opacity-50"
+                                  disabled={Boolean(busy)}
+                                  onClick={() => void sendPrompt(qa.prompt)}
+                                >
+                                  {qa.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     ))
@@ -651,7 +693,10 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                     <button
                       type="button"
                       className="rounded-md border border-slate-600 px-2.5 py-1.5 text-slate-300 hover:bg-slate-800"
-                      onClick={() => setSkillForm(null)}
+                      onClick={() => {
+                        setSkillForm(null);
+                        focusPrompt();
+                      }}
                     >
                       Cancel
                     </button>
@@ -697,15 +742,16 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                   </button>
                   <input
                     ref={promptRef}
-                    className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-slate-500"
+                    className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-slate-500 disabled:opacity-60"
                     placeholder={
-                      pending.length
-                        ? "What should I do with it?"
-                        : "e.g. Piano lessons every… / What's Saturday look like?"
+                      busy === "chat"
+                        ? "Still thinking… type the next message"
+                        : pending.length
+                          ? "What should I do with it?"
+                          : "e.g. Piano lessons every… / What's Saturday look like?"
                     }
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    disabled={busy === "chat"}
                     aria-label="Ask the family assistant"
                   />
                   {chat.some((m) => m.role === "model") &&

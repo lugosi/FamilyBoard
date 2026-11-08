@@ -1885,7 +1885,8 @@ export function Board() {
     <>
     <div
       className={`flex h-full max-h-full min-h-0 flex-col overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-base text-slate-100 sm:text-lg ${
-        nightGreyscale ? "grayscale" : ""
+        // Keep color when the waste bin needs attention so the red blink reads clearly.
+        nightGreyscale && !catlinkWasteBinFull ? "grayscale" : ""
       }`}
     >
       <div className="box-border flex min-h-0 w-full min-w-0 flex-1 flex-col gap-2 overflow-hidden px-2 py-2 sm:gap-3 sm:px-4 sm:py-3 md:gap-4 lg:px-6 lg:py-4 xl:px-8 xl:py-5 2xl:px-10">
@@ -2321,13 +2322,30 @@ export function Board() {
               )}
             </section>
 
-            <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+            <section
+              className={`min-w-0 shrink-0 overflow-hidden rounded-xl border bg-slate-900/60 p-3 shadow-lg sm:rounded-2xl sm:p-4 ${
+                catlinkWasteBinFull
+                  ? "catlink-alert-ring border-red-500/80 shadow-red-950/40"
+                  : "border-slate-800 shadow-slate-950/40"
+              }`}
+              aria-live={catlinkWasteBinFull ? "assertive" : undefined}
+            >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2.5">
                   {collapsedWidgets.catlink ? (
                     <span
-                      className={`${WIDGET_TITLE_ICON} flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950/70 text-xs font-semibold tabular-nums text-white`}
+                      className={`${WIDGET_TITLE_ICON} relative flex items-center justify-center rounded-lg border text-xs font-semibold tabular-nums ${
+                        catlinkWasteBinFull
+                          ? "border-red-500/80 bg-red-950/70 text-red-100"
+                          : "border-slate-700 bg-slate-950/70 text-white"
+                      }`}
                     >
+                      {catlinkWasteBinFull ? (
+                        <span
+                          className="catlink-alert-light absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500"
+                          aria-hidden
+                        />
+                      ) : null}
                       {catlinkWasteBinFull
                         ? "!"
                         : catlinkCatWeightKg !== null
@@ -2335,7 +2353,16 @@ export function Board() {
                           : "CAT"}
                     </span>
                   ) : null}
-                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Catlink</h2>
+                  <h2 className="flex min-w-0 items-center gap-2 truncate text-xl font-medium text-white sm:text-2xl">
+                    Catlink
+                    {catlinkWasteBinFull && !collapsedWidgets.catlink ? (
+                      <span
+                        className="catlink-alert-light inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-red-500"
+                        title="Waste bin full — change bag"
+                        aria-label="Waste bin full"
+                      />
+                    ) : null}
+                  </h2>
                 </div>
                 <div className="flex shrink-0 items-center gap-2 sm:gap-3">
                   <button
@@ -2467,14 +2494,22 @@ export function Board() {
                   <div
                     className={`rounded-lg border px-3 py-2 text-sm sm:text-base ${
                       catlinkWasteBinFull
-                        ? "border-amber-500/60 bg-amber-500/15"
+                        ? "border-red-500/70 bg-red-950/40"
                         : "border-slate-800 bg-slate-950/40"
                     }`}
                   >
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Waste bin</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Waste bin</p>
+                      {catlinkWasteBinFull ? (
+                        <span
+                          className="catlink-alert-light h-3 w-3 shrink-0 rounded-full bg-red-500"
+                          aria-hidden
+                        />
+                      ) : null}
+                    </div>
                     <p
                       className={`mt-1 font-medium ${
-                        catlinkWasteBinFull ? "text-amber-200" : "text-slate-100"
+                        catlinkWasteBinFull ? "text-red-100" : "text-slate-100"
                       }`}
                     >
                       {catlinkWasteBinStatusLabel ?? "—"}
@@ -2521,7 +2556,11 @@ export function Board() {
                     </button>
                     <button
                       type="button"
-                      className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
+                      className={`rounded-lg border px-2.5 py-2 text-sm disabled:opacity-50 ${
+                        catlinkWasteBinFull
+                          ? "border-red-500/80 bg-red-600/90 font-semibold text-white hover:bg-red-500"
+                          : "border-slate-700 text-slate-100 hover:border-slate-500"
+                      }`}
                       disabled={busy === "catlink-change_bag"}
                       onClick={() => void catlinkControl("change_bag")}
                     >

@@ -62,3 +62,43 @@ body {
   background: transparent;
 }
 
+/** CatLink waste-bin full: attention beacon until Change bag / Reset clears it. */
+@keyframes catlink-alert-blink {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgb(239 68 68 / 0.85);
+  }
+  50% {
+    opacity: 0.35;
+    box-shadow: 0 0 0 10px rgb(239 68 68 / 0);
+  }
+}
+
+@keyframes catlink-alert-ring {
+  0%,
+  100% {
+    border-color: rgb(248 113 113 / 0.95);
+    box-shadow: 0 0 0 0 rgb(239 68 68 / 0.45);
+  }
+  50% {
+    border-color: rgb(185 28 28 / 0.7);
+    box-shadow: 0 0 18px 2px rgb(239 68 68 / 0.35);
+  }
+}
+
+.catlink-alert-light {
+  animation: catlink-alert-blink 1s ease-in-out infinite;
+}
+
+.catlink-alert-ring {
+  animation: catlink-alert-ring 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .catlink-alert-light,
+  .catlink-alert-ring {
+    animation: none;
+  }
+}
+

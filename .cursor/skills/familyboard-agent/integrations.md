@@ -49,7 +49,7 @@ Treat as **litterbox** when:
 
 ### Snapshot fields (current product intent)
 - Pet: `catName`, `catWeightKg`, `peeCountToday`, `poopCountToday` from `token/pet/health/v3/cats` + `summarySimple` (`toilet.peed` / `toilet.pood`)
-- Waste: `wasteBinFull`, `wasteBinStatusLabel` from `deviceErrorList` (`garbage_tobe_full`) / `garbageStatus`
+- Waste: `wasteBinFull`, `wasteBinStatusLabel` from `deviceErrorList` (`garbage_tobe_full`) / `garbageStatus`. Board shows a red blinking beacon + ring while full (and skips night greyscale so the alert stays vivid) until Change bag / Reset clears it.
 - Timezone for pet summaries: `DEFAULT_TIMEZONE` (fallback `America/Los_Angeles`)
 
 ### Routes

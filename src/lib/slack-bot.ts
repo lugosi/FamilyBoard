@@ -34,6 +34,7 @@ const READ_ONLY_TOOLS = new Set([
   "read_google_sheet",
   "search_web",
   "list_lights",
+  "house_dashboard",
 ]);
 
 export type SlackBotState = {
@@ -233,8 +234,13 @@ async function handle(msg: Incoming): Promise<void> {
     const footer = changed.length
       ? `\n${changed.map((a) => `${a.ok ? "✅" : "⚠️"} ${a.label}`).join("\n")}`
       : "";
+    const quick =
+      result.quickActions?.length &&
+      !result.reply.toLowerCase().includes("reply with")
+        ? `\n\n*Actions — reply with one:*\n${result.quickActions.map((a) => `• ${a.label}`).join("\n")}`
+        : "";
     const fileNotes = problems.length ? `\n${problems.map((p) => `⚠️ ${p}`).join("\n")}` : "";
-    await reply(`${result.reply}${footer}${fileNotes}`);
+    await reply(`${result.reply}${footer}${quick}${fileNotes}`);
     state.handled += 1;
   } catch (e) {
     state.lastError = `Agent: ${e instanceof Error ? e.message : String(e)}`;
