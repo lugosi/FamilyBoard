@@ -22,7 +22,7 @@ Feature: WikiLLM AI tab
     When I open the AI tab
     Then I see one prompt input labelled "Ask the family assistant" and a "Send" button
     And I see action chips such as "House dashboard" (only real actions, no fake example appointments)
-    And capability pills show Calendar, Inbox, Wiki, Slack (green when available)
+    And Inbox / Slack / Todos live under Tools (not a second column on the chat)
 
   Scenario: House dashboard from chat or Slack
     Given auth status has geminiConfigured true
@@ -40,9 +40,9 @@ Feature: WikiLLM AI tab
     Given auth status has gmailReady true
     And auth status has geminiConfigured true
     When I open the AI tab
-    Then I see an Inbox section and a "Scan inbox" control
-    And I see a Todos section
-    And the scan note reports todo(s) and calendar event(s)
+    Then I open Tools and see an Inbox section and a "Scan" control
+    And Tools mentions Todos live on wiki todos/list.md (or link the wiki)
+    And the scan note reports todo(s) → wiki Todos and calendar event(s)
 
   Scenario: Slack setup when not configured
     Given auth status has slackConfigured false
@@ -87,5 +87,5 @@ Feature: WikiLLM AI tab
 
   # Knowledge base lives only in the private GitHub repo (not DATA_DIR). QA against a real repo
   # creates commits; prefer a scratch repo or the local mock (WIKILM_GITHUB_API_BASE_URL).
-  # Todos from email scans are local DATA_DIR/todos.json — not wiki content.
+  # Todos live on wiki todos/list.md when the wiki is configured; otherwise DATA_DIR/todos.json.
   # Default QA does not send email, create real calendar events, or message Slack.

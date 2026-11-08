@@ -78,10 +78,15 @@ export function WikiBrowser({
   active,
   configured,
   refreshKey,
+  focusPath,
+  focusNonce,
 }: {
   active: boolean;
   configured: boolean;
   refreshKey: number;
+  /** When set (with a changing focusNonce), open this wiki path. */
+  focusPath?: string | null;
+  focusNonce?: number;
 }) {
   const [pages, setPages] = useState<WikiPageMeta[] | null>(null);
   const [categories, setCategories] = useState<WikiCategory[]>([]);
@@ -98,6 +103,7 @@ export function WikiBrowser({
   const [conflict, setConflict] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const selectedRef = useRef<string | null>(null);
+  const lastFocusNonceRef = useRef<number | undefined>(undefined);
 
   const loadList = useCallback(async (fresh = false) => {
     try {
@@ -142,6 +148,13 @@ export function WikiBrowser({
     }, 0);
     return () => window.clearTimeout(t);
   }, [active, configured, refreshKey, loadList, openPage]);
+
+  useEffect(() => {
+    if (!active || !configured || !focusPath) return;
+    if (focusNonce !== undefined && lastFocusNonceRef.current === focusNonce) return;
+    lastFocusNonceRef.current = focusNonce;
+    void openPage(focusPath);
+  }, [active, configured, focusPath, focusNonce, openPage]);
 
   useEffect(() => {
     const q = query.trim();

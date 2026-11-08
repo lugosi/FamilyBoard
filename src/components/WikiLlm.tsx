@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { WikiBrowser } from "@/components/WikiBrowser";
 
@@ -44,15 +44,6 @@ type GmailMessage = {
   date: string;
   snippet: string;
   processed: boolean;
-};
-
-type FamilyTodo = {
-  id: string;
-  title: string;
-  notes?: string;
-  dueHint?: string;
-  done: boolean;
-  createdAt: string;
 };
 
 type SlackSnapshot = {
@@ -135,8 +126,6 @@ function readInitialView(): AiView {
   }
 }
 
-const subscribeNoop = () => () => {};
-
 async function parseJsonSafe<T>(res: Response): Promise<T> {
   const ct = res.headers.get("content-type") ?? "";
   if (ct.toLowerCase().includes("application/json")) {
@@ -168,7 +157,6 @@ function friendlyChatError(e: unknown): string {
 export function WikiLlm({ active = true }: { active?: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [messages, setMessages] = useState<GmailMessage[]>([]);
-  const [todos, setTodos] = useState<FamilyTodo[]>([]);
   const [slack, setSlack] = useState<SlackSnapshot | null>(null);
   const [chat, setChat] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState("");
@@ -183,10 +171,22 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   const [note, setNote] = useState<string | null>(null);
   const [chatStatus, setChatStatus] = useState<string | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
-  const initialView = useSyncExternalStore(subscribeNoop, readInitialView, () => null);
-  const [pickedView, setPickedView] = useState<AiView | null>(null);
-  const view: AiView = pickedView ?? initialView ?? "chat";
+  const [wikiFocus, setWikiFocus] = useState<{ path: string; nonce: number } | null>(null);
+  const [view, setView] = useState<AiView>("chat");
   const [wikiRefreshKey, setWikiRefreshKey] = useState(0);
+
+  useEffect(() => {
+    setView(readInitialView());
+  }, []);
+
+  const selectView = useCallback((next: AiView) => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const loadedOnceRef = useRef(false);
   const chatAbortRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -198,12 +198,6 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
       const statusJson = (await statusRes.json()) as Status;
       if (signalArg?.aborted) return;
       setStatus(statusJson);
-
-      const todosRes = await fetch("/api/todos", { signal: signalArg });
-      if (todosRes.ok) {
-        const t = (await todosRes.json()) as { todos: FamilyTodo[] };
-        setTodos(t.todos ?? []);
-      }
 
       if (statusJson.gmailReady) {
         const gmailRes = await fetch("/api/gmail", { signal: signalArg });
@@ -380,7 +374,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         body: JSON.stringify({ action: "scan" }),
       });
       const json = await parseJsonSafe<{
-        added?: FamilyTodo[];
+        added?: { title: string }[];
         events?: { summary: string; ok: boolean; error?: string }[];
         scanned?: number;
         error?: string;
@@ -390,11 +384,12 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
       const eventsAdded = json.events?.filter((e) => e.ok).length ?? 0;
       const failed = json.events?.filter((e) => !e.ok) ?? [];
       setNote(
-        `Scanned ${json.scanned ?? 0} email(s): ${todosAdded} todo(s), ${eventsAdded} calendar event(s).` +
+        `Scanned ${json.scanned ?? 0} email(s): ${todosAdded} todo(s) → wiki Todos, ${eventsAdded} calendar event(s).` +
           (failed.length
             ? ` Could not add: ${failed.map((f) => f.summary).join(", ")}.`
             : ""),
       );
+      if (todosAdded > 0) setWikiRefreshKey((k) => k + 1);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "scan_error");
@@ -403,38 +398,14 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     }
   }
 
-  async function todoAction(action: "complete" | "uncomplete" | "remove", id: string) {
-    setBusy(`todo-${id}`);
-    try {
-      const res = await fetch("/api/todos/control", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, id }),
-      });
-      if (!res.ok) {
-        const json = await parseJsonSafe<{ error?: string }>(res);
-        throw new Error(json.error || "todo_error");
-      }
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "todo_error");
-    } finally {
-      setBusy(null);
-    }
-  }
-
   const sideBtn =
     "rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50";
   const chipBtn =
-    "rounded-full border border-slate-600/80 bg-slate-900/80 px-4 py-2 text-base text-slate-100 hover:border-slate-400 hover:bg-slate-800 disabled:opacity-50";
+    "rounded-full border border-slate-600/80 bg-slate-900/80 px-4 py-2.5 text-base leading-snug text-slate-50 hover:border-slate-400 hover:bg-slate-800 disabled:opacity-50";
   const unprocessed = messages.filter((m) => !m.processed).length;
-  const openTodos = todos.filter((t) => !t.done);
-  const doneTodos = todos.filter((t) => t.done);
-  const toolsBadge =
-    (unprocessed ? unprocessed : 0) + (openTodos.length ? openTodos.length : 0);
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-slate-950 text-base text-slate-100 sm:text-lg">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-slate-950 text-lg leading-relaxed text-slate-50">
       {/* Slim toolbar — no second “Assistant” title (AppShell already has AI). */}
       <header className="flex shrink-0 items-center gap-2 border-b border-slate-800/80 px-3 py-2 sm:px-5">
         <div
@@ -451,14 +422,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
               className={`rounded-md px-3.5 py-1.5 text-base font-medium ${
                 view === v ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"
               }`}
-              onClick={() => {
-                setPickedView(v);
-                try {
-                  localStorage.setItem(VIEW_STORAGE_KEY, v);
-                } catch {
-                  /* ignore */
-                }
-              }}
+              onClick={() => selectView(v)}
             >
               {v === "chat" ? "Chat" : "Wiki"}
             </button>
@@ -503,9 +467,9 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
             aria-controls="ai-tools-panel"
           >
             Tools
-            {toolsBadge > 0 ? (
+            {unprocessed > 0 ? (
               <span className="ml-1.5 inline-flex min-w-[1.25rem] justify-center rounded-full bg-sky-600 px-1.5 text-xs text-white">
-                {toolsBadge}
+                {unprocessed}
               </span>
             ) : null}
           </button>
@@ -564,6 +528,8 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 active={active && view === "wiki"}
                 configured={Boolean(status?.wikilmGithubConfigured)}
                 refreshKey={wikiRefreshKey}
+                focusPath={wikiFocus?.path}
+                focusNonce={wikiFocus?.nonce}
               />
             </div>
           ) : !status?.geminiConfigured ? (
@@ -573,10 +539,10 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
             </p>
           ) : (
             <>
-              <div className="board-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5">
+              <div className="board-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5">
                 {chat.length === 0 ? (
                   <div className="mx-auto flex h-full max-w-2xl flex-col justify-center gap-6">
-                    <p className="text-2xl font-medium text-white sm:text-3xl">What do you need?</p>
+                    <p className="text-3xl font-medium tracking-tight text-white">What do you need?</p>
                     <div className="flex flex-wrap gap-2">
                       {QUICK_PROMPTS.filter((q) => !q.when || (status ? q.when(status) : false)).map(
                         (q) => (
@@ -613,10 +579,10 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                       className={`mx-auto flex w-full max-w-3xl ${m.role === "user" ? "justify-end" : ""}`}
                     >
                       <div
-                        className={`max-w-[min(100%,40rem)] px-1 py-0.5 ${
+                        className={`max-w-[min(100%,42rem)] px-1 py-0.5 ${
                           m.role === "user"
-                            ? "rounded-2xl bg-slate-800 px-4 py-3 text-base leading-relaxed text-slate-50 whitespace-pre-wrap sm:text-lg"
-                            : "text-slate-100"
+                            ? "rounded-2xl bg-slate-800 px-4 py-3.5 text-lg leading-relaxed text-white whitespace-pre-wrap"
+                            : "text-[1.125rem] leading-[1.65] text-slate-50"
                         }`}
                       >
                         {m.actions?.length ? (
@@ -778,7 +744,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 <textarea
                   ref={promptRef}
                   rows={1}
-                  className="max-h-40 min-h-[3rem] min-w-0 flex-1 resize-none rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-base leading-relaxed text-white outline-none focus:border-slate-500 sm:text-lg"
+                  className="max-h-40 min-h-[3.25rem] min-w-0 flex-1 resize-none rounded-2xl border border-slate-600 bg-slate-900 px-4 py-3.5 text-lg leading-relaxed text-white outline-none placeholder:text-slate-500 focus:border-slate-400"
                   placeholder={
                     busy === "chat"
                       ? "Still thinking… type the next message"
@@ -839,7 +805,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
 
               <section>
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <h3 className="font-semibold text-white">
+                  <h3 className="text-base font-semibold text-white">
                     Inbox
                     {unprocessed ? (
                       <span className="ml-2 text-sm font-normal text-slate-400">{unprocessed} new</span>
@@ -855,23 +821,25 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                   </button>
                 </div>
                 {!status?.googleConfigured ? (
-                  <p className="text-sm text-slate-400">Configure Google OAuth, then Link Google.</p>
+                  <p className="text-base leading-relaxed text-slate-400">
+                    Configure Google OAuth, then Link Google.
+                  </p>
                 ) : !status?.gmailReady ? (
-                  <p className="text-sm text-slate-400">
+                  <p className="text-base leading-relaxed text-slate-400">
                     <a className="text-sky-300 underline" href="/api/auth/google">
                       Link Google
                     </a>{" "}
                     for the inbox drop-box.
                   </p>
                 ) : (
-                  <ul className="space-y-2 text-sm">
+                  <ul className="space-y-2 text-base">
                     {messages.length === 0 ? (
                       <li className="text-slate-500">No mail yet.</li>
                     ) : (
                       messages.slice(0, 8).map((m) => (
-                        <li key={m.id} className="rounded-lg bg-slate-900/80 px-2.5 py-2">
-                          <div className="truncate font-medium text-slate-100">{m.subject}</div>
-                          <div className="truncate text-slate-500">{m.from}</div>
+                        <li key={m.id} className="rounded-lg bg-slate-900/80 px-3 py-2.5">
+                          <div className="truncate font-medium text-slate-50">{m.subject}</div>
+                          <div className="truncate text-slate-400">{m.from}</div>
                         </li>
                       ))
                     )}
@@ -879,64 +847,53 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 )}
               </section>
 
-              <section>
-                <h3 className="mb-2 font-semibold text-white">
-                  Todos
-                  {openTodos.length ? (
-                    <span className="ml-2 text-sm font-normal text-slate-400">{openTodos.length} open</span>
-                  ) : null}
-                </h3>
-                <ul className="space-y-2 text-sm">
-                  {todos.length === 0 ? (
-                    <li className="text-slate-500">No todos yet.</li>
-                  ) : (
-                    [...openTodos, ...doneTodos].map((t) => (
-                      <li key={t.id} className="flex items-start gap-2 rounded-lg bg-slate-900/80 px-2.5 py-2">
-                        <input
-                          type="checkbox"
-                          className="mt-1"
-                          checked={t.done}
-                          disabled={busy === `todo-${t.id}`}
-                          onChange={() => void todoAction(t.done ? "uncomplete" : "complete", t.id)}
-                          aria-label={t.done ? "Mark incomplete" : "Mark complete"}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className={t.done ? "text-slate-500 line-through" : "text-slate-100"}>
-                            {t.title}
-                          </div>
-                          {t.dueHint ? <div className="text-slate-500">Due: {t.dueHint}</div> : null}
-                        </div>
-                        <button
-                          type="button"
-                          className="text-slate-500 hover:text-red-300"
-                          disabled={busy === `todo-${t.id}`}
-                          onClick={() => void todoAction("remove", t.id)}
-                        >
-                          ×
-                        </button>
-                      </li>
-                    ))
-                  )}
-                </ul>
+              <section className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-3 text-base leading-relaxed text-slate-300">
+                <h3 className="mb-1.5 font-semibold text-white">Todos</h3>
+                {status?.wikilmGithubConfigured ? (
+                  <p>
+                    Live in the wiki as{" "}
+                    <button
+                      type="button"
+                      className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                      onClick={() => {
+                        setToolsOpen(false);
+                        setWikiFocus((prev) => ({
+                          path: "todos/list.md",
+                          nonce: (prev?.nonce ?? 0) + 1,
+                        }));
+                        selectView("wiki");
+                      }}
+                    >
+                      Todos
+                    </button>{" "}
+                    (<code className="text-slate-200">todos/list.md</code>). Ask the assistant or open that
+                    page to check them off.
+                  </p>
+                ) : (
+                  <p>
+                    Ask the assistant to list or add todos. Link the GitHub wiki to keep them on{" "}
+                    <code className="text-slate-200">todos/list.md</code>.
+                  </p>
+                )}
               </section>
 
               <section aria-label="Slack">
-                <h3 className="mb-2 font-semibold text-white">Slack</h3>
+                <h3 className="mb-2 text-base font-semibold text-white">Slack</h3>
                 {!status?.slackConfigured ? (
-                  <p className="text-sm text-slate-400">
-                    Set <code className="text-slate-300">SLACK_BOT_TOKEN</code> +{" "}
-                    <code className="text-slate-300">SLACK_APP_TOKEN</code>.
+                  <p className="text-base text-slate-400">
+                    Set <code className="text-slate-200">SLACK_BOT_TOKEN</code> +{" "}
+                    <code className="text-slate-200">SLACK_APP_TOKEN</code>.
                   </p>
                 ) : !slack ? (
-                  <p className="text-sm text-slate-500">Loading…</p>
+                  <p className="text-base text-slate-500">Loading…</p>
                 ) : (
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-base">
                     <dt className="text-slate-500">Workspace</dt>
-                    <dd>{slack.team || "—"}</dd>
+                    <dd className="text-slate-100">{slack.team || "—"}</dd>
                     <dt className="text-slate-500">Bot</dt>
-                    <dd>{slack.botName ? `@${slack.botName}` : "—"}</dd>
+                    <dd className="text-slate-100">{slack.botName ? `@${slack.botName}` : "—"}</dd>
                     <dt className="text-slate-500">Connected</dt>
-                    <dd className={slack.bot?.connected ? "" : "text-amber-200"}>
+                    <dd className={slack.bot?.connected ? "text-slate-100" : "text-amber-200"}>
                       {slack.bot?.connected
                         ? `yes · ${timeAgo(slack.bot.connectedAt)}`
                         : slack.bot?.running

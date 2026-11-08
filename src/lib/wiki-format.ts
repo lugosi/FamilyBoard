@@ -31,6 +31,11 @@ export const WIKI_CATEGORIES: WikiCategory[] = [
   },
   { id: "notes", label: "Notes", hint: "anything that fits nowhere else" },
   {
+    id: "todos",
+    label: "Todos",
+    hint: "open family tasks (checklist the assistant and inbox scan keep current)",
+  },
+  {
     id: "skills",
     label: "Skills",
     hint: "saved how-tos the assistant reruns, e.g. turning a schedule spreadsheet into calendar events",

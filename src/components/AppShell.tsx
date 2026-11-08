@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Board } from "@/components/Board";
 import { WikiLlm } from "@/components/WikiLlm";
 
@@ -31,30 +31,23 @@ function readInitialTab(): AppTab {
   }
 }
 
-const subscribeNoop = () => () => {};
-
 export function AppShell() {
-  // null during SSR and hydration so server and client markup match.
-  const initialTab = useSyncExternalStore(
-    subscribeNoop,
-    readInitialTab,
-    () => null,
-  );
-  const [pickedTab, setPickedTab] = useState<AppTab | null>(null);
-  const ready = initialTab !== null;
-  const tab: AppTab = pickedTab ?? initialTab ?? "board";
+  // SSR + first paint show Board so the shell is never blank; after mount we
+  // honor ?tab= / localStorage (may briefly flash Board on AI deep links).
+  const [tab, setTab] = useState<AppTab>("board");
 
   useEffect(() => {
-    if (!initialTab) return;
+    const next = readInitialTab();
+    setTab(next);
     try {
-      localStorage.setItem(TAB_STORAGE_KEY, initialTab);
+      localStorage.setItem(TAB_STORAGE_KEY, next);
     } catch {
       /* ignore */
     }
-  }, [initialTab]);
+  }, []);
 
   const selectTab = useCallback((next: AppTab) => {
-    setPickedTab(next);
+    setTab(next);
     try {
       localStorage.setItem(TAB_STORAGE_KEY, next);
     } catch {
@@ -96,7 +89,7 @@ export function AppShell() {
         {/* Keep both mounted so Board does not remount/blank on every tab switch */}
         <div
           className={
-            ready && tab === "board"
+            tab === "board"
               ? "h-full min-h-0"
               : "pointer-events-none invisible absolute inset-0 h-full min-h-0"
           }
@@ -106,7 +99,7 @@ export function AppShell() {
         </div>
         <div
           className={
-            ready && tab === "ai"
+            tab === "ai"
               ? "h-full min-h-0"
               : "pointer-events-none invisible absolute inset-0 h-full min-h-0"
           }

@@ -13,7 +13,7 @@ Read this when editing CatLink, Spotify, Hue, Nest, Google Calendar, Weather, or
 | `hue.json` | Hue bridge username |
 | `catlink-session.json` | CatLink token, phone, phoneIac, apiBase |
 | `nest-climate-history.json` | Indoor climate samples |
-| `todos.json` | WikiLLM email-scan todos (not the GitHub wiki) |
+| `todos.json` | Legacy local todos only when wiki is not configured; with wiki, tasks live in `todos/list.md` |
 | `chat-conversations.json` | Slack bot short-term memory per DM / channel thread (30 min TTL) |
 
 ## CatLink (`src/lib/catlink.ts`, `catlink-crypto.ts`)
