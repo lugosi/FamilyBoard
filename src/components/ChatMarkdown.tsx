@@ -7,37 +7,39 @@ import remarkGfm from "remark-gfm";
 const linkClass = "text-sky-300 underline underline-offset-2 hover:text-sky-200";
 
 const components: Components = {
-  p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0 leading-relaxed">{children}</p>,
+  p: ({ children }) => (
+    <p className="my-2.5 first:mt-0 last:mb-0 leading-[1.65] text-slate-50">{children}</p>
+  ),
   h1: ({ children }) => (
-    <h3 className="mb-1.5 mt-3 text-lg font-semibold text-white first:mt-0 sm:text-xl">{children}</h3>
+    <h3 className="mb-2 mt-4 text-xl font-semibold tracking-tight text-white first:mt-0">{children}</h3>
   ),
   h2: ({ children }) => (
-    <h3 className="mb-1.5 mt-3 text-lg font-semibold text-white first:mt-0 sm:text-xl">{children}</h3>
+    <h3 className="mb-2 mt-4 text-xl font-semibold tracking-tight text-white first:mt-0">{children}</h3>
   ),
   h3: ({ children }) => (
-    <h4 className="mb-1 mt-2.5 text-base font-semibold text-white first:mt-0">{children}</h4>
+    <h4 className="mb-1.5 mt-3 text-lg font-semibold text-white first:mt-0">{children}</h4>
   ),
   h4: ({ children }) => (
-    <h4 className="mb-1 mt-2 text-base font-semibold text-slate-100 first:mt-0">{children}</h4>
+    <h4 className="mb-1 mt-2.5 text-base font-semibold text-slate-100 first:mt-0">{children}</h4>
   ),
   strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-  em: ({ children }) => <em className="italic">{children}</em>,
+  em: ({ children }) => <em className="italic text-slate-100">{children}</em>,
   del: ({ children }) => <del className="text-slate-500">{children}</del>,
   ul: ({ className, children }) => (
     <ul
-      className={`my-2 space-y-1 ${
+      className={`my-2.5 space-y-1.5 ${
         className?.includes("contains-task-list")
           ? "list-none pl-0.5"
-          : "list-disc pl-5 marker:text-slate-500"
+          : "list-disc pl-5 marker:text-slate-400"
       }`}
     >
       {children}
     </ul>
   ),
   ol: ({ children }) => (
-    <ol className="my-2 list-decimal space-y-1 pl-5 marker:text-slate-500">{children}</ol>
+    <ol className="my-2.5 list-decimal space-y-1.5 pl-5 marker:text-slate-400">{children}</ol>
   ),
-  li: ({ children }) => <li className="pl-0.5 leading-relaxed">{children}</li>,
+  li: ({ children }) => <li className="pl-0.5 leading-[1.65] text-slate-50">{children}</li>,
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noreferrer" className={linkClass}>
       {children}
@@ -109,7 +111,7 @@ export function ChatMarkdown({
   }, [onRelativeLink]);
 
   return (
-    <div className="break-words text-[1.05rem] leading-relaxed sm:text-lg">
+    <div className="break-words text-[1.125rem] leading-[1.65] text-slate-50">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={merged}>
         {children}
       </ReactMarkdown>

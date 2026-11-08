@@ -36,6 +36,7 @@ One page per person or topic, in a folder:
 | `health/` | Doctors, dentists, medications, insurance, vaccinations |
 | `travel/` | Trips, packing lists, documents, loyalty numbers |
 | `notes/` | Anything else |
+| `todos/` | Open family tasks — especially `todos/list.md` (inbox scan + assistant keep this checklist current) |
 
 Pages directly under the wiki folder still work (shown as **Unfiled**); ask the assistant to file them, or use **Move**. Subfolders up to three levels deep are fine (`school/maya/soccer.md`).
 

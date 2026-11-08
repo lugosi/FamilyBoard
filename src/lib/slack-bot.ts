@@ -1,6 +1,7 @@
 import { getBackgroundGoogleRedirectUri } from "./app-url";
 import { isGeminiConfigured, type GeminiMessage } from "./gemini";
-import { runFamilyAgent } from "./agent";
+import { resolvePendingApproval, runFamilyAgent } from "./agent";
+import { findPendingForConversation } from "./agent-pending-writes";
 import {
   AttachmentError,
   attachmentsToPrompt,
@@ -25,6 +26,8 @@ import {
 const MAX_BACKOFF_MS = 60_000;
 const WORKING_REACTION = "eyes";
 const RESET_WORDS = new Set(["reset", "/reset", "new", "/new"]);
+const APPROVE_WORDS = new Set(["approve", "yes", "confirm", "ok", "lgtm"]);
+const REJECT_WORDS = new Set(["cancel", "reject", "no", "nope", "deny"]);
 const READ_ONLY_TOOLS = new Set([
   "find_events",
   "list_todos",
@@ -191,6 +194,38 @@ async function handle(msg: Incoming): Promise<void> {
     state.handled += 1;
     return;
   }
+
+  // Resolve a staged calendar/wiki review without calling the model.
+  const decisionWord = msg.text.trim().toLowerCase();
+  if (APPROVE_WORDS.has(decisionWord) || REJECT_WORDS.has(decisionWord)) {
+    const pending = await findPendingForConversation(key);
+    if (pending) {
+      await setSlackReaction({ channel: msg.channel, ts: msg.ts, name: WORKING_REACTION, on: true });
+      try {
+        const result = await resolvePendingApproval({
+          id: pending.id,
+          decision: APPROVE_WORDS.has(decisionWord) ? "approve" : "reject",
+          redirectUri: getBackgroundGoogleRedirectUri(),
+        });
+        const footer = result.actions.length
+          ? `\n${result.actions.map((a) => `${a.ok ? "✅" : "⚠️"} ${a.label}`).join("\n")}`
+          : "";
+        await reply(`${result.reply}${footer}`);
+        state.handled += 1;
+      } catch (e) {
+        await reply(e instanceof Error ? e.message : "Could not resolve that review.");
+      } finally {
+        await setSlackReaction({
+          channel: msg.channel,
+          ts: msg.ts,
+          name: WORKING_REACTION,
+          on: false,
+        });
+      }
+      return;
+    }
+  }
+
   if (!isGeminiConfigured()) {
     await reply("FamilyBoard's assistant isn't set up yet (GEMINI_API_KEY is missing).");
     return;
@@ -224,6 +259,7 @@ async function handle(msg: Incoming): Promise<void> {
       redirectUri: getBackgroundGoogleRedirectUri(),
       channel: "slack",
       senderName: name,
+      conversationKey: key,
     });
     // Don't keep image bytes in the 30‑minute chat memory.
     await saveChatHistory(key, [
@@ -239,8 +275,11 @@ async function handle(msg: Incoming): Promise<void> {
       !result.reply.toLowerCase().includes("reply with")
         ? `\n\n*Actions — reply with one:*\n${result.quickActions.map((a) => `• ${a.label}`).join("\n")}`
         : "";
+    const pending = result.pendingApproval
+      ? `\n\n⏸ *Review before writing* — reply *approve* or *cancel*\n\`\`\`\n${result.pendingApproval.summary}\n\`\`\``
+      : "";
     const fileNotes = problems.length ? `\n${problems.map((p) => `⚠️ ${p}`).join("\n")}` : "";
-    await reply(`${result.reply}${footer}${quick}${fileNotes}`);
+    await reply(`${result.reply}${footer}${pending}${quick}${fileNotes}`);
     state.handled += 1;
   } catch (e) {
     state.lastError = `Agent: ${e instanceof Error ? e.message : String(e)}`;

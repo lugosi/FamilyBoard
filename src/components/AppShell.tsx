@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { Board } from "@/components/Board";
 import { WikiLlm } from "@/components/WikiLlm";
 
@@ -34,24 +34,11 @@ function readInitialTab(): AppTab {
 const subscribeNoop = () => () => {};
 
 export function AppShell() {
-  // null during SSR and hydration so server and client markup match.
-  const initialTab = useSyncExternalStore(
-    subscribeNoop,
-    readInitialTab,
-    () => null,
-  );
+  // Server snapshot is always Board so SSR markup is stable; client snapshot
+  // reads ?tab= / localStorage. Picked tab overrides after the user clicks.
+  const storedTab = useSyncExternalStore(subscribeNoop, readInitialTab, () => "board");
   const [pickedTab, setPickedTab] = useState<AppTab | null>(null);
-  const ready = initialTab !== null;
-  const tab: AppTab = pickedTab ?? initialTab ?? "board";
-
-  useEffect(() => {
-    if (!initialTab) return;
-    try {
-      localStorage.setItem(TAB_STORAGE_KEY, initialTab);
-    } catch {
-      /* ignore */
-    }
-  }, [initialTab]);
+  const tab = pickedTab ?? storedTab;
 
   const selectTab = useCallback((next: AppTab) => {
     setPickedTab(next);
@@ -80,7 +67,7 @@ export function AppShell() {
               key={id}
               type="button"
               onClick={() => selectTab(id)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-semibold tracking-wide sm:text-base ${
+              className={`rounded-lg px-3.5 py-2 text-base font-semibold tracking-wide ${
                 active
                   ? "bg-slate-800 text-white"
                   : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
@@ -96,7 +83,7 @@ export function AppShell() {
         {/* Keep both mounted so Board does not remount/blank on every tab switch */}
         <div
           className={
-            ready && tab === "board"
+            tab === "board"
               ? "h-full min-h-0"
               : "pointer-events-none invisible absolute inset-0 h-full min-h-0"
           }
@@ -106,7 +93,7 @@ export function AppShell() {
         </div>
         <div
           className={
-            ready && tab === "ai"
+            tab === "ai"
               ? "h-full min-h-0"
               : "pointer-events-none invisible absolute inset-0 h-full min-h-0"
           }
