@@ -71,10 +71,12 @@ If you expose this app to the public internet, enable the built-in unlock gate:
 
 1. Set both env vars:
    - `BOARD_ACCESS_CODE` (a long random passphrase users type in `/unlock`)
-   - `BOARD_ACCESS_SECRET` (a separate long random secret used for session-cookie signing)
+   - `BOARD_ACCESS_SECRET` (separate server secret; rotating it invalidates every unlock session)
 2. Restart the app.
 3. Unauthenticated requests are redirected to `/unlock`.
 4. API requests return `401` until unlocked.
+
+Each successful unlock mints a random `fb_gate` cookie; only a SHA-256 hash is stored under `DATA_DIR/gate-sessions.json` (not the cookie itself). Sessions last 7 days. Change `BOARD_ACCESS_SECRET` (or delete that file) to revoke all devices.
 
 Brute-force protection is built in (`/api/unlock` rate-limits repeated failed attempts per client IP).
 

@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  computeSessionToken,
-  getGateConfig,
-  getSessionCookieName,
-} from "@/lib/security-gate";
+import { isValidGateSession } from "@/lib/gate-sessions";
+import { getGateConfig, getSessionCookieName } from "@/lib/security-gate";
 
 function isPublicPath(pathname: string): boolean {
   return (
@@ -26,9 +23,8 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const expectedToken = await computeSessionToken(config);
   const cookie = request.cookies.get(getSessionCookieName())?.value;
-  if (cookie === expectedToken) {
+  if (await isValidGateSession(cookie, config)) {
     return NextResponse.next();
   }
 
