@@ -298,6 +298,10 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     }
   }
 
+  function stopChat() {
+    chatAbortRef.current?.abort();
+  }
+
   async function sendPrompt(raw?: string) {
     const text = (raw ?? input).trim();
     const files = raw === undefined ? pending : [];
@@ -317,7 +321,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     const ac = new AbortController();
     chatAbortRef.current = ac;
     const statusTimer = window.setTimeout(() => {
-      setChatStatus("Still working (Gemini may be retrying) — you can cancel.");
+      setChatStatus("Still working (Gemini may be retrying) — hit Stop anytime.");
     }, 4000);
     try {
       const res = await fetch("/api/agent/chat", {
@@ -360,7 +364,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
       }
     } catch (e) {
       if (ac.signal.aborted) {
-        setChatStatus("Cancelled.");
+        setChatStatus("Stopped.");
       } else {
         setError(friendlyChatError(e));
       }
@@ -371,7 +375,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
       window.clearTimeout(statusTimer);
       chatAbortRef.current = null;
       setBusy(null);
-      setChatStatus((prev) => (prev === "Cancelled." ? prev : null));
+      setChatStatus((prev) => (prev === "Stopped." ? prev : null));
       focusPrompt();
     }
   }
@@ -738,7 +742,18 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                     </div>
                   ))
                 )}
-                {busy === "chat" ? <p className="mx-auto max-w-3xl text-slate-400">Thinking…</p> : null}
+                {busy === "chat" ? (
+                  <div className="mx-auto flex max-w-3xl items-center gap-3 text-slate-400">
+                    <p>Thinking…</p>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-600 px-3 py-1 text-sm font-medium text-slate-100 hover:bg-slate-800 hover:text-white"
+                      onClick={stopChat}
+                    >
+                      Stop
+                    </button>
+                  </div>
+                ) : null}
                 <div ref={chatEndRef} />
               </div>
 
@@ -749,9 +764,9 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                     <button
                       type="button"
                       className="rounded-md border border-slate-600 px-2.5 py-1 font-medium text-white hover:bg-slate-800"
-                      onClick={() => chatAbortRef.current?.abort()}
+                      onClick={stopChat}
                     >
-                      Cancel
+                      Stop
                     </button>
                   ) : null}
                 </div>
@@ -870,20 +885,37 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
                   }}
                   onKeyDown={(e) => {
+                    if (e.key === "Escape" && busy === "chat") {
+                      e.preventDefault();
+                      stopChat();
+                      return;
+                    }
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
+                      if (busy === "chat") return;
                       void sendPrompt();
                     }
                   }}
                   aria-label="Ask the family assistant"
                 />
-                <button
-                  type="submit"
-                  className="mb-0.5 rounded-2xl bg-slate-100 px-5 py-3 text-base font-semibold text-slate-900 hover:bg-white disabled:opacity-40"
-                  disabled={Boolean(busy) || (!input.trim() && !pending.length)}
-                >
-                  {busy === "chat" ? "…" : "Send"}
-                </button>
+                {busy === "chat" ? (
+                  <button
+                    type="button"
+                    className="mb-0.5 rounded-2xl border border-amber-600/70 bg-amber-950/40 px-5 py-3 text-base font-semibold text-amber-50 hover:border-amber-500 hover:bg-amber-950/70"
+                    onClick={stopChat}
+                    aria-label="Stop generating"
+                  >
+                    Stop
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    className="mb-0.5 rounded-2xl bg-slate-100 px-5 py-3 text-base font-semibold text-slate-900 hover:bg-white disabled:opacity-40"
+                    disabled={!input.trim() && !pending.length}
+                  >
+                    Send
+                  </button>
+                )}
               </form>
             </>
           )}
