@@ -73,7 +73,7 @@ export function CompactCalendarGrid({
 
   return (
     <div
-      className={`flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-lg border border-slate-800 bg-black ${rootText}`}
+      className={`flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-950 ${rootText}`}
     >
       <div className="grid shrink-0 grid-cols-7 border-b border-slate-700/90">
         {WEEKDAY.map((d, idx) => (
@@ -172,7 +172,7 @@ function CompactWeekBlock({
               >
                 {today ? (
                   <span
-                    className={`flex shrink-0 items-center justify-center rounded-full bg-blue-600 font-semibold text-white ${
+                    className={`flex shrink-0 items-center justify-center rounded-full bg-sky-600 font-semibold text-white ${
                       comfortable
                         ? "h-9 w-9 text-lg"
                         : "h-8 w-8 text-base"
@@ -240,7 +240,7 @@ function CompactWeekBlock({
                     title={ev.summary ?? ""}
                   >
                     {showCalendarSource ? `${shortCalendarLabel(ev as SourceEvent)} ` : ""}
-                    {ev.summary || "(No title)"}
+                    {ev.summary || "(no title)"}
                   </button>
                 ))}
                 {allDayMore > 0 ? (
@@ -287,7 +287,7 @@ function CompactWeekBlock({
                             {shortCalendarLabel(ev as SourceEvent)}{" "}
                           </span>
                         ) : null}
-                        {ev.summary || "(No title)"}
+                        {ev.summary || "(no title)"}
                       </span>
                     </button>
                   );

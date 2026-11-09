@@ -122,8 +122,10 @@ export function OnekoCat({ enabled }: { enabled: boolean }) {
     if (!node) return;
     const nekoEl: HTMLDivElement = node;
 
-    let nekoPosX = 32;
-    let nekoPosY = 32;
+    // Stay below the Board|AI tab strip so the sprite never covers chrome.
+    const topMargin = 56;
+    let nekoPosX = 48;
+    let nekoPosY = topMargin + 24;
     let mousePosX = 0;
     let mousePosY = 0;
     let frameCount = 0;
@@ -137,13 +139,14 @@ export function OnekoCat({ enabled }: { enabled: boolean }) {
       const m = 48;
       const iw = window.innerWidth;
       const ih = window.innerHeight;
-      if (iw <= 2 * m || ih <= 2 * m) {
+      const minY = topMargin + m;
+      if (iw <= 2 * m || ih <= minY + m) {
         mousePosX = iw / 2;
-        mousePosY = ih / 2;
+        mousePosY = Math.max(minY, ih / 2);
         return;
       }
       mousePosX = m + Math.random() * (iw - 2 * m);
-      mousePosY = m + Math.random() * (ih - 2 * m);
+      mousePosY = minY + Math.random() * (ih - minY - m);
     }
 
     function resetIdleAnimation() {
@@ -225,7 +228,7 @@ export function OnekoCat({ enabled }: { enabled: boolean }) {
       nekoPosY -= (diffY / distance) * NEKO_SPEED;
 
       nekoPosX = Math.min(Math.max(16, nekoPosX), window.innerWidth - 16);
-      nekoPosY = Math.min(Math.max(16, nekoPosY), window.innerHeight - 16);
+      nekoPosY = Math.min(Math.max(topMargin + 16, nekoPosY), window.innerHeight - 16);
 
       nekoEl.style.left = `${nekoPosX - 16}px`;
       nekoEl.style.top = `${nekoPosY - 16}px`;

@@ -73,7 +73,7 @@ export function EventDateTimePicker({
   }
 
   return (
-    <div className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
+    <div className="block text-xs font-medium uppercase tracking-wide text-slate-500">
       <span>{label}</span>
       <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-stretch">
         <input
