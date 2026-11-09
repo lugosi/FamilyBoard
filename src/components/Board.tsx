@@ -11,6 +11,7 @@ import {
   defaultCalendarRangeKeys,
   enumerateWeekStarts,
   eventBarClass,
+  eventInclusiveDateKeys,
   eventOverlapsLocalDay,
   getEventBounds,
   isDefaultWeeksRange,
@@ -345,24 +346,22 @@ function eventWhenLabel(ev: CalendarEvent): { allDay: boolean; text: string } {
   return { allDay: false, text: formatTimedRange(s, e) };
 }
 
-/** Local YYYY-MM-DD for weather lookup (start day of the event). */
-function eventStartDateKey(ev: CalendarEvent): string | null {
-  if (ev.start?.date && /^\d{4}-\d{2}-\d{2}$/.test(ev.start.date)) {
-    return ev.start.date;
-  }
-  const dt = ev.start?.dateTime;
-  if (!dt) return null;
-  const key = dt.slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : null;
-}
-
-type EventPlaceWeather = {
-  place: string;
+type EventDayWeatherRow = {
   date: string;
   code: number;
   maxF: number;
   minF: number;
   label: string;
+};
+
+type EventPlaceWeatherRange = {
+  place: string;
+  days: EventDayWeatherRow[];
+};
+
+type LocationWeatherCache = {
+  place: string;
+  byDate: Record<string, EventDayWeatherRow>;
 };
 
 function eventMeetUrl(ev: CalendarEvent): string | null {
@@ -534,9 +533,13 @@ export function Board() {
   const [editEnd, setEditEnd] = useState("");
   const [eventPlaceWeather, setEventPlaceWeather] = useState<{
     key: string;
-    data: EventPlaceWeather | null;
+    data: EventPlaceWeatherRange | null;
     status: "loading" | "ready" | "error";
   } | null>(null);
+  /** Location string → day forecasts for chips in the visible range. */
+  const [locationWeatherByQuery, setLocationWeatherByQuery] = useState<
+    Record<string, LocationWeatherCache>
+  >({});
 
   const [rangeKeys, setRangeKeys] = useState<CalendarRangeKeys>(() =>
     defaultCalendarRangeKeys(DEFAULT_HOME_CALENDAR_WEEKS),
@@ -1297,17 +1300,23 @@ export function Board() {
     setEventPlaceWeather(null);
   }
 
+  const eventWeatherDateKeys = useMemo(
+    () => (editOpen ? eventInclusiveDateKeys(editOpen) : []),
+    [editOpen],
+  );
+
   const eventWeatherLookupKey =
     editOpen && eventModalMode === "view"
-      ? `${editOpen.id ?? ""}\u001f${encodeURIComponent(editOpen.location?.trim() ?? "")}\u001f${eventStartDateKey(editOpen) ?? ""}`
+      ? `${editOpen.id ?? ""}\u001f${encodeURIComponent(editOpen.location?.trim() ?? "")}\u001f${eventWeatherDateKeys[0] ?? ""}\u001f${eventWeatherDateKeys[eventWeatherDateKeys.length - 1] ?? ""}`
       : null;
 
   useEffect(() => {
     if (!eventWeatherLookupKey) return;
     const parts = eventWeatherLookupKey.split("\u001f");
     const location = decodeURIComponent(parts[1] ?? "");
-    const date = parts[2] ?? "";
-    if (!location || !date) return;
+    const from = parts[2] ?? "";
+    const to = parts[3] ?? from;
+    if (!location || !from) return;
 
     const ac = new AbortController();
     const key = eventWeatherLookupKey;
@@ -1315,7 +1324,7 @@ export function Board() {
       setEventPlaceWeather({ key, data: null, status: "loading" });
       try {
         const res = await fetch(
-          `/api/weather/at?${new URLSearchParams({ q: location, date }).toString()}`,
+          `/api/weather/at?${new URLSearchParams({ q: location, from, to }).toString()}`,
           { signal: ac.signal },
         );
         if (ac.signal.aborted) return;
@@ -1323,26 +1332,27 @@ export function Board() {
           setEventPlaceWeather({ key, data: null, status: "error" });
           return;
         }
-        const json = (await res.json()) as EventPlaceWeather & { error?: string };
+        const json = (await res.json()) as {
+          place?: string;
+          days?: EventDayWeatherRow[];
+          error?: string;
+        };
         if (ac.signal.aborted) return;
-        if (
-          typeof json.place === "string" &&
-          typeof json.label === "string" &&
-          typeof json.code === "number" &&
-          typeof json.maxF === "number" &&
-          typeof json.minF === "number"
-        ) {
+        const days = Array.isArray(json.days)
+          ? json.days.filter(
+              (d) =>
+                typeof d?.date === "string" &&
+                typeof d?.label === "string" &&
+                typeof d?.code === "number" &&
+                typeof d?.maxF === "number" &&
+                typeof d?.minF === "number",
+            )
+          : [];
+        if (typeof json.place === "string" && days.length) {
           setEventPlaceWeather({
             key,
             status: "ready",
-            data: {
-              place: json.place,
-              date: json.date,
-              code: json.code,
-              maxF: json.maxF,
-              minF: json.minF,
-              label: json.label,
-            },
+            data: { place: json.place, days },
           });
         } else {
           setEventPlaceWeather({ key, data: null, status: "error" });
@@ -1363,6 +1373,79 @@ export function Board() {
       : null;
   const eventPlaceWeatherBusy = activeEventPlaceWeather?.status === "loading";
   const eventPlaceWeatherData = activeEventPlaceWeather?.data ?? null;
+
+  const locationWeatherQueryKey = useMemo(() => {
+    const locs = new Set<string>();
+    for (const ev of [...events, ...todayEvents]) {
+      const loc = ev.location?.trim();
+      if (loc) locs.add(loc);
+    }
+    if (!locs.size) return "";
+    return `${rangeKeys.fromKey}\u001f${rangeKeys.toInclusiveKey}\u001f${[...locs].sort().join("\u001e")}`;
+  }, [events, todayEvents, rangeKeys.fromKey, rangeKeys.toInclusiveKey]);
+
+  useEffect(() => {
+    if (!locationWeatherQueryKey) return;
+    const parts = locationWeatherQueryKey.split("\u001f");
+    const from = parts[0] ?? "";
+    const to = parts[1] ?? "";
+    const locs = (parts[2] ?? "").split("\u001e").filter(Boolean);
+    if (!from || !to || !locs.length) return;
+
+    const ac = new AbortController();
+    void (async () => {
+      const next: Record<string, LocationWeatherCache> = {};
+      await Promise.all(
+        locs.map(async (q) => {
+          try {
+            const res = await fetch(
+              `/api/weather/at?${new URLSearchParams({ q, from, to }).toString()}`,
+              { signal: ac.signal },
+            );
+            if (!res.ok || ac.signal.aborted) return;
+            const json = (await res.json()) as {
+              place?: string;
+              days?: EventDayWeatherRow[];
+            };
+            if (typeof json.place !== "string" || !Array.isArray(json.days)) return;
+            const byDate: Record<string, EventDayWeatherRow> = {};
+            for (const d of json.days) {
+              if (
+                typeof d?.date === "string" &&
+                typeof d?.code === "number" &&
+                typeof d?.maxF === "number" &&
+                typeof d?.minF === "number" &&
+                typeof d?.label === "string"
+              ) {
+                byDate[d.date] = d;
+              }
+            }
+            if (Object.keys(byDate).length) {
+              next[q] = { place: json.place, byDate };
+            }
+          } catch {
+            /* ignore individual location failures */
+          }
+        }),
+      );
+      if (!ac.signal.aborted) {
+        setLocationWeatherByQuery((prev) => ({ ...prev, ...next }));
+      }
+    })();
+
+    return () => ac.abort();
+  }, [locationWeatherQueryKey]);
+
+  const lookupEventDayWeather = useCallback(
+    (ev: GEvent, dateKey: string) => {
+      const loc = ev.location?.trim();
+      if (!loc) return null;
+      return locationWeatherByQuery[loc]?.byDate[dateKey] ?? null;
+    },
+    [locationWeatherByQuery],
+  );
+
+  const todayDateKey = dateKeyLocal(new Date());
 
   async function saveEdit() {
     if (!editOpen?.id) return;
@@ -2090,38 +2173,60 @@ export function Board() {
                   </span>
                 ) : (
                   <div className="flex flex-wrap gap-2 sm:gap-2.5">
-                    {todayAllDayGlance.map((item) => (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() => openEventDetail(item.event)}
-                        className={`inline-flex max-w-full items-center gap-2 rounded-lg px-3 py-2 text-left shadow-sm hover:brightness-110 sm:max-w-[22rem] sm:px-3.5 sm:py-2.5 ${eventBarClass(item.summary)}`}
-                        title={item.summary}
-                      >
-                        <span className="shrink-0 text-sm font-bold uppercase tracking-wide opacity-90 sm:text-base">
-                          All day
-                        </span>
-                        <span className="truncate text-base font-semibold sm:text-lg">
-                          {item.summary}
-                        </span>
-                      </button>
-                    ))}
-                    {todayTimedGlance.map((item) => (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() => openEventDetail(item.event)}
-                        className={`inline-flex max-w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left shadow-sm hover:brightness-110 sm:max-w-[26rem] sm:px-3.5 sm:py-2.5 ${eventBarClass(item.summary)}`}
-                        title={`${item.startLabel}–${item.endLabel} ${item.summary}`}
-                      >
-                        <span className="shrink-0 text-base font-bold tabular-nums sm:text-lg">
-                          {item.startLabel}
-                        </span>
-                        <span className="truncate text-base font-semibold sm:text-lg">
-                          {item.summary}
-                        </span>
-                      </button>
-                    ))}
+                    {todayAllDayGlance.map((item) => {
+                      const wx = lookupEventDayWeather(item.event, todayDateKey);
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => openEventDetail(item.event)}
+                          className={`inline-flex max-w-full items-center gap-2 rounded-lg px-3 py-2 text-left shadow-sm hover:brightness-110 sm:max-w-[22rem] sm:px-3.5 sm:py-2.5 ${eventBarClass(item.summary)}`}
+                          title={wx?.label ? `${item.summary} · ${wx.label}` : item.summary}
+                        >
+                          <span className="shrink-0 text-sm font-bold uppercase tracking-wide opacity-90 sm:text-base">
+                            All day
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-base font-semibold sm:text-lg">
+                            {item.summary}
+                          </span>
+                          {wx ? (
+                            <WeatherIcon
+                              code={wx.code}
+                              className="h-5 w-5 shrink-0 opacity-95 sm:h-6 sm:w-6"
+                            />
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                    {todayTimedGlance.map((item) => {
+                      const wx = lookupEventDayWeather(item.event, todayDateKey);
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => openEventDetail(item.event)}
+                          className={`inline-flex max-w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left shadow-sm hover:brightness-110 sm:max-w-[26rem] sm:px-3.5 sm:py-2.5 ${eventBarClass(item.summary)}`}
+                          title={
+                            wx?.label
+                              ? `${item.startLabel}–${item.endLabel} ${item.summary} · ${wx.label}`
+                              : `${item.startLabel}–${item.endLabel} ${item.summary}`
+                          }
+                        >
+                          <span className="shrink-0 text-base font-bold tabular-nums sm:text-lg">
+                            {item.startLabel}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-base font-semibold sm:text-lg">
+                            {item.summary}
+                          </span>
+                          {wx ? (
+                            <WeatherIcon
+                              code={wx.code}
+                              className="h-5 w-5 shrink-0 opacity-95 sm:h-6 sm:w-6"
+                            />
+                          ) : null}
+                        </button>
+                      );
+                    })}
                     {todayHiddenCount > 0 ? (
                       <span className="inline-flex items-center rounded-lg border border-slate-500 bg-slate-800 px-3 py-2 text-base font-medium text-slate-200 sm:text-lg">
                         +{todayHiddenCount} more
@@ -2173,6 +2278,7 @@ export function Board() {
                         dailyForecastByDate={
                           status?.weatherConfigured ? calendarDailyForecast : undefined
                         }
+                        eventDayWeather={lookupEventDayWeather}
                         showCalendarSource={selectedCalendarId === "__all__"}
                         comfortable={calendarComfortable}
                         onSelectEvent={(ev) => openEventDetail(ev)}
@@ -3596,28 +3702,37 @@ export function Board() {
                               <p className="mt-2 text-sm text-slate-500">
                                 Looking up weather…
                               </p>
-                            ) : eventPlaceWeatherData ? (
-                              <div className="mt-2.5 flex items-center gap-2.5 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5">
-                                <WeatherIcon
-                                  code={eventPlaceWeatherData.code}
-                                  className="h-9 w-9"
-                                />
-                                <div className="min-w-0">
-                                  <p className="text-base font-medium text-slate-100 sm:text-lg">
-                                    {eventPlaceWeatherData.label}
-                                    <span className="font-normal text-slate-400">
-                                      {" "}
-                                      · High {Math.round(eventPlaceWeatherData.maxF)}° · Low{" "}
-                                      {Math.round(eventPlaceWeatherData.minF)}°
-                                    </span>
-                                  </p>
-                                  <p className="truncate text-sm text-slate-500">
-                                    {eventPlaceWeatherData.place}
-                                    {eventPlaceWeatherData.date
-                                      ? ` · ${formatDateKeyLong(eventPlaceWeatherData.date)}`
-                                      : ""}
-                                  </p>
-                                </div>
+                            ) : eventPlaceWeatherData?.days.length ? (
+                              <div className="mt-2.5 space-y-1.5 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5">
+                                <p className="truncate text-sm text-slate-500">
+                                  Weather · {eventPlaceWeatherData.place}
+                                </p>
+                                <ul className="space-y-1.5">
+                                  {eventPlaceWeatherData.days.map((day) => (
+                                    <li
+                                      key={day.date}
+                                      className="flex items-center gap-2.5"
+                                    >
+                                      <WeatherIcon
+                                        code={day.code}
+                                        className="h-8 w-8 shrink-0"
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-base font-medium text-slate-100 sm:text-lg">
+                                          {day.label}
+                                          <span className="font-normal text-slate-400">
+                                            {" "}
+                                            · High {Math.round(day.maxF)}° · Low{" "}
+                                            {Math.round(day.minF)}°
+                                          </span>
+                                        </p>
+                                        <p className="text-sm text-slate-500">
+                                          {formatDateKeyLong(day.date)}
+                                        </p>
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ul>
                               </div>
                             ) : null}
                           </div>

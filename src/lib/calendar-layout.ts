@@ -151,6 +151,32 @@ export function eventOverlapsLocalDay(ev: GEvent, day: Date): boolean {
   return b.start < day1 && b.end > day0;
 }
 
+/** Inclusive local YYYY-MM-DD keys the event occupies (for per-day weather). */
+export function eventInclusiveDateKeys(ev: GEvent): string[] {
+  const b = getEventBounds(ev);
+  if (!b) return [];
+  if (b.kind === "allday") {
+    const out: string[] = [];
+    let d = startOfDay(parseLocalDateKey(b.startKey));
+    const end = startOfDay(parseLocalDateKey(b.endExclusiveKey));
+    while (d.getTime() < end.getTime()) {
+      out.push(dateKeyLocal(d));
+      d = addDays(d, 1);
+      if (out.length > 62) break;
+    }
+    return out;
+  }
+  const out: string[] = [];
+  let d = startOfDay(b.start);
+  const endProbe = addDays(startOfDay(b.end), 1);
+  while (d.getTime() < endProbe.getTime()) {
+    if (eventOverlapsLocalDay(ev, d)) out.push(dateKeyLocal(d));
+    d = addDays(d, 1);
+    if (out.length > 62) break;
+  }
+  return out;
+}
+
 /** Timed events on this calendar day, sorted by start time. */
 export function timedEventsForCompactDay(events: GEvent[], day: Date): GEvent[] {
   const out: GEvent[] = [];
