@@ -345,6 +345,26 @@ function eventWhenLabel(ev: CalendarEvent): { allDay: boolean; text: string } {
   return { allDay: false, text: formatTimedRange(s, e) };
 }
 
+/** Local YYYY-MM-DD for weather lookup (start day of the event). */
+function eventStartDateKey(ev: CalendarEvent): string | null {
+  if (ev.start?.date && /^\d{4}-\d{2}-\d{2}$/.test(ev.start.date)) {
+    return ev.start.date;
+  }
+  const dt = ev.start?.dateTime;
+  if (!dt) return null;
+  const key = dt.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : null;
+}
+
+type EventPlaceWeather = {
+  place: string;
+  date: string;
+  code: number;
+  maxF: number;
+  minF: number;
+  label: string;
+};
+
 function eventMeetUrl(ev: CalendarEvent): string | null {
   if (ev.hangoutLink) return ev.hangoutLink;
   const entries = ev.conferenceData?.entryPoints ?? [];
@@ -512,6 +532,11 @@ export function Board() {
   const [editSummary, setEditSummary] = useState("");
   const [editStart, setEditStart] = useState("");
   const [editEnd, setEditEnd] = useState("");
+  const [eventPlaceWeather, setEventPlaceWeather] = useState<{
+    key: string;
+    data: EventPlaceWeather | null;
+    status: "loading" | "ready" | "error";
+  } | null>(null);
 
   const [rangeKeys, setRangeKeys] = useState<CalendarRangeKeys>(() =>
     defaultCalendarRangeKeys(DEFAULT_HOME_CALENDAR_WEEKS),
@@ -1269,7 +1294,75 @@ export function Board() {
     setEditOpen(null);
     setEventModalMode("view");
     setEditAllDay(false);
+    setEventPlaceWeather(null);
   }
+
+  const eventWeatherLookupKey =
+    editOpen && eventModalMode === "view"
+      ? `${editOpen.id ?? ""}\u001f${encodeURIComponent(editOpen.location?.trim() ?? "")}\u001f${eventStartDateKey(editOpen) ?? ""}`
+      : null;
+
+  useEffect(() => {
+    if (!eventWeatherLookupKey) return;
+    const parts = eventWeatherLookupKey.split("\u001f");
+    const location = decodeURIComponent(parts[1] ?? "");
+    const date = parts[2] ?? "";
+    if (!location || !date) return;
+
+    const ac = new AbortController();
+    const key = eventWeatherLookupKey;
+    void (async () => {
+      setEventPlaceWeather({ key, data: null, status: "loading" });
+      try {
+        const res = await fetch(
+          `/api/weather/at?${new URLSearchParams({ q: location, date }).toString()}`,
+          { signal: ac.signal },
+        );
+        if (ac.signal.aborted) return;
+        if (!res.ok) {
+          setEventPlaceWeather({ key, data: null, status: "error" });
+          return;
+        }
+        const json = (await res.json()) as EventPlaceWeather & { error?: string };
+        if (ac.signal.aborted) return;
+        if (
+          typeof json.place === "string" &&
+          typeof json.label === "string" &&
+          typeof json.code === "number" &&
+          typeof json.maxF === "number" &&
+          typeof json.minF === "number"
+        ) {
+          setEventPlaceWeather({
+            key,
+            status: "ready",
+            data: {
+              place: json.place,
+              date: json.date,
+              code: json.code,
+              maxF: json.maxF,
+              minF: json.minF,
+              label: json.label,
+            },
+          });
+        } else {
+          setEventPlaceWeather({ key, data: null, status: "error" });
+        }
+      } catch {
+        if (!ac.signal.aborted) {
+          setEventPlaceWeather({ key, data: null, status: "error" });
+        }
+      }
+    })();
+
+    return () => ac.abort();
+  }, [eventWeatherLookupKey]);
+
+  const activeEventPlaceWeather =
+    eventWeatherLookupKey && eventPlaceWeather?.key === eventWeatherLookupKey
+      ? eventPlaceWeather
+      : null;
+  const eventPlaceWeatherBusy = activeEventPlaceWeather?.status === "loading";
+  const eventPlaceWeatherData = activeEventPlaceWeather?.data ?? null;
 
   async function saveEdit() {
     if (!editOpen?.id) return;
@@ -3474,6 +3567,34 @@ export function Board() {
                             <p className="mt-1 whitespace-pre-wrap text-base text-slate-100 sm:text-lg">
                               {editOpen.location.trim()}
                             </p>
+                            {eventPlaceWeatherBusy ? (
+                              <p className="mt-2 text-sm text-slate-500">
+                                Looking up weather…
+                              </p>
+                            ) : eventPlaceWeatherData ? (
+                              <div className="mt-2.5 flex items-center gap-2.5 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5">
+                                <WeatherIcon
+                                  code={eventPlaceWeatherData.code}
+                                  className="h-9 w-9"
+                                />
+                                <div className="min-w-0">
+                                  <p className="text-base font-medium text-slate-100 sm:text-lg">
+                                    {eventPlaceWeatherData.label}
+                                    <span className="font-normal text-slate-400">
+                                      {" "}
+                                      · High {Math.round(eventPlaceWeatherData.maxF)}° · Low{" "}
+                                      {Math.round(eventPlaceWeatherData.minF)}°
+                                    </span>
+                                  </p>
+                                  <p className="truncate text-sm text-slate-500">
+                                    {eventPlaceWeatherData.place}
+                                    {eventPlaceWeatherData.date
+                                      ? ` · ${formatDateKeyLong(eventPlaceWeatherData.date)}`
+                                      : ""}
+                                  </p>
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
                         ) : null}
                         {editOpen.description?.trim() ? (
