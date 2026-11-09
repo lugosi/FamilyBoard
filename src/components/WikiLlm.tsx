@@ -111,6 +111,66 @@ const WIKI_WRITE_TOOLS = new Set([
 const CALENDAR_WRITE_TOOLS = new Set(["create_event", "update_event", "delete_event"]);
 const ATTACH_ACCEPT = ".csv,.tsv,.xlsx,.xlsm,.txt,.md,.json,.ics,.jpg,.jpeg,.png,.gif,.webp,text/*,image/jpeg,image/png,image/gif,image/webp";
 
+function ChatSessionList({
+  sessions,
+  sessionId,
+  onSelect,
+  onDelete,
+  className = "",
+}: {
+  sessions: ChatSessionMeta[];
+  sessionId: string | null;
+  onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
+  className?: string;
+}) {
+  return (
+    <ul
+      className={`board-scrollbar min-h-0 flex-1 overflow-y-auto py-1 ${className}`}
+      role="listbox"
+      aria-label="Chat sessions"
+    >
+      {sessions.length === 0 ? (
+        <li className="px-3 py-2 text-sm text-slate-500">No saved chats yet</li>
+      ) : (
+        sessions.map((s) => (
+          <li key={s.id} className="flex items-stretch gap-0.5 px-1">
+            <button
+              type="button"
+              role="option"
+              aria-selected={s.id === sessionId}
+              className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-sm ${
+                s.id === sessionId
+                  ? "bg-slate-800 text-white"
+                  : "text-slate-300 hover:bg-slate-900 hover:text-white"
+              }`}
+              onClick={() => onSelect(s.id)}
+            >
+              <span className="block truncate">{s.title}</span>
+              <span className="block text-xs text-slate-500">
+                {new Date(s.updatedAt).toLocaleString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="shrink-0 rounded-md px-2 text-slate-500 hover:bg-rose-950/50 hover:text-rose-200"
+              aria-label={`Delete ${s.title}`}
+              onClick={() => onDelete(s.id)}
+            >
+              ×
+            </button>
+          </li>
+        ))
+      )}
+    </ul>
+  );
+}
+
 function AttachmentChip({ a, onRemove }: { a: ChatAttachment; onRemove?: () => void }) {
   return (
     <li className="flex max-w-full items-center gap-2 rounded-lg border border-emerald-800/60 bg-emerald-950/30 px-2.5 py-1 text-sm text-emerald-50">
@@ -697,6 +757,15 @@ export function WikiLlm({
     sessions.find((s) => s.id === sessionId)?.title ||
     (chat.length ? "Current chat" : "New chat");
 
+  async function deleteSession(id: string) {
+    await fetch(`/api/agent/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const list = await refreshSessionList();
+    if (sessionIdRef.current === id) {
+      if (list[0]) await loadSession(list[0].id);
+      else await startNewSession();
+    }
+  }
+
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-slate-950 text-lg leading-relaxed text-slate-50">
       {/* Slim toolbar — no second “Assistant” title on the full AI tab. */}
@@ -730,9 +799,12 @@ export function WikiLlm({
         <div className="relative ml-auto flex min-w-0 items-center gap-1.5">
           {view === "chat" ? (
             <>
+              {/* Compact session menu — always on overlay; mobile fallback on AI tab. */}
               <button
                 type="button"
-                className="max-w-[10rem] truncate rounded-md border border-slate-700 px-2.5 py-1.5 text-sm text-slate-200 hover:border-slate-500 hover:bg-slate-900 sm:max-w-[14rem]"
+                className={`max-w-[10rem] truncate rounded-md border border-slate-700 px-2.5 py-1.5 text-sm text-slate-200 hover:border-slate-500 hover:bg-slate-900 sm:max-w-[14rem] ${
+                  isOverlay ? "" : "md:hidden"
+                }`}
                 onClick={() => setSessionsOpen((o) => !o)}
                 aria-expanded={sessionsOpen}
                 aria-haspopup="listbox"
@@ -741,11 +813,7 @@ export function WikiLlm({
                 {activeSessionTitle}
               </button>
               {sessionsOpen ? (
-                <div
-                  className="absolute right-0 top-full z-20 mt-1 w-[min(100vw-2rem,18rem)] overflow-hidden rounded-md border border-slate-700 bg-slate-950 shadow-xl"
-                  role="listbox"
-                  aria-label="Chat sessions"
-                >
+                <div className="absolute right-0 top-full z-20 mt-1 flex w-[min(100vw-2rem,18rem)] flex-col overflow-hidden rounded-md border border-slate-700 bg-slate-950 shadow-xl">
                   <button
                     type="button"
                     className="block w-full border-b border-slate-800 px-3 py-2 text-left text-sm font-medium text-sky-200 hover:bg-slate-900"
@@ -753,59 +821,16 @@ export function WikiLlm({
                   >
                     + New chat
                   </button>
-                  <ul className="board-scrollbar max-h-64 overflow-y-auto py-1">
-                    {sessions.length === 0 ? (
-                      <li className="px-3 py-2 text-sm text-slate-500">No saved chats yet</li>
-                    ) : (
-                      sessions.map((s) => (
-                        <li key={s.id} className="flex items-stretch gap-0.5 px-1">
-                          <button
-                            type="button"
-                            role="option"
-                            aria-selected={s.id === sessionId}
-                            className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-sm ${
-                              s.id === sessionId
-                                ? "bg-slate-800 text-white"
-                                : "text-slate-300 hover:bg-slate-900 hover:text-white"
-                            }`}
-                            onClick={() => {
-                              setSessionsOpen(false);
-                              void loadSession(s.id);
-                            }}
-                          >
-                            <span className="block truncate">{s.title}</span>
-                            <span className="block text-xs text-slate-500">
-                              {new Date(s.updatedAt).toLocaleString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                                hour: "numeric",
-                                minute: "2-digit",
-                              })}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            className="shrink-0 rounded-md px-2 text-slate-500 hover:bg-rose-950/50 hover:text-rose-200"
-                            aria-label={`Delete ${s.title}`}
-                            onClick={() => {
-                              void (async () => {
-                                await fetch(`/api/agent/sessions/${encodeURIComponent(s.id)}`, {
-                                  method: "DELETE",
-                                });
-                                const list = await refreshSessionList();
-                                if (sessionIdRef.current === s.id) {
-                                  if (list[0]) await loadSession(list[0].id);
-                                  else await startNewSession();
-                                }
-                              })();
-                            }}
-                          >
-                            ×
-                          </button>
-                        </li>
-                      ))
-                    )}
-                  </ul>
+                  <ChatSessionList
+                    className="max-h-64"
+                    sessions={sessions}
+                    sessionId={sessionId}
+                    onSelect={(id) => {
+                      setSessionsOpen(false);
+                      void loadSession(id);
+                    }}
+                    onDelete={(id) => void deleteSession(id)}
+                  />
                 </div>
               ) : null}
               <button
@@ -885,6 +910,30 @@ export function WikiLlm({
       ) : null}
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        {!isOverlay && view === "chat" ? (
+          <aside
+            className="board-scrollbar hidden w-56 shrink-0 flex-col border-r border-slate-800/80 bg-slate-950/80 md:flex lg:w-64"
+            aria-label="Chat sessions"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 px-3 py-2.5">
+              <p className="text-sm font-semibold tracking-wide text-slate-200">Sessions</p>
+              <button
+                type="button"
+                className="rounded-md px-2 py-1 text-sm font-medium text-sky-200 hover:bg-slate-900 hover:text-sky-100 disabled:opacity-50"
+                disabled={busy === "chat"}
+                onClick={() => void startNewSession()}
+              >
+                + New
+              </button>
+            </div>
+            <ChatSessionList
+              sessions={sessions}
+              sessionId={sessionId}
+              onSelect={(id) => void loadSession(id)}
+              onDelete={(id) => void deleteSession(id)}
+            />
+          </aside>
+        ) : null}
         <section
           className="relative flex min-h-0 min-w-0 flex-1 flex-col"
           aria-label={view === "wiki" ? "Family wiki" : "Chat"}
