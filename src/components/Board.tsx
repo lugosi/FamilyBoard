@@ -3422,11 +3422,6 @@ export function Board() {
                       >
                         {editOpen.summary?.trim() || "(no title)"}
                       </h3>
-                      {editOpen.sourceCalendarSummary ? (
-                        <p className="mt-1 truncate text-sm text-slate-400">
-                          {editOpen.sourceCalendarSummary}
-                        </p>
-                      ) : null}
                     </div>
                     <button
                       type="button"
@@ -3538,28 +3533,16 @@ export function Board() {
                             </p>
                           </div>
                         ) : null}
-                        {meet || editOpen.htmlLink ? (
+                        {meet ? (
                           <div className="flex flex-wrap gap-2 pt-1">
-                            {meet ? (
-                              <a
-                                href={meet}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="rounded-full border border-emerald-700/60 bg-emerald-950/40 px-3.5 py-2 text-sm font-medium text-emerald-100 hover:border-emerald-500 hover:bg-emerald-900/50"
-                              >
-                                Join meeting
-                              </a>
-                            ) : null}
-                            {editOpen.htmlLink ? (
-                              <a
-                                href={editOpen.htmlLink}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="rounded-full border border-slate-600 bg-slate-800 px-3.5 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
-                              >
-                                Open in Google Calendar
-                              </a>
-                            ) : null}
+                            <a
+                              href={meet}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-full border border-emerald-700/60 bg-emerald-950/40 px-3.5 py-2 text-sm font-medium text-emerald-100 hover:border-emerald-500 hover:bg-emerald-900/50"
+                            >
+                              Join meeting
+                            </a>
                           </div>
                         ) : null}
                         {!editOpen.location?.trim() &&
