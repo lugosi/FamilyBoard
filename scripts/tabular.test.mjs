@@ -63,6 +63,19 @@ test("attachmentsToPrompt labels the block and avoids fence collisions", () => {
   assert.match(md, /^\[Attached file "n\.md" \(1 line\)\]\n~~~~\n/);
 });
 
+test("attachmentsToPrompt marks truncated and empty files so the model must not invent content", () => {
+  const trunc = attachmentsToPrompt([
+    { name: "big.txt", kind: "text", summary: "truncated", text: "only start", truncated: true },
+  ]);
+  assert.match(trunc, /TRUNCATED — do not invent omitted content/);
+  assert.match(trunc, /only start/);
+  const empty = attachmentsToPrompt([
+    { name: "blank.txt", kind: "text", summary: "0 lines", text: "  \n" },
+  ]);
+  assert.match(empty, /EMPTY — do not invent its contents/);
+  assert.match(empty, /no extractable text/);
+});
+
 test("composeSkillPage writes the skill template", () => {
   const page = composeSkillPage({
     name: "Soccer schedule to calendar",
