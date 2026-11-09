@@ -546,7 +546,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         <div
           role="tablist"
           aria-label="Assistant view"
-          className="flex gap-1 rounded-lg bg-slate-900 p-0.5"
+          className="flex gap-1 rounded-md bg-slate-900 p-0.5"
         >
           {(["chat", "wiki"] as const).map((v) => (
             <button
@@ -567,7 +567,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
           {chat.length > 0 && view === "chat" && busy !== "chat" ? (
             <button
               type="button"
-              className="rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+              className="rounded-md px-3 py-1.5 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200"
               onClick={() => {
                 setChat([]);
                 setChatStatus(null);
@@ -584,7 +584,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
           status?.wikilmGithubConfigured ? (
             <button
               type="button"
-              className="rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:bg-slate-900 hover:text-emerald-200"
+              className="rounded-md px-3 py-1.5 text-sm text-slate-400 hover:bg-slate-900 hover:text-emerald-200"
               onClick={() => setSkillForm("")}
             >
               Save skill
@@ -592,7 +592,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
           ) : null}
           <button
             type="button"
-            className={`relative rounded-lg px-3 py-1.5 text-sm font-medium ${
+            className={`relative rounded-md px-3 py-1.5 text-sm font-medium ${
               toolsOpen
                 ? "bg-slate-800 text-white"
                 : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
@@ -610,7 +610,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
           </button>
           <button
             type="button"
-            className="rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200 disabled:opacity-50"
+            className="rounded-md px-3 py-1.5 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200 disabled:opacity-50"
             disabled={Boolean(busy)}
             onClick={() => void refresh()}
             aria-label="Refresh"
@@ -820,7 +820,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                     <p>Thinking…</p>
                     <button
                       type="button"
-                      className="rounded-lg border border-slate-600 px-3 py-1 text-sm font-medium text-slate-100 hover:bg-slate-800 hover:text-white"
+                      className="rounded-md border border-slate-600 px-3 py-1 text-sm font-medium text-slate-100 hover:bg-slate-800 hover:text-white"
                       onClick={stopChat}
                     >
                       Stop
@@ -869,14 +869,14 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                   />
                   <button
                     type="submit"
-                    className="rounded-lg bg-emerald-200 px-3 py-2 font-semibold text-slate-900 disabled:opacity-50"
+                    className="rounded-md bg-emerald-200 px-3 py-2 font-semibold text-slate-900 disabled:opacity-50"
                     disabled={Boolean(busy)}
                   >
                     Save
                   </button>
                   <button
                     type="button"
-                    className="rounded-lg px-3 py-2 text-slate-300 hover:bg-slate-800"
+                    className="rounded-md px-3 py-2 text-slate-300 hover:bg-slate-800"
                     onClick={() => {
                       setSkillForm(null);
                       focusPrompt();
@@ -948,7 +948,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 />
                 <button
                   type="button"
-                  className="mb-0.5 rounded-lg p-2.5 text-slate-400 hover:bg-slate-900 hover:text-slate-200 disabled:opacity-50"
+                  className="mb-0.5 rounded-md p-2.5 text-slate-400 hover:bg-slate-900 hover:text-slate-200 disabled:opacity-50"
                   disabled={Boolean(busy) || pending.length >= 3}
                   onClick={() => fileInputRef.current?.click()}
                   aria-label="Attach a file"
@@ -1038,7 +1038,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 <h2 className="text-lg font-semibold text-white">Tools</h2>
                 <button
                   type="button"
-                  className="rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-slate-900 hover:text-white"
+                  className="rounded-md px-2 py-1 text-sm text-slate-400 hover:bg-slate-900 hover:text-white"
                   onClick={() => setToolsOpen(false)}
                 >
                   Close
