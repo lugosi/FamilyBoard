@@ -125,7 +125,14 @@ export function attachmentsToPrompt(attachments: readonly ChatAttachment[]): str
     .map((a) => {
       const label = a.kind === "sheet" ? "spreadsheet" : "file";
       const fence = a.text.includes("```") ? "~~~~" : "```";
-      return `[Attached ${label} "${a.name}" (${a.summary})]\n${fence}${a.kind === "sheet" ? "csv" : ""}\n${a.text}\n${fence}`;
+      const body = a.text.trim()
+        ? a.text
+        : "(empty — no extractable text; ask the family to re-share or paste the contents)";
+      const trunc = a.truncated
+        ? " TRUNCATED — do not invent omitted content; ask for the full file or the missing part."
+        : "";
+      const empty = !a.text.trim() ? " EMPTY — do not invent its contents." : "";
+      return `[Attached ${label} "${a.name}" (${a.summary || "no summary"})${trunc}${empty}]\n${fence}${a.kind === "sheet" ? "csv" : ""}\n${body}\n${fence}`;
     })
     .join("\n\n");
 }
