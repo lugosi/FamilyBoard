@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   geocodeOpenMeteo,
   fetchPlaceDayForecast,
+  fetchPlaceForecastRange,
 } from "../src/lib/weather.ts";
 
 test("geocodeOpenMeteo finds a known city", async () => {
@@ -38,4 +39,28 @@ test("fetchPlaceDayForecast rejects bad dates", async () => {
     date: "not-a-date",
   });
   assert.equal(forecast, null);
+});
+
+test("fetchPlaceForecastRange returns multiple days", async () => {
+  const today = new Date();
+  const fmt = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+  const from = fmt(today);
+  const toDate = new Date(today);
+  toDate.setDate(toDate.getDate() + 2);
+  const to = fmt(toDate);
+  const range = await fetchPlaceForecastRange({
+    query: "Berkeley, CA",
+    from,
+    to,
+  });
+  assert.ok(range, "expected a range");
+  assert.ok(range.days.length >= 1);
+  assert.ok(range.days.length <= 3);
+  assert.equal(range.days[0].date, from);
+  assert.match(range.place, /Berkeley/i);
 });

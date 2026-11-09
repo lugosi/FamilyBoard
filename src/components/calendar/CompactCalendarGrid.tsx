@@ -18,11 +18,20 @@ import type { DailyForecast } from "@/lib/weather";
 const WEEKDAY = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 const VISIBLE_TIMED = 4;
 
+export type EventDayWeather = {
+  code: number;
+  maxF?: number;
+  minF?: number;
+  label?: string;
+};
+
 type Props = {
   weekStarts: Date[];
   events: GEvent[];
   /** Local YYYY-MM-DD keys from Open-Meteo daily forecast. */
   dailyForecastByDate?: Record<string, DailyForecast>;
+  /** Per-event location weather for the day cell being rendered. */
+  eventDayWeather?: (ev: GEvent, dateKey: string) => EventDayWeather | null;
   showCalendarSource?: boolean;
   /** Larger type and day cells when the layout has extra vertical room (e.g. alert dismissed). */
   comfortable?: boolean;
@@ -39,6 +48,7 @@ export function CompactCalendarGrid({
   weekStarts,
   events,
   dailyForecastByDate,
+  eventDayWeather,
   showCalendarSource = false,
   comfortable = false,
   onSelectEvent,
@@ -94,6 +104,7 @@ export function CompactCalendarGrid({
               weekStartMonday={ws}
               events={events}
               dailyForecastByDate={dailyForecastByDate}
+              eventDayWeather={eventDayWeather}
               visibleAllDayLimit={visibleAllDayLimit}
               showCalendarSource={showCalendarSource}
               comfortable={comfortable}
@@ -111,6 +122,7 @@ function CompactWeekBlock({
   weekStartMonday,
   events,
   dailyForecastByDate,
+  eventDayWeather,
   visibleAllDayLimit,
   showCalendarSource,
   comfortable,
@@ -120,6 +132,7 @@ function CompactWeekBlock({
   weekStartMonday: Date;
   events: GEvent[];
   dailyForecastByDate?: Record<string, DailyForecast>;
+  eventDayWeather?: (ev: GEvent, dateKey: string) => EventDayWeather | null;
   visibleAllDayLimit: number;
   showCalendarSource: boolean;
   comfortable: boolean;
@@ -217,32 +230,47 @@ function CompactWeekBlock({
                 ) : null}
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-px">
-                {visibleAllDay.map((ev) => (
-                  <button
-                    key={ev.id ?? `${key}-all-${ev.summary ?? "untitled"}`}
-                    type="button"
-                    onClick={() => onSelectEvent(ev)}
-                    onDoubleClick={(e) => e.stopPropagation()}
-                    className={`truncate rounded text-left font-semibold ${
-                      today
-                        ? comfortable
-                          ? "px-1.5 py-1 text-[15px]"
-                          : "px-1.5 py-0.5 text-[14px]"
-                        : comfortable
-                          ? "px-1 py-px text-[13px] font-medium"
-                          : "px-1 py-px text-[12px] font-medium"
-                    } ${eventBarClass(ev.summary)}`}
-                    style={
-                      showCalendarSource
-                        ? sourceCalendarBarStyle(ev as SourceEvent)
-                        : undefined
-                    }
-                    title={ev.summary ?? ""}
-                  >
-                    {showCalendarSource ? `${shortCalendarLabel(ev as SourceEvent)} ` : ""}
-                    {ev.summary || "(no title)"}
-                  </button>
-                ))}
+                {visibleAllDay.map((ev) => {
+                  const wx = eventDayWeather?.(ev, key) ?? null;
+                  return (
+                    <button
+                      key={ev.id ?? `${key}-all-${ev.summary ?? "untitled"}`}
+                      type="button"
+                      onClick={() => onSelectEvent(ev)}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      className={`flex min-w-0 items-center gap-0.5 rounded text-left font-semibold ${
+                        today
+                          ? comfortable
+                            ? "px-1.5 py-1 text-[15px]"
+                            : "px-1.5 py-0.5 text-[14px]"
+                          : comfortable
+                            ? "px-1 py-px text-[13px] font-medium"
+                            : "px-1 py-px text-[12px] font-medium"
+                      } ${eventBarClass(ev.summary)}`}
+                      style={
+                        showCalendarSource
+                          ? sourceCalendarBarStyle(ev as SourceEvent)
+                          : undefined
+                      }
+                      title={
+                        wx?.label
+                          ? `${ev.summary ?? ""} · ${wx.label}`
+                          : (ev.summary ?? "")
+                      }
+                    >
+                      <span className="min-w-0 flex-1 truncate">
+                        {showCalendarSource ? `${shortCalendarLabel(ev as SourceEvent)} ` : ""}
+                        {ev.summary || "(no title)"}
+                      </span>
+                      {wx ? (
+                        <WeatherIcon
+                          code={wx.code}
+                          className="h-4 w-4 shrink-0 text-white/95"
+                        />
+                      ) : null}
+                    </button>
+                  );
+                })}
                 {allDayMore > 0 ? (
                   <span
                     className={`pl-2 text-slate-500 ${
@@ -254,16 +282,22 @@ function CompactWeekBlock({
                 ) : null}
                 {visible.map((ev) => {
                   const t = displayInstantForTimedOnDay(ev, d);
+                  const wx = eventDayWeather?.(ev, key) ?? null;
                   return (
                     <button
                       key={ev.id ?? `${key}-${ev.start?.dateTime}`}
                       type="button"
                       onClick={() => onSelectEvent(ev)}
                       onDoubleClick={(e) => e.stopPropagation()}
-                      className="flex min-w-0 items-start gap-0.5 rounded px-px text-left hover:bg-white/5"
+                      className="flex min-w-0 items-center gap-0.5 rounded px-px text-left hover:bg-white/5"
+                      title={
+                        wx?.label
+                          ? `${ev.summary ?? ""} · ${wx.label}`
+                          : undefined
+                      }
                     >
                       <span
-                        className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${
+                        className={`h-2 w-2 shrink-0 rounded-full ${
                           showCalendarSource
                             ? ""
                             : eventColorDotClass(ev.summary)
@@ -275,7 +309,7 @@ function CompactWeekBlock({
                         }
                       />
                       <span
-                        className={`min-w-0 truncate text-slate-200 ${
+                        className={`min-w-0 flex-1 truncate text-slate-200 ${
                           comfortable ? "text-[15px]" : "text-[14px]"
                         }`}
                       >
@@ -289,6 +323,12 @@ function CompactWeekBlock({
                         ) : null}
                         {ev.summary || "(no title)"}
                       </span>
+                      {wx ? (
+                        <WeatherIcon
+                          code={wx.code}
+                          className="h-4 w-4 shrink-0 text-sky-200"
+                        />
+                      ) : null}
                     </button>
                   );
                 })}

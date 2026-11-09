@@ -412,12 +412,35 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
   return fetchOpenMeteoAt(coords);
 }
 
+export type PlaceForecastRange = {
+  place: string;
+  days: PlaceDayForecast[];
+};
+
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 /** Day forecast for a calendar location string (geocode → Open-Meteo daily). */
 export async function fetchPlaceDayForecast(input: {
   query: string;
   date: string;
 }): Promise<PlaceDayForecast | null> {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) return null;
+  const range = await fetchPlaceForecastRange({
+    query: input.query,
+    from: input.date,
+    to: input.date,
+  });
+  return range?.days[0] ?? null;
+}
+
+/** Inclusive from/to day forecasts for a place (missing days omitted). */
+export async function fetchPlaceForecastRange(input: {
+  query: string;
+  from: string;
+  to: string;
+}): Promise<PlaceForecastRange | null> {
+  if (!DATE_KEY_RE.test(input.from) || !DATE_KEY_RE.test(input.to)) return null;
+  const from = input.from <= input.to ? input.from : input.to;
+  const to = input.from <= input.to ? input.to : input.from;
   const place = await geocodeOpenMeteo(input.query);
   if (!place) return null;
 
@@ -426,15 +449,20 @@ export async function fetchPlaceDayForecast(input: {
     { lat: place.latitude, lon: place.longitude },
     { forecastDays: WEATHER_FORECAST_DAYS },
   );
-  const day = snapshot?.daily.find((d) => d.date === input.date);
-  if (!day) return null;
+  if (!snapshot) return null;
+
+  const days = snapshot.daily.filter((d) => d.date >= from && d.date <= to);
+  if (!days.length) return null;
 
   return {
     place: placeLabel(place),
-    date: day.date,
-    code: day.code,
-    maxF: day.maxF,
-    minF: day.minF,
+    days: days.map((d) => ({
+      place: placeLabel(place),
+      date: d.date,
+      code: d.code,
+      maxF: d.maxF,
+      minF: d.minF,
+    })),
   };
 }
 
