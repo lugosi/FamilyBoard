@@ -11,16 +11,18 @@ const components: Components = {
     <p className="my-2.5 first:mt-0 last:mb-0 leading-[1.65] text-slate-50">{children}</p>
   ),
   h1: ({ children }) => (
-    <h3 className="mb-2 mt-4 text-xl font-semibold tracking-tight text-white first:mt-0">{children}</h3>
+    <h2 className="mb-2.5 mt-5 text-2xl font-semibold tracking-tight text-white first:mt-0">{children}</h2>
   ),
   h2: ({ children }) => (
-    <h3 className="mb-2 mt-4 text-xl font-semibold tracking-tight text-white first:mt-0">{children}</h3>
+    <h3 className="mb-2 mt-4 text-xl font-semibold tracking-tight text-slate-50 first:mt-0">{children}</h3>
   ),
   h3: ({ children }) => (
-    <h4 className="mb-1.5 mt-3 text-lg font-semibold text-white first:mt-0">{children}</h4>
+    <h4 className="mb-1.5 mt-3 text-base font-semibold text-slate-100 first:mt-0">{children}</h4>
   ),
   h4: ({ children }) => (
-    <h4 className="mb-1 mt-2.5 text-base font-semibold text-slate-100 first:mt-0">{children}</h4>
+    <h5 className="mb-1 mt-2.5 text-sm font-semibold uppercase tracking-wide text-slate-300 first:mt-0">
+      {children}
+    </h5>
   ),
   strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
   em: ({ children }) => <em className="italic text-slate-100">{children}</em>,

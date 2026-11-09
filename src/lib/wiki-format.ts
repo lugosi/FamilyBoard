@@ -292,6 +292,59 @@ function listHeadings(lines: string[]): Heading[] {
   return out;
 }
 
+/** A ## / ### / … section: heading plus body until the next same-or-higher heading. */
+export type WikiSectionSlice = {
+  level: number;
+  title: string;
+  /** Full markdown for this section, including the heading line. */
+  markdown: string;
+  /** Body under the heading (no heading line). */
+  body: string;
+};
+
+/**
+ * Split a page body into leading prose (before the first ##) and collapsible
+ * ## sections. Nested ### headings stay inside their parent ##. Level-1 titles
+ * remain in the preamble (the UI usually strips a duplicate H1 already).
+ * Fenced code is ignored for heading detection.
+ */
+export function splitWikiSections(body: string): {
+  preamble: string;
+  sections: WikiSectionSlice[];
+} {
+  const lines = normalizeNewlines(body).replace(/\n+$/, "").split("\n");
+  if (!lines.length || (lines.length === 1 && !lines[0])) {
+    return { preamble: "", sections: [] };
+  }
+  // Only ## — deeper headings stay nested in the section body.
+  const headings = listHeadings(lines).filter((h) => h.level === 2);
+  if (!headings.length) {
+    return { preamble: `${lines.join("\n").replace(/^\n+/, "")}\n`.trimEnd(), sections: [] };
+  }
+  const preamble = lines
+    .slice(0, headings[0].line)
+    .join("\n")
+    .replace(/^\n+/, "")
+    .replace(/\n+$/, "")
+    .trimEnd();
+  const sections: WikiSectionSlice[] = headings.map((h, i) => {
+    const end = i + 1 < headings.length ? headings[i + 1].line : lines.length;
+    const slice = lines.slice(h.line, end);
+    while (slice.length && !slice[slice.length - 1].trim()) slice.pop();
+    const markdown = `${slice.join("\n")}\n`;
+    const bodyLines = slice.slice(1);
+    while (bodyLines.length && !bodyLines[0].trim()) bodyLines.shift();
+    while (bodyLines.length && !bodyLines[bodyLines.length - 1].trim()) bodyLines.pop();
+    return {
+      level: h.level,
+      title: stripInlineMarkdown(h.text),
+      markdown,
+      body: bodyLines.join("\n"),
+    };
+  });
+  return { preamble, sections };
+}
+
 function stripInlineMarkdown(s: string): string {
   return s
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")

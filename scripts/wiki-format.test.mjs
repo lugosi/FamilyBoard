@@ -10,6 +10,7 @@ import {
   parseFrontmatter,
   pathForNewPage,
   searchPages,
+  splitWikiSections,
   toWikiPage,
   withChanges,
 } from "../src/lib/wiki-format.ts";
@@ -101,6 +102,28 @@ test("append without a section goes to the end; replace requires one", () => {
   assert.match(editSection("# A\n\n- one", "", "- two", "append").body, /- one\n- two\n$/);
   assert.throws(() => editSection("# A", "", "x", "replace"));
   assert.throws(() => editSection("# A", "A", "   ", "append"));
+});
+
+test("splitWikiSections separates preamble from ## blocks; ### stays nested", () => {
+  const body = parseFrontmatter(MAYA).body;
+  const { preamble, sections } = splitWikiSections(body);
+  assert.match(preamble, /^# Maya\n\nBorn 2016\./);
+  assert.deepEqual(
+    sections.map((s) => s.title),
+    ["Sizes", "Allergies", "School"],
+  );
+  assert.match(sections[1].body, /Peanuts/);
+  assert.match(sections[1].markdown, /^## Allergies\n/);
+  // Fenced ## is not a section break
+  assert.ok(!sections.some((s) => s.title === "not a heading"));
+
+  const nested = splitWikiSections("# Top\n\nIntro.\n\n## Outer\n\n### Inner\n\n- item\n\n## Next\n\nok\n");
+  assert.equal(nested.preamble, "# Top\n\nIntro.");
+  assert.equal(nested.sections.length, 2);
+  assert.equal(nested.sections[0].title, "Outer");
+  assert.match(nested.sections[0].body, /### Inner/);
+  assert.equal(nested.sections[1].title, "Next");
+  assert.deepEqual(splitWikiSections("just prose").sections, []);
 });
 
 test("withChanges stamps updated and preserves extra frontmatter", () => {

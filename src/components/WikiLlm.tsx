@@ -604,6 +604,22 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 refreshKey={wikiRefreshKey}
                 focusPath={wikiFocus?.path}
                 focusNonce={wikiFocus?.nonce}
+                onAddToChat={(attachment) => {
+                  setPending((prev) => {
+                    if (prev.some((a) => a.name === attachment.name && a.text === attachment.text)) {
+                      return prev;
+                    }
+                    if (prev.length >= 3) {
+                      setError("Attach up to 3 files per message.");
+                      return prev;
+                    }
+                    setError(null);
+                    return [...prev, attachment];
+                  });
+                  selectView("chat");
+                  // Defer focus until chat composer is mounted.
+                  window.setTimeout(() => focusPrompt(), 0);
+                }}
               />
             </div>
           ) : !status?.geminiConfigured ? (
