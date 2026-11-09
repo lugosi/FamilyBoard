@@ -17,17 +17,19 @@ import {
   getSlackConfig,
   getSlackUserName,
   openSlackSocketUrl,
+  pendingApprovalBlocks,
   postSlackMessage,
   setSlackReaction,
   slackAuthTest,
   slackTextToPlain,
+  updateSlackMessage,
 } from "./slack";
 
 const MAX_BACKOFF_MS = 60_000;
 const WORKING_REACTION = "eyes";
 const RESET_WORDS = new Set(["reset", "/reset", "new", "/new"]);
 const APPROVE_WORDS = new Set(["approve", "yes", "confirm", "ok", "lgtm"]);
-const REJECT_WORDS = new Set(["cancel", "reject", "no", "nope", "deny"]);
+const REJECT_WORDS = new Set(["cancel", "reject", "no", "nope", "deny", "denied"]);
 const READ_ONLY_TOOLS = new Set([
   "find_events",
   "list_todos",
@@ -75,11 +77,28 @@ type SlackMessageEvent = {
   channel_type?: string;
 };
 
+type SlackAction = {
+  action_id?: string;
+  value?: string;
+};
+
+type SlackInteractivePayload = {
+  type?: string;
+  user?: { id?: string };
+  channel?: { id?: string };
+  message?: { ts?: string; text?: string };
+  container?: { channel_id?: string; message_ts?: string };
+  actions?: SlackAction[];
+};
+
 type SocketFrame = {
   type?: string;
   reason?: string;
   envelope_id?: string;
-  payload?: { event_id?: string; event?: SlackMessageEvent };
+  payload?:
+    | { event_id?: string; event?: SlackMessageEvent }
+    | SlackInteractivePayload
+    | string;
 };
 
 type BotGlobal = {
@@ -275,11 +294,22 @@ async function handle(msg: Incoming): Promise<void> {
       !result.reply.toLowerCase().includes("reply with")
         ? `\n\n*Actions — reply with one:*\n${result.quickActions.map((a) => `• ${a.label}`).join("\n")}`
         : "";
-    const pending = result.pendingApproval
-      ? `\n\n⏸ *Review before writing* — reply *approve* or *cancel*\n\`\`\`\n${result.pendingApproval.summary}\n\`\`\``
-      : "";
     const fileNotes = problems.length ? `\n${problems.map((p) => `⚠️ ${p}`).join("\n")}` : "";
-    await reply(`${result.reply}${footer}${pending}${quick}${fileNotes}`);
+    const body = `${result.reply}${footer}${quick}${fileNotes}`;
+    if (result.pendingApproval) {
+      const fallback = `${body}\n\n⏸ Review before writing — tap Approve / Deny (or reply *approve* / *deny*)`;
+      await postSlackMessage({
+        channel: msg.channel,
+        text: fallback,
+        threadTs: msg.threadTs,
+        blocks: [
+          { type: "section", text: { type: "mrkdwn", text: body.slice(0, 2900) || " " } },
+          ...pendingApprovalBlocks(result.pendingApproval.id, result.pendingApproval.summary),
+        ],
+      });
+    } else {
+      await reply(body);
+    }
     state.handled += 1;
   } catch (e) {
     state.lastError = `Agent: ${e instanceof Error ? e.message : String(e)}`;
@@ -287,6 +317,77 @@ async function handle(msg: Incoming): Promise<void> {
   } finally {
     await setSlackReaction({ channel: msg.channel, ts: msg.ts, name: WORKING_REACTION, on: false });
   }
+}
+
+async function handleInteractive(payload: SlackInteractivePayload): Promise<void> {
+  if (payload.type !== "block_actions") return;
+  const action = payload.actions?.[0];
+  if (!action?.action_id || !action.value) return;
+  const approve = action.action_id === "familyboard_approve";
+  const deny = action.action_id === "familyboard_deny";
+  if (!approve && !deny) return;
+
+  const channel = payload.channel?.id || payload.container?.channel_id;
+  const messageTs = payload.message?.ts || payload.container?.message_ts;
+  if (!channel || !messageTs) return;
+
+  const state = bot().state;
+  try {
+    const result = await resolvePendingApproval({
+      id: action.value,
+      decision: approve ? "approve" : "reject",
+      redirectUri: getBackgroundGoogleRedirectUri(),
+    });
+    const footer = result.actions.length
+      ? `\n${result.actions.map((a) => `${a.ok ? "✅" : "⚠️"} ${a.label}`).join("\n")}`
+      : "";
+    const text = `${result.reply}${footer}`;
+    const statusLine = approve ? "✅ *Approved* — changes applied." : "🚫 *Denied* — nothing was written.";
+    await updateSlackMessage({
+      channel,
+      ts: messageTs,
+      text,
+      blocks: [
+        {
+          type: "section",
+          text: { type: "mrkdwn", text: `${statusLine}\n${text}`.slice(0, 2900) },
+        },
+      ],
+    });
+    state.handled += 1;
+  } catch (e) {
+    const err = e instanceof Error ? e.message : "Could not resolve that review.";
+    await postSlackMessage({
+      channel,
+      text: err,
+      threadTs: messageTs,
+    });
+  }
+}
+
+function parseInteractivePayload(
+  payload: SocketFrame["payload"],
+): SlackInteractivePayload | null {
+  if (!payload) return null;
+  if (typeof payload === "string") {
+    try {
+      return JSON.parse(payload) as SlackInteractivePayload;
+    } catch {
+      return null;
+    }
+  }
+  if ("actions" in payload) {
+    return payload as SlackInteractivePayload;
+  }
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "type" in payload &&
+    (payload as { type?: string }).type === "block_actions"
+  ) {
+    return payload as SlackInteractivePayload;
+  }
+  return null;
 }
 
 function onFrame(b: BotGlobal, ws: WebSocket, raw: string): void {
@@ -309,15 +410,27 @@ function onFrame(b: BotGlobal, ws: WebSocket, raw: string): void {
     ws.close();
     return;
   }
+  if (frame.type === "interactive") {
+    const payload = parseInteractivePayload(frame.payload);
+    if (!payload) return;
+    b.state.lastEventAt = new Date().toISOString();
+    b.queue = b.queue
+      .then(() => handleInteractive(payload))
+      .catch((e) => {
+        b.state.lastError = e instanceof Error ? e.message : String(e);
+      });
+    return;
+  }
   if (frame.type !== "events_api") return;
 
-  const eventId = frame.payload?.event_id;
+  const eventPayload = frame.payload as { event_id?: string; event?: SlackMessageEvent } | undefined;
+  const eventId = eventPayload?.event_id;
   if (eventId) {
     if (b.seenEvents.includes(eventId)) return;
     b.seenEvents.push(eventId);
     if (b.seenEvents.length > 500) b.seenEvents.splice(0, 250);
   }
-  const msg = toIncoming(frame.payload?.event, b.state.botUserId);
+  const msg = toIncoming(eventPayload?.event, b.state.botUserId);
   if (!msg) return;
   b.state.lastEventAt = new Date().toISOString();
   b.queue = b.queue

@@ -45,14 +45,17 @@ settings:
       - app_mention
       - message.im
   interactivity:
-    is_enabled: false
+    is_enabled: true
   org_deploy_enabled: false
   socket_mode_enabled: true
   token_rotation_enabled: false
 ```
 
 3. **Basic Information**, then **App-Level Tokens**, then **Generate Token and Scopes**: name it `socket`, add scope `connections:write`, and generate. Copy the `xapp-…` token.
-4. **Install App**, then **Install to Workspace**, then allow. Copy the **Bot User OAuth Token** (`xoxb-…`).
+4. Under **Interactivity & Shortcuts**, confirm **Interactivity** is On (Socket Mode delivers button clicks; no Request URL needed).
+5. **Install App**, then **Install to Workspace**, then allow. Copy the **Bot User OAuth Token** (`xoxb-…`).
+
+If the app already exists: turn **Interactivity** on, set the manifest’s `interactivity.is_enabled: true`, then **reinstall** the app so Approve / Deny buttons work.
 
 ## 2. Give FamilyBoard the tokens
 
@@ -69,6 +72,7 @@ Restart FamilyBoard. The log shows `[slack] Socket Mode bot starting`, and the A
 
 - DM: "what's on Saturday?", "move soccer to 10", "add dentist for Maya next Tuesday 3pm", "check the inbox".
 - The bot puts 👀 on your message while it works, then replies, with a ✅ line for each change it made.
+- Calendar / wiki writes need a quick review: the bot shows **Approve** and **Deny** buttons (you can still reply `approve` / `deny`).
 - It remembers the last 30 minutes of a DM or channel thread, so "make it 4pm instead" works. Send `reset` to start over.
 
 ## Troubleshooting
@@ -81,3 +85,4 @@ Restart FamilyBoard. The log shows `[slack] Socket Mode bot starting`, and the A
 | No reply in a channel | Invite the bot to the channel and @mention it |
 | Bot replies "assistant isn't set up yet" | Set `GEMINI_API_KEY` |
 | Changes to scopes/events | Reinstall the app after editing the manifest |
+| Approval message has no Approve / Deny buttons | Turn **Interactivity** on (manifest `interactivity.is_enabled: true`), then reinstall; Socket Mode must be enabled |
