@@ -187,10 +187,93 @@ function daytimeCodesForDate(
   return out;
 }
 
-export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
-  const coords = getWeatherCoordinates();
-  if (!coords) return null;
+export type GeocodedPlace = {
+  name: string;
+  latitude: number;
+  longitude: number;
+  admin1?: string;
+  country?: string;
+};
 
+export type PlaceDayForecast = {
+  place: string;
+  date: string;
+  code: number;
+  maxF: number;
+  minF: number;
+};
+
+const geocodeCache = new Map<string, { at: number; place: GeocodedPlace | null }>();
+const GEOCODE_TTL_MS = 6 * 60 * 60 * 1000;
+
+function placeLabel(place: GeocodedPlace): string {
+  const bits = [place.name, place.admin1, place.country].filter(Boolean);
+  // Prefer "City, State" when both exist; drop redundant country for US homes.
+  if (place.name && place.admin1) return `${place.name}, ${place.admin1}`;
+  return bits[0] ?? place.name;
+}
+
+/** Open-Meteo geocoding (no API key). Tries the full query, then trailing fragments. */
+export async function geocodeOpenMeteo(query: string): Promise<GeocodedPlace | null> {
+  const raw = query.trim().replace(/\s+/g, " ");
+  if (!raw) return null;
+  const cacheKey = raw.toLowerCase();
+  const hit = geocodeCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < GEOCODE_TTL_MS) return hit.place;
+
+  const attempts = [raw];
+  const parts = raw.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length >= 2) attempts.push(parts.slice(-2).join(", "));
+  if (parts.length >= 1) attempts.push(parts[parts.length - 1]!);
+
+  let place: GeocodedPlace | null = null;
+  for (const name of attempts) {
+    const params = new URLSearchParams({
+      name,
+      count: "1",
+      language: "en",
+      format: "json",
+    });
+    const res = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`,
+      { next: { revalidate: 3600 } },
+    );
+    if (!res.ok) continue;
+    const data = (await res.json()) as {
+      results?: Array<{
+        name?: string;
+        latitude?: number;
+        longitude?: number;
+        admin1?: string;
+        country?: string;
+      }>;
+    };
+    const row = data.results?.[0];
+    if (
+      row?.name &&
+      typeof row.latitude === "number" &&
+      typeof row.longitude === "number"
+    ) {
+      place = {
+        name: row.name,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        admin1: row.admin1,
+        country: row.country,
+      };
+      break;
+    }
+  }
+
+  geocodeCache.set(cacheKey, { at: Date.now(), place });
+  return place;
+}
+
+export async function fetchOpenMeteoAt(
+  coords: { lat: number; lon: number },
+  opts?: { forecastDays?: number },
+): Promise<WeatherSnapshot | null> {
+  const forecastDays = opts?.forecastDays ?? WEATHER_FORECAST_DAYS;
   const params = new URLSearchParams({
     latitude: String(coords.lat),
     longitude: String(coords.lon),
@@ -205,7 +288,7 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
     daily: "weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset",
     hourly: "temperature_2m,weather_code",
     timezone: process.env.WEATHER_TIMEZONE?.trim() || "auto",
-    forecast_days: String(WEATHER_FORECAST_DAYS),
+    forecast_days: String(forecastDays),
   });
 
   const res = await fetch(
@@ -320,6 +403,38 @@ export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
     sunriseToday: dailySunrise[dayIdx],
     sunsetToday: dailySunset[dayIdx],
     sunByDate,
+  };
+}
+
+export async function fetchOpenMeteo(): Promise<WeatherSnapshot | null> {
+  const coords = getWeatherCoordinates();
+  if (!coords) return null;
+  return fetchOpenMeteoAt(coords);
+}
+
+/** Day forecast for a calendar location string (geocode → Open-Meteo daily). */
+export async function fetchPlaceDayForecast(input: {
+  query: string;
+  date: string;
+}): Promise<PlaceDayForecast | null> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) return null;
+  const place = await geocodeOpenMeteo(input.query);
+  if (!place) return null;
+
+  // Open-Meteo forecast window is ~16 days from today; past dates may be missing.
+  const snapshot = await fetchOpenMeteoAt(
+    { lat: place.latitude, lon: place.longitude },
+    { forecastDays: WEATHER_FORECAST_DAYS },
+  );
+  const day = snapshot?.daily.find((d) => d.date === input.date);
+  if (!day) return null;
+
+  return {
+    place: placeLabel(place),
+    date: day.date,
+    code: day.code,
+    maxF: day.maxF,
+    minF: day.minF,
   };
 }
 
