@@ -292,6 +292,69 @@ function inclusiveLastDayFromGoogleAllDayEnd(exclusiveEndDate: string): string {
   return dateKeyLocal(addDays(parseLocalDateKey(exclusiveEndDate), -1));
 }
 
+function formatDateKeyLong(key: string): string {
+  if (!DATE_KEY_RE.test(key)) return key;
+  return parseLocalDateKey(key).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTimedRange(startIso: string, endIso: string): string {
+  const s = new Date(startIso);
+  const e = new Date(endIso);
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return "Time unavailable";
+  const sameDay =
+    s.getFullYear() === e.getFullYear() &&
+    s.getMonth() === e.getMonth() &&
+    s.getDate() === e.getDate();
+  const dayOpts: Intl.DateTimeFormatOptions = {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  };
+  const timeOpts: Intl.DateTimeFormatOptions = {
+    hour: "numeric",
+    minute: "2-digit",
+  };
+  if (sameDay) {
+    return `${s.toLocaleDateString(undefined, dayOpts)} · ${s.toLocaleTimeString(undefined, timeOpts)} – ${e.toLocaleTimeString(undefined, timeOpts)}`;
+  }
+  return `${s.toLocaleString(undefined, { ...dayOpts, ...timeOpts })} – ${e.toLocaleString(undefined, { ...dayOpts, ...timeOpts })}`;
+}
+
+function eventWhenLabel(ev: CalendarEvent): { allDay: boolean; text: string } {
+  if (ev.start?.date) {
+    const startKey = ev.start.date;
+    const exclusiveEnd =
+      ev.end?.date ?? dateKeyLocal(addDays(parseLocalDateKey(startKey), 1));
+    const last = inclusiveLastDayFromGoogleAllDayEnd(exclusiveEnd);
+    if (startKey === last) {
+      return { allDay: true, text: formatDateKeyLong(startKey) };
+    }
+    return {
+      allDay: true,
+      text: `${formatDateKeyLong(startKey)} – ${formatDateKeyLong(last)}`,
+    };
+  }
+  const s = ev.start?.dateTime;
+  const e = ev.end?.dateTime;
+  if (!s || !e) return { allDay: false, text: "Time unavailable" };
+  return { allDay: false, text: formatTimedRange(s, e) };
+}
+
+function eventMeetUrl(ev: CalendarEvent): string | null {
+  if (ev.hangoutLink) return ev.hangoutLink;
+  const entries = ev.conferenceData?.entryPoints ?? [];
+  const video = entries.find((p) => p.entryPointType === "video" && p.uri);
+  if (video?.uri) return video.uri;
+  const any = entries.find((p) => p.uri);
+  return any?.uri ?? null;
+}
+
 function dateKeyToDatetimeLocal(key: string, hour: number, minute: number): string {
   const d = parseLocalDateKey(key);
   d.setHours(hour, minute, 0, 0);
@@ -443,7 +506,9 @@ export function Board() {
   const [newAllDay, setNewAllDay] = useState(false);
   const [newEventOpen, setNewEventOpen] = useState(false);
 
-  const [editOpen, setEditOpen] = useState<GEvent | null>(null);
+  const [editOpen, setEditOpen] = useState<CalendarEvent | null>(null);
+  /** Clicking an event opens details first; Edit switches to the form. */
+  const [eventModalMode, setEventModalMode] = useState<"view" | "edit">("view");
   const [editAllDay, setEditAllDay] = useState(false);
   const [editSummary, setEditSummary] = useState("");
   const [editStart, setEditStart] = useState("");
@@ -1161,39 +1226,55 @@ export function Board() {
     await fetchBoard();
   }
 
-  function openEdit(ev: CalendarEvent) {
-    if (!ev.id) {
-      setMessage("Could not open this event.");
-      return;
-    }
+  function populateEditFields(ev: CalendarEvent): boolean {
+    if (!ev.id) return false;
     if (ev.start?.date) {
       const startKey = ev.start.date;
       const exclusiveEnd =
         ev.end?.date ?? dateKeyLocal(addDays(parseLocalDateKey(startKey), 1));
-      setEditOpen(ev);
       setEditAllDay(true);
       setEditSummary(ev.summary ?? "");
       setEditStart(startKey);
       setEditEnd(inclusiveLastDayFromGoogleAllDayEnd(exclusiveEnd));
-      return;
+      return true;
     }
     const s = ev.start?.dateTime;
     const e = ev.end?.dateTime;
-    if (!s || !e) {
-      setMessage("Could not open this event.");
-      return;
-    }
-    setEditOpen(ev);
+    if (!s || !e) return false;
     setEditAllDay(false);
     setEditSummary(ev.summary ?? "");
     setEditStart(toInputValue(s));
     setEditEnd(toInputValue(e));
+    return true;
+  }
+
+  function openEventDetail(ev: CalendarEvent) {
+    if (!populateEditFields(ev)) {
+      setMessage("Could not open this event.");
+      return;
+    }
+    setEditOpen(ev);
+    setEventModalMode("view");
+  }
+
+  function beginEditEvent() {
+    if (!editOpen) return;
+    if (!populateEditFields(editOpen)) {
+      setMessage("Could not edit this event.");
+      return;
+    }
+    setEventModalMode("edit");
+  }
+
+  function closeEventModal() {
+    setEditOpen(null);
+    setEventModalMode("view");
+    setEditAllDay(false);
   }
 
   async function saveEdit() {
     if (!editOpen?.id) return;
-    const eventCalendarId =
-      (editOpen as CalendarEvent).sourceCalendarId ?? selectedCalendarId;
+    const eventCalendarId = editOpen.sourceCalendarId ?? selectedCalendarId;
     if (eventCalendarId === "__all__") {
       setMessage("Unable to determine event calendar. Please refresh and try again.");
       return;
@@ -1246,8 +1327,7 @@ export function Board() {
       setMessage(j.error ?? "Could not update event");
       return;
     }
-    setEditOpen(null);
-    setEditAllDay(false);
+    closeEventModal();
     setMessage("Event updated.");
     await fetchBoard();
   }
@@ -1255,7 +1335,7 @@ export function Board() {
   async function deleteEdit() {
     if (!editOpen?.id) return;
     const eventCalendarId =
-      (editOpen as CalendarEvent).sourceCalendarId ?? selectedCalendarId;
+      editOpen.sourceCalendarId ?? selectedCalendarId;
     if (eventCalendarId === "__all__") {
       setMessage("Unable to determine event calendar. Please refresh and try again.");
       return;
@@ -1274,8 +1354,7 @@ export function Board() {
       setMessage(j.error ?? "Could not delete event");
       return;
     }
-    setEditOpen(null);
-    setEditAllDay(false);
+    closeEventModal();
     setMessage("Event deleted.");
     await fetchBoard();
   }
@@ -1923,7 +2002,7 @@ export function Board() {
                       <button
                         key={item.key}
                         type="button"
-                        onClick={() => openEdit(item.event)}
+                        onClick={() => openEventDetail(item.event)}
                         className={`inline-flex max-w-full items-center gap-2 rounded-lg px-3 py-2 text-left shadow-sm hover:brightness-110 sm:max-w-[22rem] sm:px-3.5 sm:py-2.5 ${eventBarClass(item.summary)}`}
                         title={item.summary}
                       >
@@ -1939,7 +2018,7 @@ export function Board() {
                       <button
                         key={item.key}
                         type="button"
-                        onClick={() => openEdit(item.event)}
+                        onClick={() => openEventDetail(item.event)}
                         className={`inline-flex max-w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left shadow-sm hover:brightness-110 sm:max-w-[26rem] sm:px-3.5 sm:py-2.5 ${eventBarClass(item.summary)}`}
                         title={`${item.startLabel}–${item.endLabel} ${item.summary}`}
                       >
@@ -2004,7 +2083,7 @@ export function Board() {
                         }
                         showCalendarSource={selectedCalendarId === "__all__"}
                         comfortable={calendarComfortable}
-                        onSelectEvent={(ev) => openEdit(ev)}
+                        onSelectEvent={(ev) => openEventDetail(ev)}
                         onDoubleClickDay={(day) => openNewEventModal(day)}
                       />
                     </div>
@@ -3321,63 +3400,267 @@ export function Board() {
       ) : null}
 
       {editOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
-            <h3 className="text-xl font-semibold text-white sm:text-2xl">Edit event</h3>
-            {editAllDay ? (
-              <p className="mt-1 text-sm text-slate-400 sm:text-base">All-day</p>
-            ) : null}
-            <div className="mt-4 space-y-3">
-              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
-                Title
-                <input
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
-                  value={editSummary}
-                  onChange={(e) => setEditSummary(e.target.value)}
-                />
-              </label>
-              <EventDateTimePicker
-                label={editAllDay ? "Start date" : "Start"}
-                value={editStart}
-                allDay={editAllDay}
-                onChange={setEditStart}
-              />
-              <EventDateTimePicker
-                label={editAllDay ? "End date (inclusive)" : "End"}
-                value={editEnd}
-                allDay={editAllDay}
-                min={editStart}
-                onChange={setEditEnd}
-              />
-            </div>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="rounded-full bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
-                onClick={() => {
-                  setEditOpen(null);
-                  setEditAllDay(false);
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={busy === "save"}
-                className="rounded-full bg-sky-600 px-4 py-2.5 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
-                onClick={() => void saveEdit()}
-              >
-                {busy === "save" ? "Saving…" : "Save"}
-              </button>
-              <button
-                type="button"
-                disabled={busy === "delete"}
-                className="rounded-full bg-rose-700 px-4 py-2.5 text-base font-medium text-white hover:bg-rose-600 disabled:opacity-50 sm:text-lg"
-                onClick={() => void deleteEdit()}
-              >
-                {busy === "delete" ? "Deleting…" : "Delete"}
-              </button>
-            </div>
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center"
+          onClick={closeEventModal}
+          role="presentation"
+        >
+          <div
+            className="flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="event-modal-title"
+          >
+            {eventModalMode === "view" ? (
+              <>
+                <div className="shrink-0 border-b border-slate-800 px-5 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3
+                        id="event-modal-title"
+                        className="text-xl font-semibold tracking-tight text-white sm:text-2xl"
+                      >
+                        {editOpen.summary?.trim() || "(no title)"}
+                      </h3>
+                      {editOpen.sourceCalendarSummary ? (
+                        <p className="mt-1 truncate text-sm text-slate-400">
+                          {editOpen.sourceCalendarSummary}
+                        </p>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                      aria-label="Close"
+                      onClick={closeEventModal}
+                    >
+                      <span className="block text-xl leading-none" aria-hidden>
+                        ×
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                <div className="board-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+                  {(() => {
+                    const when = eventWhenLabel(editOpen);
+                    const meet = eventMeetUrl(editOpen);
+                    const attendees = (editOpen.attendees ?? []).filter(
+                      (a) => a.email || a.displayName,
+                    );
+                    return (
+                      <>
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            When
+                          </p>
+                          <p className="mt-1 text-base text-slate-100 sm:text-lg">
+                            {when.allDay ? (
+                              <>
+                                <span className="mr-2 rounded-md border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-sm font-medium text-slate-200">
+                                  All day
+                                </span>
+                                {when.text}
+                              </>
+                            ) : (
+                              when.text
+                            )}
+                          </p>
+                        </div>
+                        {editOpen.location?.trim() ? (
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Location
+                            </p>
+                            <p className="mt-1 whitespace-pre-wrap text-base text-slate-100 sm:text-lg">
+                              {editOpen.location.trim()}
+                            </p>
+                          </div>
+                        ) : null}
+                        {editOpen.description?.trim() ? (
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Description
+                            </p>
+                            <p className="mt-1 whitespace-pre-wrap text-base leading-relaxed text-slate-200 sm:text-lg">
+                              {editOpen.description.trim()}
+                            </p>
+                          </div>
+                        ) : null}
+                        {attendees.length ? (
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Guests
+                            </p>
+                            <ul className="mt-1.5 space-y-1">
+                              {attendees.map((a) => {
+                                const label =
+                                  a.displayName?.trim() || a.email || "Guest";
+                                const status = a.responseStatus
+                                  ? a.responseStatus.replace(/_/g, " ")
+                                  : null;
+                                return (
+                                  <li
+                                    key={a.email || label}
+                                    className="flex flex-wrap items-baseline gap-x-2 text-base text-slate-100"
+                                  >
+                                    <span>{label}</span>
+                                    {a.email && a.displayName ? (
+                                      <span className="text-sm text-slate-500">
+                                        {a.email}
+                                      </span>
+                                    ) : null}
+                                    {status ? (
+                                      <span className="text-sm capitalize text-slate-500">
+                                        · {status}
+                                      </span>
+                                    ) : null}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                        ) : null}
+                        {editOpen.organizer &&
+                        (editOpen.organizer.displayName || editOpen.organizer.email) &&
+                        !editOpen.organizer.self ? (
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Organizer
+                            </p>
+                            <p className="mt-1 text-base text-slate-100">
+                              {editOpen.organizer.displayName?.trim() ||
+                                editOpen.organizer.email}
+                              {editOpen.organizer.displayName && editOpen.organizer.email ? (
+                                <span className="ml-2 text-sm text-slate-500">
+                                  {editOpen.organizer.email}
+                                </span>
+                              ) : null}
+                            </p>
+                          </div>
+                        ) : null}
+                        {meet || editOpen.htmlLink ? (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {meet ? (
+                              <a
+                                href={meet}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-full border border-emerald-700/60 bg-emerald-950/40 px-3.5 py-2 text-sm font-medium text-emerald-100 hover:border-emerald-500 hover:bg-emerald-900/50"
+                              >
+                                Join meeting
+                              </a>
+                            ) : null}
+                            {editOpen.htmlLink ? (
+                              <a
+                                href={editOpen.htmlLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-full border border-slate-600 bg-slate-800 px-3.5 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
+                              >
+                                Open in Google Calendar
+                              </a>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        {!editOpen.location?.trim() &&
+                        !editOpen.description?.trim() &&
+                        !attendees.length &&
+                        !meet ? (
+                          <p className="text-sm italic text-slate-500">
+                            No extra details on this event.
+                          </p>
+                        ) : null}
+                      </>
+                    );
+                  })()}
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2 border-t border-slate-800 px-5 py-4">
+                  <button
+                    type="button"
+                    className="rounded-full bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
+                    onClick={closeEventModal}
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-full bg-sky-600 px-4 py-2.5 text-base font-medium text-white hover:bg-sky-500 sm:text-lg"
+                    onClick={beginEditEvent}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy === "delete"}
+                    className="rounded-full bg-rose-700 px-4 py-2.5 text-base font-medium text-white hover:bg-rose-600 disabled:opacity-50 sm:text-lg"
+                    onClick={() => void deleteEdit()}
+                  >
+                    {busy === "delete" ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="p-5">
+                <h3
+                  id="event-modal-title"
+                  className="text-xl font-semibold text-white sm:text-2xl"
+                >
+                  Edit event
+                </h3>
+                {editAllDay ? (
+                  <p className="mt-1 text-sm text-slate-400 sm:text-base">All-day</p>
+                ) : null}
+                <div className="mt-4 space-y-3">
+                  <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
+                    Title
+                    <input
+                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
+                      value={editSummary}
+                      onChange={(e) => setEditSummary(e.target.value)}
+                    />
+                  </label>
+                  <EventDateTimePicker
+                    label={editAllDay ? "Start date" : "Start"}
+                    value={editStart}
+                    allDay={editAllDay}
+                    onChange={setEditStart}
+                  />
+                  <EventDateTimePicker
+                    label={editAllDay ? "End date (inclusive)" : "End"}
+                    value={editEnd}
+                    allDay={editAllDay}
+                    min={editStart}
+                    onChange={setEditEnd}
+                  />
+                </div>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-full bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
+                    onClick={() => setEventModalMode("view")}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy === "save"}
+                    className="rounded-full bg-sky-600 px-4 py-2.5 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
+                    onClick={() => void saveEdit()}
+                  >
+                    {busy === "save" ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy === "delete"}
+                    className="rounded-full bg-rose-700 px-4 py-2.5 text-base font-medium text-white hover:bg-rose-600 disabled:opacity-50 sm:text-lg"
+                    onClick={() => void deleteEdit()}
+                  >
+                    {busy === "delete" ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : null}
