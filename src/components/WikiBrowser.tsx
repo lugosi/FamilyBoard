@@ -402,6 +402,7 @@ export function WikiBrowser({
                     onClick={() => toggleCat(catKey)}
                   >
                     <Chevron open={catOpen} />
+                    <WikiCategoryIcon id={g.key} className="h-3.5 w-3.5" />
                     <span className="min-w-0 flex-1 truncate">{g.label}</span>
                     <span className="tabular-nums text-slate-500">{g.pages.length}</span>
                   </button>
@@ -453,19 +454,24 @@ export function WikiBrowser({
             }}
           >
             <h2 className="text-xl font-semibold tracking-tight text-white">New page</h2>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[10rem_minmax(0,1fr)]">
-              <select
-                className={inputClass}
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-                aria-label="Folder"
-              >
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_minmax(0,1fr)]">
+              <label className="relative flex items-center gap-2">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2">
+                  <WikiCategoryIcon id={form.category} className="h-4 w-4" />
+                </span>
+                <select
+                  className={`${inputClass} pl-9`}
+                  value={form.category}
+                  onChange={(e) => setForm({ ...form, category: e.target.value })}
+                  aria-label="Folder"
+                >
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <input
                 className={inputClass}
                 placeholder="Title, e.g. Maya or Wi-Fi"
@@ -523,7 +529,10 @@ export function WikiBrowser({
           <>
             <header className="sticky top-0 z-[1] flex flex-wrap items-start justify-between gap-3 border-b border-slate-800/80 bg-slate-950/70 px-4 py-3 backdrop-blur-md sm:px-5">
               <div className="min-w-0">
-                <p className="mb-0.5 truncate font-mono text-[11px] text-slate-500">{page.path}</p>
+                <p className="mb-0.5 flex items-center gap-1.5 truncate font-mono text-[11px] text-slate-500">
+                  <WikiCategoryIcon id={page.category} className="h-3.5 w-3.5" />
+                  <span className="truncate">{page.path}</span>
+                </p>
                 <h2 className="truncate text-2xl font-semibold tracking-tight text-white">{page.title}</h2>
                 {page.summary ? (
                   <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-300">{page.summary}</p>
@@ -763,6 +772,130 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
+/** Stroke icons for wiki folders — tinted so the sidebar scans quickly. */
+const CATEGORY_ICON_TINT: Record<string, string> = {
+  people: "text-sky-300",
+  house: "text-amber-300",
+  recipes: "text-orange-300",
+  school: "text-indigo-300",
+  health: "text-rose-300",
+  travel: "text-cyan-300",
+  notes: "text-slate-300",
+  todos: "text-emerald-300",
+  skills: "text-violet-300",
+};
+
+function WikiCategoryIcon({
+  id,
+  className = "h-4 w-4",
+}: {
+  id: string;
+  className?: string;
+}) {
+  const tint = CATEGORY_ICON_TINT[id] ?? "text-slate-400";
+  const common = `${className} shrink-0 ${tint}`;
+  switch (id) {
+    case "people":
+      return (
+        <svg aria-hidden viewBox="0 0 24 24" className={common} fill="none" stroke="currentColor" strokeWidth="1.75">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16 19v-1a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v1" />
+          <circle cx="10" cy="8" r="3.25" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 19v-.75a3.25 3.25 0 0 0-2.4-3.14" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 7.4a2.75 2.75 0 1 1 0 3.2" />
+        </svg>
+      );
+    case "house":
+      return (
+        <svg aria-hidden viewBox="0 0 24 24" className={common} fill="none" stroke="currentColor" strokeWidth="1.75">
+          <path strokeLinecap="round" strokeLinejoin="round" d="m4 11 8-7 8 7" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6.5 10.5V19h11v-8.5" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M10 19v-5h4v5" />
+        </svg>
+      );
+    case "recipes":
+      return (
+        <svg aria-hidden viewBox="0 0 24 24" className={common} fill="none" stroke="currentColor" strokeWidth="1.75">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 3v7a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V3" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M10 12v9" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16 3v18" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16 8h2.5a1.5 1.5 0 0 1 0 3H16" />
+        </svg>
+      );
+    case "school":
+      return (
+        <svg aria-hidden viewBox="0 0 24 24" className={common} fill="none" stroke="currentColor" strokeWidth="1.75">
+          <path strokeLinecap="round" strokeLinejoin="round" d="m3 10 9-5 9 5-9 5-9-5Z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M7 12.5v4.2c0 .4.7 1.4 5 2.3 4.3-.9 5-1.9 5-2.3v-4.2" />
+          <path strokeLinecap="round" d="M21 10v6" />
+        </svg>
+      );
+    case "health":
+      return (
+        <svg aria-hidden viewBox="0 0 24 24" className={common} fill="none" stroke="currentColor" strokeWidth="1.75">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"
+          />
+        </svg>
+      );
+    case "travel":
+      return (
+        <svg aria-hidden viewBox="0 0 24 24" className={common} fill="none" stroke="currentColor" strokeWidth="1.75">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M10.5 12.5 4 10l1-2 6.2 1.6L16 4l2 1-2.8 6.5L22 14l-2 1-5.2-1.8L12 20l-2-1 1.8-5.2Z"
+          />
+        </svg>
+      );
+    case "notes":
+      return (
+        <svg aria-hidden viewBox="0 0 24 24" className={common} fill="none" stroke="currentColor" strokeWidth="1.75">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M7 3.75h7.5L19 8.25V20.25H7z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M14.5 3.75V8.25H19" />
+          <path strokeLinecap="round" d="M10 12h6M10 15.5h6" />
+        </svg>
+      );
+    case "todos":
+      return (
+        <svg aria-hidden viewBox="0 0 24 24" className={common} fill="none" stroke="currentColor" strokeWidth="1.75">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9.5 7.5 11 9l3.5-3.5" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9.5 15.5 11 17l3.5-3.5" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 6.5h2.5M5 14.5h2.5" />
+          <path strokeLinecap="round" d="M16.5 7h3M16.5 15h3" />
+        </svg>
+      );
+    case "skills":
+      return (
+        <svg aria-hidden viewBox="0 0 24 24" className={common} fill="none" stroke="currentColor" strokeWidth="1.75">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="m12 3 1.2 3.6L17 8l-3.8 1.4L12 13l-1.2-3.6L7 8l3.8-1.4L12 3Z"
+          />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="m18.5 13 .7 2.1 2.1.7-2.1.7-.7 2.1-.7-2.1-2.1-.7 2.1-.7.7-2.1Z"
+          />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="m6.2 14 .55 1.65L8.4 16.2l-1.65.55L6.2 18.4l-.55-1.65L4 16.2l1.65-.55L6.2 14Z"
+          />
+        </svg>
+      );
+    default:
+      return (
+        <svg aria-hidden viewBox="0 0 24 24" className={common} fill="none" stroke="currentColor" strokeWidth="1.75">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 7.5h6l1.5 1.75H20V18.5H4z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 7.5V5.75h5.25L10.5 7.5" />
+        </svg>
+      );
+  }
+}
+
 function PageItem({
   page,
   active,
@@ -777,16 +910,19 @@ function PageItem({
       <button
         type="button"
         onClick={() => onOpen(page.path)}
-        className={`w-full rounded-xl px-2.5 py-2 text-left transition-colors ${
+        className={`flex w-full items-start gap-2 rounded-xl px-2.5 py-2 text-left transition-colors ${
           active
             ? "bg-sky-500/15 text-white ring-1 ring-inset ring-sky-500/40"
             : "text-slate-200 hover:bg-slate-800/70"
         }`}
       >
-        <div className="truncate text-sm font-medium">{page.title}</div>
-        <div className="mt-0.5 line-clamp-2 text-xs leading-snug text-slate-400">
-          {page.snippet || page.summary || page.path}
-        </div>
+        <WikiCategoryIcon id={page.category} className="mt-0.5 h-3.5 w-3.5 opacity-90" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">{page.title}</span>
+          <span className="mt-0.5 block line-clamp-2 text-xs leading-snug text-slate-400">
+            {page.snippet || page.summary || page.path}
+          </span>
+        </span>
       </button>
     </li>
   );
