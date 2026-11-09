@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { WikiBrowser } from "@/components/WikiBrowser";
 
@@ -40,7 +40,7 @@ type ChatTurn = {
   quickActions?: AgentQuickAction[];
   attachments?: ChatAttachment[];
   pendingApproval?: PendingApproval;
-  /** Once resolved, hide Approve/Cancel and show the outcome. */
+  /** Once resolved, hide Approve/Deny and show the outcome. */
   approvalResolved?: "approved" | "rejected";
 };
 
@@ -121,6 +121,44 @@ function AttachmentChip({ a, onRemove }: { a: ChatAttachment; onRemove?: () => v
   );
 }
 
+function ApprovalButtons({
+  pendingId,
+  busy,
+  onApprove,
+  onDeny,
+  size = "md",
+}: {
+  pendingId: string;
+  busy: string | null;
+  onApprove: () => void;
+  onDeny: () => void;
+  size?: "md" | "lg";
+}) {
+  const pad = size === "lg" ? "px-5 py-2.5 text-base sm:text-lg" : "px-4 py-2 text-base";
+  return (
+    <div className="flex flex-wrap gap-2">
+      <button
+        type="button"
+        className={`rounded-xl bg-emerald-300 font-semibold text-slate-950 hover:bg-emerald-200 disabled:opacity-50 ${pad}`}
+        disabled={Boolean(busy)}
+        onClick={onApprove}
+        aria-label="Approve write"
+      >
+        {busy === `approve-${pendingId}` ? "Applying…" : "Approve"}
+      </button>
+      <button
+        type="button"
+        className={`rounded-xl border border-rose-500/70 bg-rose-950/40 font-semibold text-rose-50 hover:bg-rose-900/50 disabled:opacity-50 ${pad}`}
+        disabled={Boolean(busy)}
+        onClick={onDeny}
+        aria-label="Deny write"
+      >
+        {busy === `reject-${pendingId}` ? "Denying…" : "Deny"}
+      </button>
+    </div>
+  );
+}
+
 function parseView(raw: string | null | undefined): AiView | null {
   return raw === "chat" || raw === "wiki" ? raw : null;
 }
@@ -178,6 +216,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  const approvalCardRef = useRef<HTMLDivElement | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -187,6 +226,21 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   const storedView = useSyncExternalStore(subscribeNoop, readInitialView, () => "chat" as AiView);
   const [pickedView, setPickedView] = useState<AiView | null>(null);
   const view = pickedView ?? storedView;
+
+  const unresolvedApproval = useMemo(() => {
+    for (let i = chat.length - 1; i >= 0; i -= 1) {
+      const m = chat[i];
+      if (m.role === "model" && m.pendingApproval && !m.approvalResolved) {
+        return { index: i, pending: m.pendingApproval };
+      }
+    }
+    return null;
+  }, [chat]);
+
+  useEffect(() => {
+    if (!unresolvedApproval) return;
+    approvalCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [unresolvedApproval?.pending.id]);
   const [wikiRefreshKey, setWikiRefreshKey] = useState(0);
 
   const selectView = useCallback((next: AiView) => {
@@ -386,7 +440,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     pending: PendingApproval,
   ) {
     if (busy) return;
-    setBusy(`approve-${pending.id}`);
+    setBusy(`${decision}-${pending.id}`);
     setError(null);
     try {
       const res = await fetch("/api/agent/approve", {
@@ -411,7 +465,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         };
         next.push({
           role: "model",
-          content: json.reply || (decision === "approve" ? "Applied." : "Cancelled."),
+          content: json.reply || (decision === "approve" ? "Applied." : "Denied — nothing was written."),
           actions: json.actions ?? [],
         });
         return next;
@@ -715,42 +769,38 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                           </div>
                         ) : null}
                         {m.role === "model" && m.pendingApproval ? (
-                          <div className="mt-4 rounded-2xl border border-amber-700/50 bg-amber-950/30 px-4 py-3.5 text-base leading-relaxed text-amber-50">
+                          <div
+                            ref={
+                              !m.approvalResolved &&
+                              chat
+                                .slice(i + 1)
+                                .every((later) => !later.pendingApproval || later.approvalResolved)
+                                ? approvalCardRef
+                                : undefined
+                            }
+                            className="mt-4 rounded-2xl border border-amber-600/60 bg-amber-950/40 px-4 py-3.5 text-base leading-relaxed text-amber-50 shadow-[0_0_0_1px_rgba(251,191,36,0.12)]"
+                          >
                             <p className="mb-2 font-semibold text-amber-50">
                               {m.approvalResolved === "approved"
                                 ? "Approved"
                                 : m.approvalResolved === "rejected"
-                                  ? "Cancelled"
-                                  : "Review before writing"}
+                                  ? "Denied"
+                                  : "Needs your approval to write"}
                             </p>
                             <pre className="mb-3 whitespace-pre-wrap font-sans text-[1.05rem] leading-[1.55] text-amber-50/95">
                               {m.pendingApproval.summary}
                             </pre>
                             {!m.approvalResolved ? (
-                              <div className="flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  className="rounded-xl bg-amber-100 px-4 py-2 text-base font-semibold text-slate-900 hover:bg-white disabled:opacity-50"
-                                  disabled={Boolean(busy)}
-                                  onClick={() =>
-                                    void resolveApproval(i, "approve", m.pendingApproval!)
-                                  }
-                                >
-                                  {busy === `approve-${m.pendingApproval.id}`
-                                    ? "Applying…"
-                                    : "Approve"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="rounded-xl border border-amber-700/60 px-4 py-2 text-base font-medium text-amber-50 hover:bg-amber-950/50 disabled:opacity-50"
-                                  disabled={Boolean(busy)}
-                                  onClick={() =>
-                                    void resolveApproval(i, "reject", m.pendingApproval!)
-                                  }
-                                >
-                                  Cancel
-                                </button>
-                              </div>
+                              <ApprovalButtons
+                                pendingId={m.pendingApproval.id}
+                                busy={busy}
+                                onApprove={() =>
+                                  void resolveApproval(i, "approve", m.pendingApproval!)
+                                }
+                                onDeny={() =>
+                                  void resolveApproval(i, "reject", m.pendingApproval!)
+                                }
+                              />
                             ) : null}
                           </div>
                         ) : null}
@@ -843,6 +893,33 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                     />
                   ))}
                 </ul>
+              ) : null}
+
+              {unresolvedApproval && view === "chat" ? (
+                <div className="flex shrink-0 flex-col gap-2 border-t border-amber-700/50 bg-amber-950/50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                  <p className="min-w-0 truncate text-sm font-medium text-amber-50 sm:text-base">
+                    Waiting for approval — {unresolvedApproval.pending.summary.split("\n")[0]}
+                  </p>
+                  <ApprovalButtons
+                    pendingId={unresolvedApproval.pending.id}
+                    busy={busy}
+                    size="lg"
+                    onApprove={() =>
+                      void resolveApproval(
+                        unresolvedApproval.index,
+                        "approve",
+                        unresolvedApproval.pending,
+                      )
+                    }
+                    onDeny={() =>
+                      void resolveApproval(
+                        unresolvedApproval.index,
+                        "reject",
+                        unresolvedApproval.pending,
+                      )
+                    }
+                  />
+                </div>
               ) : null}
 
               <form

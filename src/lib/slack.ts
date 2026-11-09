@@ -128,17 +128,76 @@ export async function openSlackSocketUrl(): Promise<string> {
   return res.url;
 }
 
+export type SlackBlock = Record<string, unknown>;
+
+/** Block Kit Approve / Deny row for a staged calendar/wiki write. */
+export function pendingApprovalBlocks(pendingId: string, summary: string): SlackBlock[] {
+  const clipped = summary.length > 2800 ? `${summary.slice(0, 2790)}…` : summary;
+  return [
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `⏸ *Review before writing*\n\`\`\`${clipped.replace(/```/g, "'''")}\`\`\``,
+      },
+    },
+    {
+      type: "actions",
+      block_id: `pending_${pendingId}`,
+      elements: [
+        {
+          type: "button",
+          action_id: "familyboard_approve",
+          style: "primary",
+          text: { type: "plain_text", text: "Approve", emoji: true },
+          value: pendingId,
+        },
+        {
+          type: "button",
+          action_id: "familyboard_deny",
+          style: "danger",
+          text: { type: "plain_text", text: "Deny", emoji: true },
+          value: pendingId,
+        },
+      ],
+    },
+  ];
+}
+
 export async function postSlackMessage(input: {
   channel: string;
   text: string;
   threadTs?: string;
+  blocks?: SlackBlock[];
+}): Promise<{ ts: string; channel: string }> {
+  const { botToken } = requireConfig();
+  const res = await slackApi<SlackResponse & { ts?: string; channel?: string }>(
+    "chat.postMessage",
+    botToken,
+    {
+      channel: input.channel,
+      text: input.text,
+      ...(input.threadTs ? { thread_ts: input.threadTs } : {}),
+      ...(input.blocks?.length ? { blocks: input.blocks } : {}),
+      unfurl_links: false,
+    },
+  );
+  if (!res.ts) throw new Error("Slack chat.postMessage returned no ts");
+  return { ts: res.ts, channel: res.channel ?? input.channel };
+}
+
+export async function updateSlackMessage(input: {
+  channel: string;
+  ts: string;
+  text: string;
+  blocks?: SlackBlock[];
 }): Promise<void> {
   const { botToken } = requireConfig();
-  await slackApi("chat.postMessage", botToken, {
+  await slackApi("chat.update", botToken, {
     channel: input.channel,
+    ts: input.ts,
     text: input.text,
-    ...(input.threadTs ? { thread_ts: input.threadTs } : {}),
-    unfurl_links: false,
+    ...(input.blocks ? { blocks: input.blocks } : { blocks: [] }),
   });
 }
 
