@@ -56,7 +56,7 @@ export function AppShell() {
         className="relative z-40 flex shrink-0 items-center border-b border-slate-800 bg-slate-950/90 px-2 py-1.5 sm:px-4"
         aria-label="Main"
       >
-        <div className="inline-flex rounded-lg border border-slate-800 bg-slate-900/80 p-0.5">
+        <div className="inline-flex rounded-md border border-slate-800 bg-slate-900/80 p-0.5">
           {(
             [
               { id: "board" as const, label: "Board" },

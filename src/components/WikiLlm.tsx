@@ -3,6 +3,14 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { WikiBrowser } from "@/components/WikiBrowser";
+import {
+  fbBtnApprove,
+  fbBtnApproveLg,
+  fbBtnChip,
+  fbBtnDeny,
+  fbBtnDenyLg,
+  fbBtnSecondarySm,
+} from "@/lib/ui-buttons";
 
 type Status = {
   googleLinked?: boolean;
@@ -134,12 +142,13 @@ function ApprovalButtons({
   onDeny: () => void;
   size?: "md" | "lg";
 }) {
-  const pad = size === "lg" ? "px-5 py-2.5 text-base sm:text-lg" : "px-4 py-2 text-base";
+  const approveClass = size === "lg" ? fbBtnApproveLg : fbBtnApprove;
+  const denyClass = size === "lg" ? fbBtnDenyLg : fbBtnDeny;
   return (
     <div className="flex flex-wrap gap-2">
       <button
         type="button"
-        className={`rounded-xl bg-emerald-300 font-semibold text-slate-950 hover:bg-emerald-200 disabled:opacity-50 ${pad}`}
+        className={approveClass}
         disabled={Boolean(busy)}
         onClick={onApprove}
         aria-label="Approve write"
@@ -148,7 +157,7 @@ function ApprovalButtons({
       </button>
       <button
         type="button"
-        className={`rounded-xl border border-rose-500/70 bg-rose-950/40 font-semibold text-rose-50 hover:bg-rose-900/50 disabled:opacity-50 ${pad}`}
+        className={denyClass}
         disabled={Boolean(busy)}
         onClick={onDeny}
         aria-label="Deny write"
@@ -526,10 +535,8 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     }
   }
 
-  const sideBtn =
-    "rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50";
-  const chipBtn =
-    "rounded-full border border-slate-600/80 bg-slate-900/80 px-4 py-2.5 text-base leading-snug text-slate-50 hover:border-slate-400 hover:bg-slate-800 disabled:opacity-50";
+  const sideBtn = fbBtnSecondarySm;
+  const chipBtn = fbBtnChip;
   const unprocessed = messages.filter((m) => !m.processed).length;
 
   return (
@@ -596,7 +603,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
           >
             Tools
             {unprocessed > 0 ? (
-              <span className="ml-1.5 inline-flex min-w-[1.25rem] justify-center rounded-full bg-sky-600 px-1.5 text-xs text-white">
+              <span className="ml-1.5 inline-flex min-w-[1.25rem] justify-center rounded-md bg-sky-600 px-1.5 text-xs text-white">
                 {unprocessed}
               </span>
             ) : null}
@@ -705,7 +712,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                           key={sk.path}
                           type="button"
                           title={sk.summary}
-                          className="rounded-full border border-emerald-800/50 bg-emerald-950/25 px-4 py-2 text-base text-emerald-100 hover:border-emerald-600"
+                          className="rounded-md border border-emerald-800/50 bg-emerald-950/25 px-3.5 py-2 text-base text-emerald-100 hover:border-emerald-600"
                           onClick={() => {
                             setInput(`Use the “${sk.title}” skill`);
                             promptRef.current?.focus();
@@ -759,7 +766,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                               <button
                                 key={qa.id}
                                 type="button"
-                                className="rounded-full border border-amber-700/60 bg-amber-950/35 px-3.5 py-1.5 text-sm font-medium text-amber-50 hover:border-amber-500 disabled:opacity-50 sm:text-base"
+                                className="rounded-md border border-amber-700/60 bg-amber-950/35 px-3.5 py-1.5 text-sm font-medium text-amber-50 hover:border-amber-500 disabled:opacity-50 sm:text-base"
                                 disabled={Boolean(busy)}
                                 onClick={() => void sendPrompt(qa.prompt)}
                               >
@@ -962,7 +969,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 <textarea
                   ref={promptRef}
                   rows={1}
-                  className="max-h-40 min-h-[3.25rem] min-w-0 flex-1 resize-none rounded-2xl border border-slate-600 bg-slate-900 px-4 py-3.5 text-lg leading-relaxed text-white outline-none placeholder:text-slate-500 focus:border-slate-400"
+                  className="max-h-40 min-h-[3.25rem] min-w-0 flex-1 resize-none rounded-md border border-slate-600 bg-slate-900 px-4 py-3.5 text-lg leading-relaxed text-white outline-none placeholder:text-slate-500 focus:border-slate-400"
                   placeholder={
                     busy === "chat"
                       ? "Still thinking… type the next message"
@@ -994,7 +1001,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 {busy === "chat" ? (
                   <button
                     type="button"
-                    className="mb-0.5 rounded-2xl border border-amber-600/70 bg-amber-950/40 px-5 py-3 text-base font-semibold text-amber-50 hover:border-amber-500 hover:bg-amber-950/70"
+                    className="mb-0.5 rounded-md border border-amber-600/70 bg-amber-950/40 px-5 py-3 text-base font-semibold text-amber-50 hover:border-amber-500 hover:bg-amber-950/70"
                     onClick={stopChat}
                     aria-label="Stop generating"
                   >
@@ -1003,7 +1010,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
                 ) : (
                   <button
                     type="submit"
-                    className="mb-0.5 rounded-2xl bg-slate-100 px-5 py-3 text-base font-semibold text-slate-900 hover:bg-white disabled:opacity-40"
+                    className="mb-0.5 rounded-md bg-slate-100 px-5 py-3 text-base font-semibold text-slate-900 hover:bg-white disabled:opacity-40"
                     disabled={!input.trim() && !pending.length}
                   >
                     Send
