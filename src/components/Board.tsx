@@ -221,13 +221,13 @@ function SpotifyAlbumTitleIcon({ coverUrl }: { coverUrl?: string }) {
       <img
         src={coverUrl}
         alt=""
-        className={`${WIDGET_TITLE_ICON} rounded object-cover shadow-sm ring-1 ring-slate-700/80`}
+        className={`${WIDGET_TITLE_ICON} rounded-lg object-cover shadow-sm ring-1 ring-slate-700/80`}
       />
     );
   }
   return (
     <div
-      className={`${WIDGET_TITLE_ICON} flex items-center justify-center rounded bg-slate-800 text-slate-500 ring-1 ring-slate-700/80`}
+      className={`${WIDGET_TITLE_ICON} flex items-center justify-center rounded-lg bg-slate-800 text-slate-500 ring-1 ring-slate-700/80`}
       aria-hidden
     >
       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -1993,7 +1993,7 @@ export function Board() {
         return {
           kind: "allday" as const,
           key: ev.id ?? `allday-${b.startKey}-${ev.summary ?? "event"}`,
-          summary: ev.summary || "(No title)",
+          summary: ev.summary || "(no title)",
           event: ev,
         };
       })
@@ -2028,7 +2028,7 @@ export function Board() {
           startMs: start.getTime(),
           startLabel: fmt(start),
           endLabel: fmt(end),
-          summary: ev.summary || "(No title)",
+          summary: ev.summary || "(no title)",
           event: ev,
         };
       })
@@ -2062,7 +2062,7 @@ export function Board() {
     >
       <div className="box-border flex min-h-0 w-full min-w-0 flex-1 flex-col gap-2 overflow-hidden px-2 py-2 sm:gap-3 sm:px-4 sm:py-3 md:gap-4 lg:px-6 lg:py-4 xl:px-8 xl:py-5 2xl:px-10">
         {showBanner ? (
-          <div className="flex shrink-0 items-start gap-2 rounded-lg border border-slate-700 bg-slate-800/60 py-2 pl-3 pr-2 text-base text-slate-100 sm:text-lg">
+          <div className="flex shrink-0 items-start gap-2 rounded-xl border border-slate-800 bg-slate-900/70 py-2 pl-3 pr-2 text-base text-slate-100 sm:text-lg">
             <p className="min-w-0 flex-1 pt-0.5 leading-snug">{alertText}</p>
             <button
               type="button"
@@ -2079,14 +2079,14 @@ export function Board() {
 
         <div className="board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-x-hidden overflow-y-auto sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
           <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
-            <div className="mb-3 flex min-w-0 shrink-0 items-start gap-3 rounded-xl border border-slate-600 bg-slate-900 px-3 py-3 shadow-md shadow-black/30 sm:mb-4 sm:gap-4 sm:px-4 sm:py-3.5">
+            <div className="mb-3 flex min-w-0 shrink-0 items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-3 sm:mb-4 sm:gap-4 sm:px-4 sm:py-3.5">
               <span className="shrink-0 pt-1 text-lg font-bold tracking-tight text-white sm:text-xl">
                 Today
               </span>
               <div className="min-w-0 flex-1">
                 {todayAllDayStrip.length === 0 && todayTimedStrip.length === 0 ? (
-                  <span className="pt-1 text-base text-slate-300 sm:text-lg">
-                    No events 8am–8pm.
+                  <span className="pt-1 text-base text-slate-500 sm:text-lg">
+                    No events 8am–8pm
                   </span>
                 ) : (
                   <div className="flex flex-wrap gap-2 sm:gap-2.5">
@@ -2181,11 +2181,11 @@ export function Board() {
                     </div>
                   )}
                 </div>
-                <div className="mt-3 flex shrink-0 flex-wrap items-center gap-2 border-t border-slate-800 pt-3 sm:gap-2">
-                  <label className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/50 px-3 py-2 text-sm text-slate-300 sm:text-base">
+                <div className="mt-3 flex shrink-0 flex-wrap items-center gap-2 border-t border-slate-800 pt-3">
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/50 px-2.5 py-1.5 text-sm text-slate-400 sm:text-base">
                     Calendar
                     <select
-                      className="rounded bg-slate-900 px-2 py-1.5 text-sm text-slate-100 outline-none sm:text-base"
+                      className="rounded bg-transparent px-1.5 py-1 text-sm text-slate-100 outline-none sm:text-base"
                       value={selectedCalendarId}
                       onChange={(e) => {
                         markCalendarExplicitlyChosen();
@@ -2212,39 +2212,39 @@ export function Board() {
                   >
                     New event
                   </button>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
                     <button
                       type="button"
-                      className="rounded-full border border-slate-600 px-3 py-2 text-sm text-slate-100 hover:border-slate-400 sm:px-4 sm:py-2.5 sm:text-base"
+                      className="rounded-lg px-2.5 py-1.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-slate-100 sm:px-3 sm:text-base"
                       onClick={() => goCalendarPreviousMonth()}
                     >
-                      Previous month
+                      Prev
                     </button>
                     <button
                       type="button"
-                      className="rounded-full border border-slate-600 px-3 py-2 text-sm text-slate-100 hover:border-slate-400 sm:px-4 sm:py-2.5 sm:text-base"
+                      className="rounded-lg px-2.5 py-1.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-slate-100 sm:px-3 sm:text-base"
                       onClick={() => goCalendarNextMonth()}
                     >
-                      Next month
+                      Next
                     </button>
                     <button
                       type="button"
-                      className="rounded-full border border-slate-600 px-3 py-2 text-sm text-slate-100 hover:border-slate-400 sm:px-4 sm:py-2.5 sm:text-base"
+                      className="rounded-lg px-2.5 py-1.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-slate-100 sm:px-3 sm:text-base"
                       onClick={() => goCalendarTodayWeeks()}
                     >
                       Today
                     </button>
+                    <button
+                      type="button"
+                      className="rounded-lg px-2.5 py-1.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-slate-100 sm:px-3 sm:text-base"
+                      onClick={() => void fetchBoard()}
+                    >
+                      Refresh
+                    </button>
                   </div>
                   <button
                     type="button"
-                    className="rounded-full border border-slate-600 px-4 py-2 text-base text-slate-100 hover:border-slate-400 sm:py-2.5 sm:text-lg"
-                    onClick={() => void fetchBoard()}
-                  >
-                    Refresh
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-full border border-rose-900/60 px-4 py-2 text-base text-rose-100 hover:border-rose-700 sm:py-2.5 sm:text-lg"
+                    className="ml-auto rounded-lg px-2.5 py-1.5 text-sm text-slate-500 hover:bg-slate-800/60 hover:text-rose-200 sm:text-base"
                     onClick={() => void logoutGoogle()}
                   >
                     Disconnect
@@ -2255,7 +2255,7 @@ export function Board() {
           </section>
 
           <div className="board-scrollbar flex h-full max-h-full min-h-0 min-w-0 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-y-contain pb-2 sm:gap-4">
-            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3">
+            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2.5">
                   {collapsedWidgets.clock ? (
@@ -2640,7 +2640,7 @@ export function Board() {
                   <button
                     type="button"
                     disabled={busy === "catlink-link"}
-                    className="inline-flex rounded-full bg-sky-500 px-4 py-2 text-base font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-50 sm:text-lg"
+                    className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
                     onClick={() => void linkCatlink()}
                   >
                     {busy === "catlink-link" ? "Linking…" : "Link Catlink"}
@@ -3226,10 +3226,10 @@ export function Board() {
                             type="button"
                             disabled={busy === `hue-${area.id}`}
                             onClick={() => void toggleArea(area.id, !area.on)}
-                            className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
+                            className={`rounded-full px-3 py-1.5 text-sm font-medium sm:text-base ${
                               area.on
-                                ? "bg-amber-300 text-slate-900"
-                                : "bg-slate-800 text-slate-200"
+                                ? "border border-amber-500/70 bg-amber-500/20 text-amber-100"
+                                : "border border-slate-700 bg-slate-800 text-slate-200"
                             } disabled:opacity-40`}
                           >
                             {area.on ? "On" : "Off"}
@@ -3289,9 +3289,9 @@ export function Board() {
                                   type="button"
                                   disabled={busy === `hue-${area.id}`}
                                   onClick={() => void toggleArea(area.id, !area.on)}
-                                  className={`rounded-full px-3 py-1.5 text-sm font-semibold sm:text-base ${
+                                  className={`rounded-full px-3 py-1.5 text-sm font-medium sm:text-base ${
                                     area.on
-                                      ? "bg-amber-300 text-slate-900"
+                                      ? "border border-amber-500/70 bg-amber-500/20 text-amber-100"
                                       : "bg-slate-800 text-slate-200"
                                   } disabled:opacity-40`}
                                 >
@@ -3428,16 +3428,46 @@ export function Board() {
       </div>
 
       {newEventOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
-            <h3 className="text-xl font-semibold text-white sm:text-2xl">New event</h3>
-            <p className="mt-1 text-sm text-slate-400 sm:text-base">
-              Calendar:{" "}
-              {calendars.find((c) => c.id === selectedCalendarId)?.summary ??
-                selectedCalendarId}
-            </p>
-            <div className="mt-4 space-y-3">
-              <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center"
+          onClick={() => setNewEventOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-event-modal-title"
+          >
+            <div className="shrink-0 border-b border-slate-800 px-5 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3
+                    id="new-event-modal-title"
+                    className="text-xl font-semibold tracking-tight text-white sm:text-2xl"
+                  >
+                    New event
+                  </h3>
+                  <p className="mt-1 truncate text-sm text-slate-500">
+                    {calendars.find((c) => c.id === selectedCalendarId)?.summary ??
+                      selectedCalendarId}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                  aria-label="Close"
+                  onClick={() => setNewEventOpen(false)}
+                >
+                  <span className="block text-xl leading-none" aria-hidden>
+                    ×
+                  </span>
+                </button>
+              </div>
+            </div>
+            <div className="board-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+              <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
                 Title
                 <input
                   className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
@@ -3470,7 +3500,7 @@ export function Board() {
                 onChange={(end) => setNewTimes((t) => ({ ...t, end }))}
               />
             </div>
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className="flex shrink-0 flex-wrap gap-2 border-t border-slate-800 px-5 py-4">
               <button
                 type="button"
                 className="rounded-full bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
@@ -3515,11 +3545,6 @@ export function Board() {
                       >
                         {editOpen.summary?.trim() || "(no title)"}
                       </h3>
-                      {editOpen.sourceCalendarSummary ? (
-                        <p className="mt-1 truncate text-sm text-slate-400">
-                          {editOpen.sourceCalendarSummary}
-                        </p>
-                      ) : null}
                     </div>
                     <button
                       type="button"
@@ -3543,7 +3568,7 @@ export function Board() {
                     return (
                       <>
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                             When
                           </p>
                           <p className="mt-1 text-base text-slate-100 sm:text-lg">
@@ -3561,7 +3586,7 @@ export function Board() {
                         </div>
                         {editOpen.location?.trim() ? (
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                               Location
                             </p>
                             <p className="mt-1 whitespace-pre-wrap text-base text-slate-100 sm:text-lg">
@@ -3599,7 +3624,7 @@ export function Board() {
                         ) : null}
                         {editOpen.description?.trim() ? (
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                               Description
                             </p>
                             <p className="mt-1 whitespace-pre-wrap text-base leading-relaxed text-slate-200 sm:text-lg">
@@ -3609,7 +3634,7 @@ export function Board() {
                         ) : null}
                         {attendees.length ? (
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                               Guests
                             </p>
                             <ul className="mt-1.5 space-y-1">
@@ -3645,7 +3670,7 @@ export function Board() {
                         (editOpen.organizer.displayName || editOpen.organizer.email) &&
                         !editOpen.organizer.self ? (
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                               Organizer
                             </p>
                             <p className="mt-1 text-base text-slate-100">
@@ -3659,35 +3684,23 @@ export function Board() {
                             </p>
                           </div>
                         ) : null}
-                        {meet || editOpen.htmlLink ? (
+                        {meet ? (
                           <div className="flex flex-wrap gap-2 pt-1">
-                            {meet ? (
-                              <a
-                                href={meet}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="rounded-full border border-emerald-700/60 bg-emerald-950/40 px-3.5 py-2 text-sm font-medium text-emerald-100 hover:border-emerald-500 hover:bg-emerald-900/50"
-                              >
-                                Join meeting
-                              </a>
-                            ) : null}
-                            {editOpen.htmlLink ? (
-                              <a
-                                href={editOpen.htmlLink}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="rounded-full border border-slate-600 bg-slate-800 px-3.5 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
-                              >
-                                Open in Google Calendar
-                              </a>
-                            ) : null}
+                            <a
+                              href={meet}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-full border border-emerald-700/60 bg-emerald-950/40 px-3.5 py-2 text-sm font-medium text-emerald-100 hover:border-emerald-500 hover:bg-emerald-900/50"
+                            >
+                              Join meeting
+                            </a>
                           </div>
                         ) : null}
                         {!editOpen.location?.trim() &&
                         !editOpen.description?.trim() &&
                         !attendees.length &&
                         !meet ? (
-                          <p className="text-sm italic text-slate-500">
+                          <p className="text-sm text-slate-500">
                             No extra details on this event.
                           </p>
                         ) : null}
@@ -3713,7 +3726,7 @@ export function Board() {
                   <button
                     type="button"
                     disabled={busy === "delete"}
-                    className="rounded-full bg-rose-700 px-4 py-2.5 text-base font-medium text-white hover:bg-rose-600 disabled:opacity-50 sm:text-lg"
+                    className="ml-auto rounded-full border border-rose-800/70 px-4 py-2.5 text-base font-medium text-rose-200 hover:border-rose-600 hover:bg-rose-950/40 disabled:opacity-50 sm:text-lg"
                     onClick={() => void deleteEdit()}
                   >
                     {busy === "delete" ? "Deleting…" : "Delete"}
@@ -3721,18 +3734,34 @@ export function Board() {
                 </div>
               </>
             ) : (
-              <div className="p-5">
-                <h3
-                  id="event-modal-title"
-                  className="text-xl font-semibold text-white sm:text-2xl"
-                >
-                  Edit event
-                </h3>
-                {editAllDay ? (
-                  <p className="mt-1 text-sm text-slate-400 sm:text-base">All-day</p>
-                ) : null}
-                <div className="mt-4 space-y-3">
-                  <label className="block text-sm font-medium uppercase tracking-wide text-slate-400 sm:text-base">
+              <>
+                <div className="shrink-0 border-b border-slate-800 px-5 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3
+                        id="event-modal-title"
+                        className="text-xl font-semibold tracking-tight text-white sm:text-2xl"
+                      >
+                        Edit event
+                      </h3>
+                      {editAllDay ? (
+                        <p className="mt-1 text-sm text-slate-500">All-day</p>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                      aria-label="Close"
+                      onClick={closeEventModal}
+                    >
+                      <span className="block text-xl leading-none" aria-hidden>
+                        ×
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                <div className="board-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+                  <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
                     Title
                     <input
                       className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-sky-500 sm:text-lg"
@@ -3754,13 +3783,13 @@ export function Board() {
                     onChange={setEditEnd}
                   />
                 </div>
-                <div className="mt-5 flex flex-wrap gap-2">
+                <div className="flex shrink-0 flex-wrap gap-2 border-t border-slate-800 px-5 py-4">
                   <button
                     type="button"
                     className="rounded-full bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
                     onClick={() => setEventModalMode("view")}
                   >
-                    Cancel
+                    Back
                   </button>
                   <button
                     type="button"
@@ -3773,13 +3802,13 @@ export function Board() {
                   <button
                     type="button"
                     disabled={busy === "delete"}
-                    className="rounded-full bg-rose-700 px-4 py-2.5 text-base font-medium text-white hover:bg-rose-600 disabled:opacity-50 sm:text-lg"
+                    className="ml-auto rounded-full border border-rose-800/70 px-4 py-2.5 text-base font-medium text-rose-200 hover:border-rose-600 hover:bg-rose-950/40 disabled:opacity-50 sm:text-lg"
                     onClick={() => void deleteEdit()}
                   >
                     {busy === "delete" ? "Deleting…" : "Delete"}
                   </button>
                 </div>
-              </div>
+              </>
             )}
           </div>
         </div>
@@ -3787,12 +3816,12 @@ export function Board() {
 
       {spotifyPickOpen ? (
         <div
-          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/75 p-0 sm:items-center sm:p-4"
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
           onClick={() => setSpotifyPickOpen(false)}
           role="presentation"
         >
           <div
-            className="flex h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-slate-700 bg-slate-950 shadow-2xl sm:h-auto sm:max-h-[85dvh] sm:max-w-2xl sm:rounded-2xl"
+            className="flex h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-slate-700 bg-slate-900 shadow-2xl sm:h-auto sm:max-h-[85dvh] sm:max-w-2xl sm:rounded-2xl"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
