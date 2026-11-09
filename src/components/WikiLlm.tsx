@@ -340,7 +340,10 @@ export function WikiLlm({
   const chatAbortRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const sessionIdRef = useRef<string | null>(null);
-  sessionIdRef.current = sessionId;
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   const rememberSessionId = useCallback((id: string | null) => {
     setSessionId(id);
