@@ -83,11 +83,11 @@ function toChatAttachment(name: string, summary: string, text: string): ChatAtta
 const inputClass =
   "w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3.5 py-2.5 text-base text-white outline-none placeholder:text-slate-500 focus:border-slate-500";
 const btn =
-  "rounded-xl border border-slate-600/80 bg-slate-800/90 px-3 py-2 text-sm font-medium text-slate-100 hover:border-slate-500 hover:bg-slate-700 disabled:opacity-50";
+  "rounded-md border border-slate-600/80 bg-slate-800/90 px-3 py-2 text-sm font-medium text-slate-100 hover:border-slate-500 hover:bg-slate-700 disabled:opacity-50";
 const primaryBtn =
-  "rounded-xl bg-slate-100 px-3.5 py-2 text-sm font-semibold text-slate-900 hover:bg-white disabled:opacity-50";
+  "rounded-md bg-slate-100 px-3.5 py-2 text-sm font-semibold text-slate-900 hover:bg-white disabled:opacity-50";
 const ghostBtn =
-  "rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50";
+  "rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50";
 
 export function WikiBrowser({
   active,

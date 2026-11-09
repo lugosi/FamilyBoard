@@ -102,3 +102,46 @@ body {
   }
 }
 
+/**
+ * Shared control chrome — soft square corners (not pills) so CTAs, chips,
+ * and modal actions match across Board + AI.
+ */
+@layer components {
+  .fb-btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-transparent px-3.5 py-2 text-base font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .fb-btn-sm {
+    @apply px-2.5 py-1.5 text-sm;
+  }
+  .fb-btn-lg {
+    @apply px-4 py-2.5 text-base sm:px-5 sm:text-lg;
+  }
+  .fb-btn-xs {
+    @apply px-2.5 py-1 text-xs font-semibold sm:text-sm;
+  }
+  .fb-btn-primary {
+    @apply bg-sky-600 text-white hover:bg-sky-500;
+  }
+  .fb-btn-secondary {
+    @apply border-slate-600 bg-slate-800 text-slate-100 hover:border-slate-500 hover:bg-slate-700;
+  }
+  .fb-btn-ghost {
+    @apply border-transparent bg-transparent p-2 text-slate-400 hover:bg-slate-800 hover:text-white;
+  }
+  .fb-btn-danger {
+    @apply border-rose-800/70 bg-transparent text-rose-200 hover:border-rose-600 hover:bg-rose-950/40;
+  }
+  .fb-btn-accent {
+    @apply bg-white text-slate-900 hover:bg-slate-100;
+  }
+  .fb-btn-success {
+    @apply bg-emerald-600 text-white hover:bg-emerald-500;
+  }
+  .fb-btn-chip {
+    @apply rounded-md border border-slate-600/80 bg-slate-900/80 px-3.5 py-2 text-base leading-snug text-slate-50 hover:border-slate-400 hover:bg-slate-800 disabled:opacity-50;
+  }
+  .fb-btn-icon {
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-600 p-0 text-slate-100 hover:border-slate-400 disabled:opacity-50;
+  }
+}
+

@@ -2252,7 +2252,7 @@ export function Board() {
             {status?.googleConfigured && !status.googleLinked ? (
               <div className="mt-3">
                 <a
-                  className="inline-flex rounded-full bg-white px-5 py-2.5 text-base font-medium text-slate-900 hover:bg-slate-100 sm:text-lg"
+                  className="inline-flex rounded-md bg-white px-5 py-2.5 text-base font-medium text-slate-900 hover:bg-slate-100 sm:text-lg"
                   href="/api/auth/google"
                 >
                   Link Google
@@ -2313,7 +2313,7 @@ export function Board() {
                   <button
                     type="button"
                     disabled={selectedCalendarId === "__all__"}
-                    className="rounded-full bg-sky-600 px-4 py-2 text-base font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:py-2.5 sm:text-lg"
+                    className="rounded-md bg-sky-600 px-4 py-2 text-base font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:py-2.5 sm:text-lg"
                     onClick={() => openNewEventModal()}
                   >
                     New event
@@ -2321,28 +2321,28 @@ export function Board() {
                   <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
                     <button
                       type="button"
-                      className="rounded-lg px-2.5 py-1.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-slate-100 sm:px-3 sm:text-base"
+                      className="rounded-md px-2.5 py-1.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-slate-100 sm:px-3 sm:text-base"
                       onClick={() => goCalendarPreviousMonth()}
                     >
                       Prev
                     </button>
                     <button
                       type="button"
-                      className="rounded-lg px-2.5 py-1.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-slate-100 sm:px-3 sm:text-base"
+                      className="rounded-md px-2.5 py-1.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-slate-100 sm:px-3 sm:text-base"
                       onClick={() => goCalendarNextMonth()}
                     >
                       Next
                     </button>
                     <button
                       type="button"
-                      className="rounded-lg px-2.5 py-1.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-slate-100 sm:px-3 sm:text-base"
+                      className="rounded-md px-2.5 py-1.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-slate-100 sm:px-3 sm:text-base"
                       onClick={() => goCalendarTodayWeeks()}
                     >
                       Today
                     </button>
                     <button
                       type="button"
-                      className="rounded-lg px-2.5 py-1.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-slate-100 sm:px-3 sm:text-base"
+                      className="rounded-md px-2.5 py-1.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-slate-100 sm:px-3 sm:text-base"
                       onClick={() => void fetchBoard()}
                     >
                       Refresh
@@ -2350,7 +2350,7 @@ export function Board() {
                   </div>
                   <button
                     type="button"
-                    className="ml-auto rounded-lg px-2.5 py-1.5 text-sm text-slate-500 hover:bg-slate-800/60 hover:text-rose-200 sm:text-base"
+                    className="ml-auto rounded-md px-2.5 py-1.5 text-sm text-slate-500 hover:bg-slate-800/60 hover:text-rose-200 sm:text-base"
                     onClick={() => void logoutGoogle()}
                   >
                     Disconnect
@@ -2746,7 +2746,7 @@ export function Board() {
                   <button
                     type="button"
                     disabled={busy === "catlink-link"}
-                    className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
+                    className="inline-flex rounded-md bg-sky-600 px-4 py-2 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
                     onClick={() => void linkCatlink()}
                   >
                     {busy === "catlink-link" ? "Linking…" : "Link Catlink"}
@@ -2817,7 +2817,7 @@ export function Board() {
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <button
                       type="button"
-                      className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
+                      className="rounded-md border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
                       disabled={busy === "catlink-clean_now"}
                       onClick={() => void catlinkControl("clean_now")}
                     >
@@ -2825,7 +2825,7 @@ export function Board() {
                     </button>
                     <button
                       type="button"
-                      className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
+                      className="rounded-md border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
                       disabled={busy === "catlink-refill_litter"}
                       onClick={() => void catlinkControl("refill_litter")}
                     >
@@ -2833,7 +2833,7 @@ export function Board() {
                     </button>
                     <button
                       type="button"
-                      className={`rounded-lg border px-2.5 py-2 text-sm disabled:opacity-50 ${
+                      className={`rounded-md border px-2.5 py-2 text-sm disabled:opacity-50 ${
                         catlinkWasteBinFull
                           ? "border-red-500/80 bg-red-600/90 font-semibold text-white hover:bg-red-500"
                           : "border-slate-700 text-slate-100 hover:border-slate-500"
@@ -2845,7 +2845,7 @@ export function Board() {
                     </button>
                     <button
                       type="button"
-                      className="rounded-lg border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
+                      className="rounded-md border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
                       disabled={busy === "catlink-reset_bin"}
                       onClick={() => void catlinkControl("reset_bin")}
                     >
@@ -2963,7 +2963,7 @@ export function Board() {
                     Link Spotify to show now-playing and control playback.
                   </p>
                   <a
-                    className="inline-flex rounded-full bg-green-500 px-4 py-2 text-base font-medium text-slate-950 hover:bg-green-400 sm:text-lg"
+                    className="inline-flex rounded-md bg-green-500 px-4 py-2 text-base font-medium text-slate-950 hover:bg-green-400 sm:text-lg"
                     href="/api/auth/spotify"
                   >
                     Link Spotify
@@ -3086,7 +3086,7 @@ export function Board() {
                         <button
                           type="button"
                           disabled={busy === "spotify-refresh-devices"}
-                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-600 text-slate-100 hover:border-slate-400 disabled:opacity-50"
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-600 text-slate-100 hover:border-slate-400 disabled:opacity-50"
                           onClick={() => void refreshSpotifyDevices()}
                           aria-label="Refresh devices"
                           title="Refresh devices"
@@ -3110,7 +3110,7 @@ export function Board() {
                           <button
                             type="button"
                             disabled={busy === "spotify-previous"}
-                            className="rounded-full border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
+                            className="rounded-md border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
                             onClick={() => void spotifyControl("previous")}
                           >
                             Prev
@@ -3119,7 +3119,7 @@ export function Board() {
                             <button
                               type="button"
                               disabled={busy === "spotify-pause"}
-                              className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
+                              className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
                               onClick={() => void spotifyControl("pause")}
                             >
                               Pause
@@ -3128,7 +3128,7 @@ export function Board() {
                             <button
                               type="button"
                               disabled={busy === "spotify-play"}
-                              className="rounded-full bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
+                              className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
                               onClick={() =>
                                 void spotifyControl("play", {
                                   deviceId: spotifyEffectiveDeviceId || undefined,
@@ -3141,14 +3141,14 @@ export function Board() {
                           <button
                             type="button"
                             disabled={busy === "spotify-next"}
-                            className="rounded-full border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
+                            className="rounded-md border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
                             onClick={() => void spotifyControl("next")}
                           >
                             Next
                           </button>
                           <button
                             type="button"
-                            className="rounded-full border border-slate-600 p-2 text-slate-100 hover:border-slate-400"
+                            className="rounded-md border border-slate-600 p-2 text-slate-100 hover:border-slate-400"
                             onClick={() => setSpotifyPickOpen(true)}
                             aria-label="Search music"
                             title="Search music"
@@ -3283,7 +3283,7 @@ export function Board() {
                     type="button"
                     disabled={busy === "pair"}
                     onClick={() => void pairHue()}
-                    className="w-full rounded-full bg-amber-500 px-4 py-2.5 text-base font-medium text-slate-950 hover:bg-amber-400 disabled:opacity-50 sm:text-lg"
+                    className="w-full rounded-md bg-amber-500 px-4 py-2.5 text-base font-medium text-slate-950 hover:bg-amber-400 disabled:opacity-50 sm:text-lg"
                   >
                     {busy === "pair" ? "Pairing…" : "Pair bridge"}
                   </button>
@@ -3332,7 +3332,7 @@ export function Board() {
                             type="button"
                             disabled={busy === `hue-${area.id}`}
                             onClick={() => void toggleArea(area.id, !area.on)}
-                            className={`rounded-full px-3 py-1.5 text-sm font-medium sm:text-base ${
+                            className={`rounded-md px-3 py-1.5 text-sm font-medium sm:text-base ${
                               area.on
                                 ? "border border-amber-500/70 bg-amber-500/20 text-amber-100"
                                 : "border border-slate-700 bg-slate-800 text-slate-200"
@@ -3395,7 +3395,7 @@ export function Board() {
                                   type="button"
                                   disabled={busy === `hue-${area.id}`}
                                   onClick={() => void toggleArea(area.id, !area.on)}
-                                  className={`rounded-full px-3 py-1.5 text-sm font-medium sm:text-base ${
+                                  className={`rounded-md px-3 py-1.5 text-sm font-medium sm:text-base ${
                                     area.on
                                       ? "border border-amber-500/70 bg-amber-500/20 text-amber-100"
                                       : "bg-slate-800 text-slate-200"
@@ -3492,7 +3492,7 @@ export function Board() {
                     Link Google to read Nest indoor climate.
                   </p>
                   <a
-                    className="inline-flex rounded-full bg-white px-4 py-2 text-base font-medium text-slate-900 hover:bg-slate-100 sm:text-lg"
+                    className="inline-flex rounded-md bg-white px-4 py-2 text-base font-medium text-slate-900 hover:bg-slate-100 sm:text-lg"
                     href="/api/auth/google"
                   >
                     Link Google
@@ -3516,7 +3516,7 @@ export function Board() {
                     {indoorClimate.error}
                   </p>
                   <a
-                    className="inline-flex rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 sm:text-base"
+                    className="inline-flex rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 sm:text-base"
                     href="/api/auth/nest/pcm"
                   >
                     Authorize Nest devices
@@ -3562,7 +3562,7 @@ export function Board() {
                 </div>
                 <button
                   type="button"
-                  className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                  className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
                   aria-label="Close"
                   onClick={() => setNewEventOpen(false)}
                 >
@@ -3609,7 +3609,7 @@ export function Board() {
             <div className="flex shrink-0 flex-wrap gap-2 border-t border-slate-800 px-5 py-4">
               <button
                 type="button"
-                className="rounded-full bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
+                className="rounded-md bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
                 onClick={() => setNewEventOpen(false)}
               >
                 Cancel
@@ -3617,7 +3617,7 @@ export function Board() {
               <button
                 type="button"
                 disabled={busy === "add"}
-                className="rounded-full bg-sky-600 px-4 py-2.5 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
+                className="rounded-md bg-sky-600 px-4 py-2.5 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
                 onClick={() => void addEvent()}
               >
                 {busy === "add" ? "Saving…" : "Create event"}
@@ -3654,7 +3654,7 @@ export function Board() {
                     </div>
                     <button
                       type="button"
-                      className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                      className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
                       aria-label="Close"
                       onClick={closeEventModal}
                     >
@@ -3805,7 +3805,7 @@ export function Board() {
                               href={meet}
                               target="_blank"
                               rel="noreferrer"
-                              className="rounded-full border border-emerald-700/60 bg-emerald-950/40 px-3.5 py-2 text-sm font-medium text-emerald-100 hover:border-emerald-500 hover:bg-emerald-900/50"
+                              className="rounded-md border border-emerald-700/60 bg-emerald-950/40 px-3.5 py-2 text-sm font-medium text-emerald-100 hover:border-emerald-500 hover:bg-emerald-900/50"
                             >
                               Join meeting
                             </a>
@@ -3826,14 +3826,14 @@ export function Board() {
                 <div className="flex shrink-0 flex-wrap gap-2 border-t border-slate-800 px-5 py-4">
                   <button
                     type="button"
-                    className="rounded-full bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
+                    className="rounded-md bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
                     onClick={closeEventModal}
                   >
                     Close
                   </button>
                   <button
                     type="button"
-                    className="rounded-full bg-sky-600 px-4 py-2.5 text-base font-medium text-white hover:bg-sky-500 sm:text-lg"
+                    className="rounded-md bg-sky-600 px-4 py-2.5 text-base font-medium text-white hover:bg-sky-500 sm:text-lg"
                     onClick={beginEditEvent}
                   >
                     Edit
@@ -3841,7 +3841,7 @@ export function Board() {
                   <button
                     type="button"
                     disabled={busy === "delete"}
-                    className="ml-auto rounded-full border border-rose-800/70 px-4 py-2.5 text-base font-medium text-rose-200 hover:border-rose-600 hover:bg-rose-950/40 disabled:opacity-50 sm:text-lg"
+                    className="ml-auto rounded-md border border-rose-800/70 px-4 py-2.5 text-base font-medium text-rose-200 hover:border-rose-600 hover:bg-rose-950/40 disabled:opacity-50 sm:text-lg"
                     onClick={() => void deleteEdit()}
                   >
                     {busy === "delete" ? "Deleting…" : "Delete"}
@@ -3865,7 +3865,7 @@ export function Board() {
                     </div>
                     <button
                       type="button"
-                      className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                      className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
                       aria-label="Close"
                       onClick={closeEventModal}
                     >
@@ -3901,7 +3901,7 @@ export function Board() {
                 <div className="flex shrink-0 flex-wrap gap-2 border-t border-slate-800 px-5 py-4">
                   <button
                     type="button"
-                    className="rounded-full bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
+                    className="rounded-md bg-slate-800 px-4 py-2.5 text-base text-white hover:bg-slate-700 sm:text-lg"
                     onClick={() => setEventModalMode("view")}
                   >
                     Back
@@ -3909,7 +3909,7 @@ export function Board() {
                   <button
                     type="button"
                     disabled={busy === "save"}
-                    className="rounded-full bg-sky-600 px-4 py-2.5 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
+                    className="rounded-md bg-sky-600 px-4 py-2.5 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
                     onClick={() => void saveEdit()}
                   >
                     {busy === "save" ? "Saving…" : "Save"}
@@ -3917,7 +3917,7 @@ export function Board() {
                   <button
                     type="button"
                     disabled={busy === "delete"}
-                    className="ml-auto rounded-full border border-rose-800/70 px-4 py-2.5 text-base font-medium text-rose-200 hover:border-rose-600 hover:bg-rose-950/40 disabled:opacity-50 sm:text-lg"
+                    className="ml-auto rounded-md border border-rose-800/70 px-4 py-2.5 text-base font-medium text-rose-200 hover:border-rose-600 hover:bg-rose-950/40 disabled:opacity-50 sm:text-lg"
                     onClick={() => void deleteEdit()}
                   >
                     {busy === "delete" ? "Deleting…" : "Delete"}
@@ -3951,7 +3951,7 @@ export function Board() {
               </h3>
               <button
                 type="button"
-                className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
                 aria-label="Close search"
                 onClick={() => setSpotifyPickOpen(false)}
               >
@@ -3962,7 +3962,7 @@ export function Board() {
             </div>
 
             <div className="shrink-0 px-4 pb-2 pt-3">
-              <div className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/90 px-4 py-2.5 shadow-inner shadow-black/20">
+              <div className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-900/90 px-4 py-2.5 shadow-inner shadow-black/20">
                 <svg
                   aria-hidden
                   viewBox="0 0 24 24"
@@ -3988,7 +3988,7 @@ export function Board() {
                 />
                 <button
                   type="button"
-                  className="shrink-0 rounded-full bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-500 sm:text-sm"
+                  className="shrink-0 rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-500 sm:text-sm"
                   onClick={() => void searchSpotify()}
                 >
                   Search
@@ -4025,7 +4025,7 @@ export function Board() {
                     <button
                       key={tab}
                       type="button"
-                      className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold sm:text-sm ${
+                      className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold sm:text-sm ${
                         spotifyResultTab === tab
                           ? "bg-white text-slate-950"
                           : "border border-slate-700 text-slate-300 hover:border-slate-500"
@@ -4064,7 +4064,7 @@ export function Board() {
                     </p>
                     <button
                       type="button"
-                      className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-300 hover:border-slate-500"
+                      className="rounded-md border border-slate-700 px-2 py-0.5 text-xs text-slate-300 hover:border-slate-500"
                       onClick={() => void refreshSpotifyAccountRecent()}
                     >
                       Refresh recent
@@ -4104,7 +4104,7 @@ export function Board() {
                           </div>
                           <button
                             type="button"
-                            className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20"
+                            className="shrink-0 rounded-md bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20"
                             onClick={() => {
                               if (item.kind === "track") {
                                 void spotifyControl("play_track", {
@@ -4138,7 +4138,7 @@ export function Board() {
                     </p>
                     <button
                       type="button"
-                      className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:border-slate-500"
+                      className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:border-slate-500"
                       onClick={() => void refreshSpotifyFeatured()}
                     >
                       Retry
@@ -4176,7 +4176,7 @@ export function Board() {
                         </div>
                         <button
                           type="button"
-                          className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20"
+                          className="shrink-0 rounded-md bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/20"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -4244,7 +4244,7 @@ export function Board() {
                               </div>
                               <button
                                 type="button"
-                                className="shrink-0 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400 sm:text-sm"
+                                className="shrink-0 rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400 sm:text-sm"
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -4308,7 +4308,7 @@ export function Board() {
                               </div>
                               <button
                                 type="button"
-                                className="shrink-0 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400 sm:text-sm"
+                                className="shrink-0 rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400 sm:text-sm"
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -4378,7 +4378,7 @@ export function Board() {
                         <div className="flex shrink-0 items-center gap-1">
                           <button
                             type="button"
-                            className="rounded-full p-2.5 text-slate-300 hover:bg-slate-800 hover:text-white"
+                            className="rounded-md p-2.5 text-slate-300 hover:bg-slate-800 hover:text-white"
                             aria-label="Add to queue"
                             title="Add to queue"
                             onClick={() =>
@@ -4403,7 +4403,7 @@ export function Board() {
                           </button>
                           <button
                             type="button"
-                            className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg hover:bg-emerald-400"
+                            className="flex h-11 w-11 items-center justify-center rounded-md bg-emerald-500 text-white shadow-lg hover:bg-emerald-400"
                             aria-label="Play"
                             title="Play"
                             onClick={() =>
