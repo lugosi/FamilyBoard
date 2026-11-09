@@ -81,7 +81,8 @@ Read [integrations.md](integrations.md) before touching CatLink, Spotify, Hue, N
 
 ## WikiLLM (AI tab)
 
-- Shell: `AppShell` tabs **Board** | **AI** (`?tab=ai`). Do not fold AI UI into `Board.tsx`.
+- Shell: `AppShell` tabs **Board** | **AI** (`?tab=ai`). Do not fold AI UI into `Board.tsx`. Board may open the same `WikiLlm` as an overlay via AppShell (robot / Ask) — still no WikiLlm import in `Board.tsx`.
+- Web chat sessions persist in `DATA_DIR/agent-chat-sessions.json` (`/api/agent/sessions`). Do **not** store transcripts in the GitHub wiki (wiki = curated knowledge only).
 - AI tab is **one prompt** → `POST /api/agent/chat` → `runFamilyAgent` in `src/lib/agent.ts` (Gemini function calling). Add capabilities as tools there, not as new panels.
 - House overview: `house_dashboard` tool (`src/lib/house-dashboard.ts`) works from the AI tab chip **"House dashboard"** and Slack ("how's the house"). Returns panels + `quickActions` (web: tappable chips; Slack: reply-with list).
 - Tools: calendar `find_events` / `create_event` / `update_event` / `delete_event` / `list_calendars` (via `src/lib/calendar.ts`), todos (`src/lib/todos.ts` → wiki `todos/list.md` when configured, else `DATA_DIR/todos.json`), `scan_inbox`, and wiki tools (`src/lib/agent-wiki-tools.ts`). Calendar + inbox tools only when Google is linked; wiki tools only when GitHub is configured.

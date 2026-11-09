@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { WikiBrowser } from "@/components/WikiBrowser";
+import type { ChatSessionMeta, StoredChatTurn } from "@/lib/agent-chat-sessions";
 import {
   fbBtnApprove,
   fbBtnApproveLg,
@@ -98,6 +99,7 @@ const QUICK_PROMPTS: QuickPrompt[] = [
 type AiView = "chat" | "wiki";
 
 const VIEW_STORAGE_KEY = "familyboard-ai-view";
+const SESSION_STORAGE_KEY = "familyboard-chat-session";
 const WIKI_WRITE_TOOLS = new Set([
   "create_wiki_page",
   "edit_wiki_section",
@@ -213,11 +215,24 @@ function friendlyChatError(e: unknown): string {
   return e.message || "Something went wrong. Try again.";
 }
 
-export function WikiLlm({ active = true }: { active?: boolean }) {
+export function WikiLlm({
+  active = true,
+  variant = "page",
+  onClose,
+}: {
+  active?: boolean;
+  /** Board floating chat vs full AI tab. */
+  variant?: "page" | "overlay";
+  onClose?: () => void;
+}) {
+  const isOverlay = variant === "overlay";
   const [status, setStatus] = useState<Status | null>(null);
   const [messages, setMessages] = useState<GmailMessage[]>([]);
   const [slack, setSlack] = useState<SlackSnapshot | null>(null);
   const [chat, setChat] = useState<ChatTurn[]>([]);
+  const [sessions, setSessions] = useState<ChatSessionMeta[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState<ChatAttachment[]>([]);
   const [skills, setSkills] = useState<SkillMeta[]>([]);
@@ -234,7 +249,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   const [wikiFocus, setWikiFocus] = useState<{ path: string; nonce: number } | null>(null);
   const storedView = useSyncExternalStore(subscribeNoop, readInitialView, () => "chat" as AiView);
   const [pickedView, setPickedView] = useState<AiView | null>(null);
-  const view = pickedView ?? storedView;
+  const view = isOverlay ? "chat" : (pickedView ?? storedView);
 
   let unresolvedApproval: { index: number; pending: PendingApproval } | null = null;
   for (let i = chat.length - 1; i >= 0; i -= 1) {
@@ -261,8 +276,116 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     }
   }, []);
   const loadedOnceRef = useRef(false);
+  const sessionsLoadedRef = useRef(false);
   const chatAbortRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  sessionIdRef.current = sessionId;
+
+  const rememberSessionId = useCallback((id: string | null) => {
+    setSessionId(id);
+    sessionIdRef.current = id;
+    try {
+      if (id) localStorage.setItem(SESSION_STORAGE_KEY, id);
+      else localStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const refreshSessionList = useCallback(async (signalArg?: AbortSignal) => {
+    const res = await fetch("/api/agent/sessions", { signal: signalArg });
+    if (!res.ok) return [] as ChatSessionMeta[];
+    const json = (await res.json()) as { sessions?: ChatSessionMeta[] };
+    const list = json.sessions ?? [];
+    setSessions(list);
+    return list;
+  }, []);
+
+  const loadSession = useCallback(
+    async (id: string, signalArg?: AbortSignal) => {
+      const res = await fetch(`/api/agent/sessions/${encodeURIComponent(id)}`, {
+        signal: signalArg,
+      });
+      if (!res.ok) return false;
+      const json = (await res.json()) as { session?: { turns?: StoredChatTurn[] } };
+      setChat((json.session?.turns ?? []) as ChatTurn[]);
+      rememberSessionId(id);
+      setChatStatus(null);
+      setSkillForm(null);
+      setPending([]);
+      setInput("");
+      return true;
+    },
+    [rememberSessionId],
+  );
+
+  const persistSession = useCallback(
+    async (turns: ChatTurn[]) => {
+      const stored = turns as StoredChatTurn[];
+      let id = sessionIdRef.current;
+      try {
+        if (!id) {
+          const first = stored.find((t) => t.role === "user" && t.content.trim());
+          const title = first?.content.trim().replace(/\s+/g, " ").slice(0, 80) || "New chat";
+          const res = await fetch("/api/agent/sessions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title }),
+          });
+          if (!res.ok) return;
+          const json = (await res.json()) as { session?: ChatSessionMeta };
+          if (!json.session?.id) return;
+          id = json.session.id;
+          rememberSessionId(id);
+          setSessions((prev) => [json.session!, ...prev.filter((s) => s.id !== id)]);
+        }
+        const res = await fetch(`/api/agent/sessions/${encodeURIComponent(id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ turns: stored }),
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as { session?: ChatSessionMeta };
+        if (json.session) {
+          setSessions((prev) => {
+            const rest = prev.filter((s) => s.id !== json.session!.id);
+            return [json.session!, ...rest];
+          });
+        }
+      } catch {
+        /* persistence is best-effort */
+      }
+    },
+    [rememberSessionId],
+  );
+
+  const startNewSession = useCallback(async () => {
+    setChat([]);
+    setChatStatus(null);
+    setSkillForm(null);
+    setPending([]);
+    setInput("");
+    setSessionsOpen(false);
+    try {
+      const res = await fetch("/api/agent/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "New chat" }),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as { session?: ChatSessionMeta };
+        if (json.session?.id) {
+          rememberSessionId(json.session.id);
+          setSessions((prev) => [json.session!, ...prev.filter((s) => s.id !== json.session!.id)]);
+          return;
+        }
+      }
+    } catch {
+      /* fall through */
+    }
+    rememberSessionId(null);
+  }, [rememberSessionId]);
 
   const refresh = useCallback(async (signalArg?: AbortSignal) => {
     setError(null);
@@ -314,6 +437,32 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
     void refresh(ac.signal);
     return () => ac.abort();
   }, [active, refresh]);
+
+  useEffect(() => {
+    if (!active || sessionsLoadedRef.current) return;
+    sessionsLoadedRef.current = true;
+    const ac = new AbortController();
+    void (async () => {
+      try {
+        const list = await refreshSessionList(ac.signal);
+        if (ac.signal.aborted) return;
+        let preferred: string | null = null;
+        try {
+          preferred = localStorage.getItem(SESSION_STORAGE_KEY);
+        } catch {
+          preferred = null;
+        }
+        const pick =
+          (preferred && list.find((s) => s.id === preferred)?.id) || list[0]?.id || null;
+        if (pick) {
+          await loadSession(pick, ac.signal);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => ac.abort();
+  }, [active, loadSession, refreshSessionList]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ block: "end" });
@@ -403,7 +552,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         error?: string;
       }>(res);
       if (!res.ok) throw new Error(json.error || `Assistant failed (${res.status})`);
-      setChat([
+      const withReply: ChatTurn[] = [
         ...nextChat,
         {
           role: "model",
@@ -412,7 +561,9 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
           ...(json.quickActions?.length ? { quickActions: json.quickActions } : {}),
           ...(json.pendingApproval ? { pendingApproval: json.pendingApproval } : {}),
         },
-      ]);
+      ];
+      setChat(withReply);
+      void persistSession(withReply);
       // Writes to calendar/wiki are staged until Approve — don't refresh as if applied.
       if (
         json.actions?.some(
@@ -463,6 +614,7 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
         error?: string;
       }>(res);
       if (!res.ok) throw new Error(json.error || `Could not ${decision} (${res.status})`);
+      let persisted: ChatTurn[] | null = null;
       setChat((prev) => {
         const next = [...prev];
         const turn = next[turnIndex];
@@ -477,8 +629,10 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
           content: json.reply || (decision === "approve" ? "Applied." : "Denied — nothing was written."),
           actions: json.actions ?? [],
         });
+        persisted = next;
         return next;
       });
+      if (persisted) void persistSession(persisted);
       if (
         decision === "approve" &&
         json.actions?.some((a) => a.ok && WIKI_WRITE_TOOLS.has(a.tool))
@@ -539,43 +693,130 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   const chipBtn = fbBtnChip;
   const unprocessed = messages.filter((m) => !m.processed).length;
 
+  const activeSessionTitle =
+    sessions.find((s) => s.id === sessionId)?.title ||
+    (chat.length ? "Current chat" : "New chat");
+
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-slate-950 text-lg leading-relaxed text-slate-50">
-      {/* Slim toolbar — no second “Assistant” title (AppShell already has AI). */}
+      {/* Slim toolbar — no second “Assistant” title on the full AI tab. */}
       <header className="flex shrink-0 items-center gap-2 border-b border-slate-800/80 px-3 py-2 sm:px-5">
-        <div
-          role="tablist"
-          aria-label="Assistant view"
-          className="flex gap-1 rounded-md bg-slate-900 p-0.5"
-        >
-          {(["chat", "wiki"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              role="tab"
-              aria-selected={view === v}
-              className={`rounded-md px-3.5 py-1.5 text-base font-medium ${
-                view === v ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"
-              }`}
-              onClick={() => selectView(v)}
-            >
-              {v === "chat" ? "Chat" : "Wiki"}
-            </button>
-          ))}
-        </div>
-        <div className="ml-auto flex items-center gap-1.5">
-          {chat.length > 0 && view === "chat" && busy !== "chat" ? (
-            <button
-              type="button"
-              className="rounded-md px-3 py-1.5 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200"
-              onClick={() => {
-                setChat([]);
-                setChatStatus(null);
-                setSkillForm(null);
-              }}
-            >
-              New
-            </button>
+        {isOverlay ? (
+          <p className="truncate text-base font-semibold tracking-wide text-white sm:text-lg">
+            Assistant
+          </p>
+        ) : (
+          <div
+            role="tablist"
+            aria-label="Assistant view"
+            className="flex gap-1 rounded-md bg-slate-900 p-0.5"
+          >
+            {(["chat", "wiki"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                role="tab"
+                aria-selected={view === v}
+                className={`rounded-md px-3.5 py-1.5 text-base font-medium ${
+                  view === v ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"
+                }`}
+                onClick={() => selectView(v)}
+              >
+                {v === "chat" ? "Chat" : "Wiki"}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="relative ml-auto flex min-w-0 items-center gap-1.5">
+          {view === "chat" ? (
+            <>
+              <button
+                type="button"
+                className="max-w-[10rem] truncate rounded-md border border-slate-700 px-2.5 py-1.5 text-sm text-slate-200 hover:border-slate-500 hover:bg-slate-900 sm:max-w-[14rem]"
+                onClick={() => setSessionsOpen((o) => !o)}
+                aria-expanded={sessionsOpen}
+                aria-haspopup="listbox"
+                title={activeSessionTitle}
+              >
+                {activeSessionTitle}
+              </button>
+              {sessionsOpen ? (
+                <div
+                  className="absolute right-0 top-full z-20 mt-1 w-[min(100vw-2rem,18rem)] overflow-hidden rounded-md border border-slate-700 bg-slate-950 shadow-xl"
+                  role="listbox"
+                  aria-label="Chat sessions"
+                >
+                  <button
+                    type="button"
+                    className="block w-full border-b border-slate-800 px-3 py-2 text-left text-sm font-medium text-sky-200 hover:bg-slate-900"
+                    onClick={() => void startNewSession()}
+                  >
+                    + New chat
+                  </button>
+                  <ul className="board-scrollbar max-h-64 overflow-y-auto py-1">
+                    {sessions.length === 0 ? (
+                      <li className="px-3 py-2 text-sm text-slate-500">No saved chats yet</li>
+                    ) : (
+                      sessions.map((s) => (
+                        <li key={s.id} className="flex items-stretch gap-0.5 px-1">
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={s.id === sessionId}
+                            className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-sm ${
+                              s.id === sessionId
+                                ? "bg-slate-800 text-white"
+                                : "text-slate-300 hover:bg-slate-900 hover:text-white"
+                            }`}
+                            onClick={() => {
+                              setSessionsOpen(false);
+                              void loadSession(s.id);
+                            }}
+                          >
+                            <span className="block truncate">{s.title}</span>
+                            <span className="block text-xs text-slate-500">
+                              {new Date(s.updatedAt).toLocaleString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                                hour: "numeric",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="shrink-0 rounded-md px-2 text-slate-500 hover:bg-rose-950/50 hover:text-rose-200"
+                            aria-label={`Delete ${s.title}`}
+                            onClick={() => {
+                              void (async () => {
+                                await fetch(`/api/agent/sessions/${encodeURIComponent(s.id)}`, {
+                                  method: "DELETE",
+                                });
+                                const list = await refreshSessionList();
+                                if (sessionIdRef.current === s.id) {
+                                  if (list[0]) await loadSession(list[0].id);
+                                  else await startNewSession();
+                                }
+                              })();
+                            }}
+                          >
+                            ×
+                          </button>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="rounded-md px-3 py-1.5 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200 disabled:opacity-50"
+                disabled={busy === "chat"}
+                onClick={() => void startNewSession()}
+              >
+                New
+              </button>
+            </>
           ) : null}
           {view === "chat" &&
           chat.some((m) => m.role === "model") &&
@@ -590,24 +831,26 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
               Save skill
             </button>
           ) : null}
-          <button
-            type="button"
-            className={`relative rounded-md px-3 py-1.5 text-sm font-medium ${
-              toolsOpen
-                ? "bg-slate-800 text-white"
-                : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
-            }`}
-            onClick={() => setToolsOpen((o) => !o)}
-            aria-expanded={toolsOpen}
-            aria-controls="ai-tools-panel"
-          >
-            Tools
-            {unprocessed > 0 ? (
-              <span className="ml-1.5 inline-flex min-w-[1.25rem] justify-center rounded-md bg-sky-600 px-1.5 text-xs text-white">
-                {unprocessed}
-              </span>
-            ) : null}
-          </button>
+          {!isOverlay ? (
+            <button
+              type="button"
+              className={`relative rounded-md px-3 py-1.5 text-sm font-medium ${
+                toolsOpen
+                  ? "bg-slate-800 text-white"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+              }`}
+              onClick={() => setToolsOpen((o) => !o)}
+              aria-expanded={toolsOpen}
+              aria-controls="ai-tools-panel"
+            >
+              Tools
+              {unprocessed > 0 ? (
+                <span className="ml-1.5 inline-flex min-w-[1.25rem] justify-center rounded-md bg-sky-600 px-1.5 text-xs text-white">
+                  {unprocessed}
+                </span>
+              ) : null}
+            </button>
+          ) : null}
           <button
             type="button"
             className="rounded-md px-3 py-1.5 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200 disabled:opacity-50"
@@ -617,6 +860,16 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
           >
             Refresh
           </button>
+          {onClose ? (
+            <button
+              type="button"
+              className="rounded-md px-2.5 py-1.5 text-lg leading-none text-slate-400 hover:bg-slate-900 hover:text-white"
+              onClick={onClose}
+              aria-label="Close assistant"
+            >
+              ×
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -1021,8 +1274,8 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
           )}
         </section>
 
-        {/* Tools drawer — inbox / todos / slack, off by default */}
-        {toolsOpen ? (
+        {/* Tools drawer — inbox / todos / slack, off by default (full AI tab only) */}
+        {toolsOpen && !isOverlay ? (
           <>
             <button
               type="button"
