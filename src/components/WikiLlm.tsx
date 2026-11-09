@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { WikiBrowser } from "@/components/WikiBrowser";
 
@@ -227,20 +227,20 @@ export function WikiLlm({ active = true }: { active?: boolean }) {
   const [pickedView, setPickedView] = useState<AiView | null>(null);
   const view = pickedView ?? storedView;
 
-  const unresolvedApproval = useMemo(() => {
-    for (let i = chat.length - 1; i >= 0; i -= 1) {
-      const m = chat[i];
-      if (m.role === "model" && m.pendingApproval && !m.approvalResolved) {
-        return { index: i, pending: m.pendingApproval };
-      }
+  let unresolvedApproval: { index: number; pending: PendingApproval } | null = null;
+  for (let i = chat.length - 1; i >= 0; i -= 1) {
+    const m = chat[i];
+    if (m.role === "model" && m.pendingApproval && !m.approvalResolved) {
+      unresolvedApproval = { index: i, pending: m.pendingApproval };
+      break;
     }
-    return null;
-  }, [chat]);
+  }
 
+  const unresolvedPendingId = unresolvedApproval?.pending.id ?? null;
   useEffect(() => {
-    if (!unresolvedApproval) return;
+    if (!unresolvedPendingId) return;
     approvalCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [unresolvedApproval?.pending.id]);
+  }, [unresolvedPendingId]);
   const [wikiRefreshKey, setWikiRefreshKey] = useState(0);
 
   const selectView = useCallback((next: AiView) => {
