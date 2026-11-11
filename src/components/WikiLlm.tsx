@@ -21,6 +21,8 @@ type Status = {
   gmailReady?: boolean;
   inboxAutoScanMinutes?: number;
   slackConfigured?: boolean;
+  stravaConfigured?: boolean;
+  stravaAccounts?: { accountKey: string; displayName: string; athleteName?: string }[];
 };
 
 type AgentAction = { tool: string; ok: boolean; label: string };
@@ -100,6 +102,7 @@ type AiView = "chat" | "wiki";
 
 const VIEW_STORAGE_KEY = "familyboard-ai-view";
 const SESSION_STORAGE_KEY = "familyboard-chat-session";
+const STRAVA_MEMBER_KEY = "familyboard-strava-member";
 const WIKI_WRITE_TOOLS = new Set([
   "create_wiki_page",
   "edit_wiki_section",
@@ -293,6 +296,13 @@ export function WikiLlm({
   const [sessions, setSessions] = useState<ChatSessionMeta[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [stravaMember, setStravaMember] = useState(() => {
+    try {
+      return localStorage.getItem(STRAVA_MEMBER_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [input, setInput] = useState("");
   const [pending, setPending] = useState<ChatAttachment[]>([]);
   const [skills, setSkills] = useState<SkillMeta[]>([]);
@@ -599,11 +609,18 @@ export function WikiLlm({
       setChatStatus("Still working (Gemini may be retrying) — hit Stop anytime.");
     }, 4000);
     try {
+      const member = stravaMember.trim();
       const res = await fetch("/api/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: nextChat.map(({ role, content, attachments }) => ({ role, content, attachments })),
+          ...(member
+            ? {
+                actorMember: member,
+                actorName: member,
+              }
+            : {}),
         }),
         signal: ac.signal,
       });
@@ -1349,6 +1366,94 @@ export function WikiLlm({
                   Close
                 </button>
               </div>
+
+              {status?.stravaConfigured ? (
+                <section className="rounded-md border border-slate-800 bg-slate-900/40 p-3">
+                  <h3 className="text-base font-semibold text-white">Strava</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-400">
+                    Each person links their own account. Pick who you are on this display, then connect.
+                  </p>
+                  <label className="mt-3 block text-sm text-slate-300">
+                    Who am I?
+                    <input
+                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-slate-400"
+                      placeholder="e.g. maya"
+                      value={stravaMember}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setStravaMember(v);
+                        try {
+                          if (v.trim()) localStorage.setItem(STRAVA_MEMBER_KEY, v.trim());
+                          else localStorage.removeItem(STRAVA_MEMBER_KEY);
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                      list="strava-member-suggestions"
+                    />
+                  </label>
+                  <datalist id="strava-member-suggestions">
+                    {(status.stravaAccounts ?? [])
+                      .filter((a) => a.accountKey.startsWith("board:"))
+                      .map((a) => (
+                        <option key={a.accountKey} value={a.accountKey.slice(6)} />
+                      ))}
+                  </datalist>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <a
+                      className={`${sideBtn} inline-flex no-underline`}
+                      href={
+                        stravaMember.trim()
+                          ? `/api/auth/strava?member=${encodeURIComponent(stravaMember.trim())}&name=${encodeURIComponent(stravaMember.trim())}&return=${encodeURIComponent("/?tab=ai")}`
+                          : undefined
+                      }
+                      aria-disabled={!stravaMember.trim()}
+                      onClick={(e) => {
+                        if (!stravaMember.trim()) e.preventDefault();
+                      }}
+                    >
+                      Link Strava
+                    </a>
+                    {stravaMember.trim() &&
+                    (status.stravaAccounts ?? []).some(
+                      (a) => a.accountKey === `board:${stravaMember.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`,
+                    ) ? (
+                      <button
+                        type="button"
+                        className={sideBtn}
+                        onClick={() => {
+                          const id = stravaMember
+                            .trim()
+                            .toLowerCase()
+                            .replace(/[^a-z0-9]+/g, "-")
+                            .replace(/^-+|-+$/g, "");
+                          void (async () => {
+                            await fetch("/api/auth/strava/logout", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ account: `board:${id}` }),
+                            });
+                            void refresh();
+                          })();
+                        }}
+                      >
+                        Unlink
+                      </button>
+                    ) : null}
+                  </div>
+                  {(status.stravaAccounts ?? []).length > 0 ? (
+                    <ul className="mt-3 space-y-1 text-sm text-slate-400">
+                      {(status.stravaAccounts ?? []).map((a) => (
+                        <li key={a.accountKey}>
+                          {a.displayName}
+                          {a.athleteName ? ` · ${a.athleteName}` : ""}{" "}
+                          <span className="text-slate-600">({a.accountKey})</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </section>
+              ) : null}
 
               <section>
                 <div className="mb-2 flex items-center justify-between gap-2">

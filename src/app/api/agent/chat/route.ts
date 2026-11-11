@@ -8,6 +8,7 @@ import {
   imagePromptNote,
   sanitizeAttachments,
 } from "@/lib/attachments";
+import { boardAccountKey, normalizeBoardMemberId } from "@/lib/strava";
 
 type ChatMessage = {
   role?: "user" | "model" | "assistant" | "system";
@@ -18,6 +19,9 @@ type ChatMessage = {
 
 type ChatBody = {
   messages?: ChatMessage[];
+  /** Board: which family member is chatting (for per-user Strava, etc.). */
+  actorMember?: string;
+  actorName?: string;
 };
 
 const MAX_HISTORY = 20;
@@ -60,11 +64,21 @@ export async function POST(request: Request) {
     );
   }
 
+  const memberId = body.actorMember ? normalizeBoardMemberId(body.actorMember) : "";
+  const actor =
+    memberId.length > 0
+      ? {
+          accountKey: boardAccountKey(memberId),
+          displayName: body.actorName?.trim() || memberId,
+        }
+      : undefined;
+
   try {
     const result = await runFamilyAgent({
       messages,
       redirectUri: getGoogleRedirectUri(request),
       channel: "board",
+      actor,
       signal: request.signal,
     });
     return NextResponse.json(result);
