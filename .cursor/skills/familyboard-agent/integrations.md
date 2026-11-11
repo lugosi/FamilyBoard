@@ -16,6 +16,7 @@ Read this when editing CatLink, Spotify, Hue, Nest, Google Calendar, Weather, or
 | `todos.json` | Legacy local todos only when wiki is not configured; with wiki, tasks live in `todos/list.md` |
 | `chat-conversations.json` | Slack bot short-term memory per DM / channel thread (30 min TTL) |
 | `agent-chat-sessions.json` | Board/AI web chat sessions (multi-conversation history; not wiki) |
+| `strava-accounts.json` | Per-person Strava OAuth tokens (`board:<member>` / `slack:<userId>`) |
 
 ## CatLink (`src/lib/catlink.ts`, `catlink-crypto.ts`)
 

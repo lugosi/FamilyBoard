@@ -40,7 +40,10 @@ const READ_ONLY_TOOLS = new Set([
   "search_web",
   "list_lights",
   "house_dashboard",
+  "strava_athlete",
+  "strava_recent_activities",
 ]);
+const LINK_STRAVA_WORDS = new Set(["link strava", "/strava", "connect strava"]);
 
 export type SlackBotState = {
   running: boolean;
@@ -214,6 +217,24 @@ async function handle(msg: Incoming): Promise<void> {
     return;
   }
 
+  if (LINK_STRAVA_WORDS.has(msg.text.trim().toLowerCase())) {
+    const { buildStravaAuthorizeUrl, isStravaConfigured, slackAccountKey } = await import("./strava");
+    if (!isStravaConfigured()) {
+      await reply("Strava isn't set up on FamilyBoard yet (STRAVA_CLIENT_ID / SECRET).");
+      state.handled += 1;
+      return;
+    }
+    const name = await getSlackUserName(msg.user);
+    const url = buildStravaAuthorizeUrl({
+      accountKey: slackAccountKey(msg.user),
+      displayName: name || undefined,
+      returnPath: "/?tab=ai",
+    });
+    await reply(`Connect *your* Strava here (opens browser): ${url}`);
+    state.handled += 1;
+    return;
+  }
+
   // Resolve a staged calendar/wiki review without calling the model.
   const decisionWord = msg.text.trim().toLowerCase();
   if (APPROVE_WORDS.has(decisionWord) || REJECT_WORDS.has(decisionWord)) {
@@ -273,12 +294,17 @@ async function handle(msg: Incoming): Promise<void> {
     };
     const turns: GeminiMessage[] = [...(await getChatHistory(key)), userTurn];
 
+    const { slackAccountKey } = await import("./strava");
     const result = await runFamilyAgent({
       messages: turns,
       redirectUri: getBackgroundGoogleRedirectUri(),
       channel: "slack",
       senderName: name,
       conversationKey: key,
+      actor: {
+        accountKey: slackAccountKey(msg.user),
+        displayName: name || undefined,
+      },
     });
     // Don't keep image bytes in the 30‑minute chat memory.
     await saveChatHistory(key, [

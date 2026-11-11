@@ -72,10 +72,18 @@ export type AgentResult = {
   pendingApproval?: PendingApprovalView;
 };
 
+export type AgentActor = {
+  /** Stable per-person key for per-user integrations (Strava, …). */
+  accountKey: import("./strava").StravaAccountKey;
+  displayName?: string;
+};
+
 export type AgentToolContext = {
   redirectUri: string;
   timeZone: string;
   channel?: AgentChannel;
+  /** Who is asking — used for per-user OAuth tools (Strava). */
+  actor?: AgentActor;
   /** Wiki pages read during this request (lowercased path key → exact path + sha). */
   wikiReads: Map<string, { path: string; sha: string }>;
   /**
@@ -461,6 +469,8 @@ function buildSystemPrompt(input: {
   wikiIndex: string | null;
   skillsIndex: string | null;
   devices: { hue: boolean; spotify: boolean; catlink: boolean };
+  stravaConfigured?: boolean;
+  actor?: AgentActor;
   senderName?: string;
 }): string {
   const lines = [
@@ -524,6 +534,20 @@ function buildSystemPrompt(input: {
     );
     if (input.senderName) lines.push(`The person messaging you is ${input.senderName}.`);
   }
+  if (input.stravaConfigured) {
+    lines.push(
+      "Strava: each person links their own account. Use strava_athlete / strava_recent_activities for the current speaker's workouts. If a tool returns authorizeUrl, share that link so they can connect — do not invent activities.",
+    );
+    if (input.actor?.displayName || input.actor?.accountKey) {
+      lines.push(
+        `Current Strava actor: ${input.actor.displayName || input.actor.accountKey} (${input.actor.accountKey}).`,
+      );
+    } else if (input.channel === "board") {
+      lines.push(
+        "No board Strava member is selected. If they ask about Strava, tell them to pick who they are (and Link Strava) in the AI tab.",
+      );
+    }
+  }
   if (input.wikiConfigured) {
     lines.push(
       "Family wiki: private markdown pages holding anything worth remembering (people, house, school, health, travel, recipes, notes). Folders:",
@@ -555,12 +579,17 @@ async function collectAgentTools(): Promise<{
   wikiIndex: string | null;
   skillsIndex: string | null;
   devices: Awaited<ReturnType<typeof deviceToolsAvailable>>;
+  stravaConfigured: boolean;
   timeZone: string;
 }> {
   const timeZone = getDefaultTimeZone();
   const googleLinked = Boolean((await readGoogleTokens())?.refresh_token);
   const wikiConfigured = isWikilmGithubConfigured();
   const devices = await deviceToolsAvailable();
+  const { buildStravaTools } = await import("./agent-strava-tools");
+  const { isStravaConfigured } = await import("./strava");
+  const stravaConfigured = isStravaConfigured();
+  const stravaTools = buildStravaTools();
 
   let wikiIndex: string | null = null;
   let skillsIndex: string | null = null;
@@ -580,6 +609,7 @@ async function collectAgentTools(): Promise<{
     ...(googleLinked ? [...calendarTools, ...sheetTools] : []),
     ...todoTools,
     ...buildDeviceTools(devices),
+    ...stravaTools,
     ...(wikiConfigured ? wikiTools : []),
   ];
   return {
@@ -590,6 +620,7 @@ async function collectAgentTools(): Promise<{
     wikiIndex,
     skillsIndex,
     devices,
+    stravaConfigured,
     timeZone,
   };
 }
@@ -599,6 +630,8 @@ export async function runFamilyAgent(input: {
   redirectUri: string;
   channel?: AgentChannel;
   senderName?: string;
+  /** Per-user identity for Strava (and future personal OAuth tools). */
+  actor?: AgentActor;
   signal?: AbortSignal;
   /** Slack conversation key — ties a pending review to later approve/cancel replies. */
   conversationKey?: string;
@@ -616,12 +649,15 @@ export async function runFamilyAgent(input: {
     wikiIndex: packed.wikiIndex,
     skillsIndex: packed.skillsIndex,
     devices: packed.devices,
+    stravaConfigured: packed.stravaConfigured,
+    actor: input.actor,
     senderName: input.senderName,
   });
   const ctx: ToolContext = {
     redirectUri: input.redirectUri,
     timeZone,
     channel,
+    actor: input.actor,
     wikiReads: new Map(),
     skipWriteApproval: input.skipWriteApproval,
   };
