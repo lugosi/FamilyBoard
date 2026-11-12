@@ -85,8 +85,9 @@ test("Strava summary prefers volume vs Relative Effort when suffer_score present
       { weekStart: "2026-11-10", distance_m: 18000, moving_time_s: 5400, suffer_score: 62 },
     ],
     bySport: [
-      { sport: "Run", distance_m: 20000, count: 4, suffer_score: 70 },
-      { sport: "Ride", distance_m: 10000, count: 2, suffer_score: 32 },
+      { sport: "Run", distance_m: 20000, moving_time_s: 7200, count: 4, suffer_score: 70 },
+      { sport: "HIIT", distance_m: 0, moving_time_s: 2400, count: 3, suffer_score: 45 },
+      { sport: "Ride", distance_m: 10000, moving_time_s: 3600, count: 2, suffer_score: 32 },
     ],
   });
   assert.equal(charts.length, 2);
@@ -95,8 +96,15 @@ test("Strava summary prefers volume vs Relative Effort when suffer_score present
   assert.equal(charts[0].series[0].unit, "km");
   assert.equal(charts[0].series[1].unit, "RE");
   assert.match(charts[0].rightAxisLabel || "", /Relative Effort/);
-  assert.match(charts[1].title || "", /Relative Effort/);
+  assert.match(charts[1].title || "", /time vs Relative Effort/);
+  assert.equal(charts[1].series[0].unit, "h");
   assert.equal(charts[1].series[1].unit, "RE");
+  assert.match(charts[1].leftAxisLabel || "", /Moving time/);
+  // HIIT has no distance but must still appear (sorted by time).
+  assert.deepEqual(
+    charts[1].series[0].data.map((d) => d.label),
+    ["Run", "Ride", "HIIT"],
+  );
   const out = injectChatCharts("Here is your week.", charts);
   assert.match(out, /```chart/);
   const extracted = extractChatChartsFromText(out);
@@ -111,13 +119,15 @@ test("Strava summary falls back to distance vs time without suffer_score", () =>
       { weekStart: "2026-11-10", distance_m: 18000, moving_time_s: 5400 },
     ],
     bySport: [
-      { sport: "Run", distance_m: 20000, count: 4 },
-      { sport: "Ride", distance_m: 10000, count: 2 },
+      { sport: "Run", distance_m: 20000, moving_time_s: 7200, count: 4 },
+      { sport: "HIIT", distance_m: 0, moving_time_s: 1800, count: 2 },
     ],
   });
   assert.equal(charts[0].series[1].unit, "h");
   assert.match(charts[0].rightAxisLabel || "", /Moving time/);
+  assert.equal(charts[1].series[0].unit, "h");
   assert.equal(charts[1].series[1].unit, "n");
+  assert.ok(charts[1].series[0].data.some((d) => d.label === "HIIT"));
 });
 
 test("PNG with bundled fonts still has text when system fonts are off", async () => {

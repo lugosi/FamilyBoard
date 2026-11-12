@@ -315,27 +315,28 @@ export function chartsFromStravaSummary(
     }
   }
 
+  // Sport mix uses moving time (not distance) so HIIT / strength / yoga still appear.
   const sports = [...(summary.bySport ?? [])]
-    .filter((s) => (s.distance_m || 0) > 0 || (s.count || 0) > 0)
-    .sort((a, b) => b.distance_m - a.distance_m)
+    .filter((s) => (s.moving_time_s || 0) > 0 || (s.count || 0) > 0)
+    .sort((a, b) => (b.moving_time_s || 0) - (a.moving_time_s || 0))
     .slice(0, 8);
   const hasSportLoad = sports.some((s) => (s.suffer_score ?? 0) > 0);
   if (sports.length > 1) {
     if (hasSportLoad) {
       out.push({
         type: "combo",
-        title: "Sport mix: distance vs Relative Effort",
-        leftAxisLabel: `Distance (${unit})`,
+        title: "Sport mix: time vs Relative Effort",
+        leftAxisLabel: "Moving time (h)",
         rightAxisLabel: "Relative Effort",
         xAxisLabel: "Sport",
         series: [
           {
-            name: "Distance",
-            unit,
+            name: "Moving time",
+            unit: "h",
             color: DEFAULT_COLORS[1],
             data: sports.map((s) => ({
               label: s.sport.slice(0, 16),
-              value: toDist(s.distance_m || 0),
+              value: toHours(s.moving_time_s || 0),
             })),
           },
           {
@@ -352,18 +353,18 @@ export function chartsFromStravaSummary(
     } else {
       out.push({
         type: "combo",
-        title: "Sport mix: distance vs sessions",
-        leftAxisLabel: `Distance (${unit})`,
+        title: "Sport mix: time vs sessions",
+        leftAxisLabel: "Moving time (h)",
         rightAxisLabel: "Sessions (n)",
         xAxisLabel: "Sport",
         series: [
           {
-            name: "Distance",
-            unit,
+            name: "Moving time",
+            unit: "h",
             color: DEFAULT_COLORS[1],
             data: sports.map((s) => ({
               label: s.sport.slice(0, 16),
-              value: toDist(s.distance_m || 0),
+              value: toHours(s.moving_time_s || 0),
             })),
           },
           {
