@@ -536,7 +536,7 @@ function buildSystemPrompt(input: {
   }
   if (input.stravaConfigured) {
     lines.push(
-      "Strava: each person links their own account. Use strava_athlete / strava_recent_activities for the current speaker's workouts. If a tool returns authorizeUrl, share that link so they can connect — do not invent activities.",
+      "Strava: each person links their own account. Use strava_training_summary for a 30-day training recap (local cache: first sync pulls 30 days, later syncs only new activities), strava_recent_activities for a short list, strava_athlete for profile. If a tool returns authorizeUrl, share that link so they can connect — do not invent activities. These are REST-based board summaries, not Strava's official MCP analytics.",
     );
     if (input.actor?.displayName || input.actor?.accountKey) {
       lines.push(
