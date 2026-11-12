@@ -87,3 +87,4 @@ Restart FamilyBoard. The log shows `[slack] Socket Mode bot starting`, and the A
 | Bot replies "assistant isn't set up yet" | Set `GEMINI_API_KEY` |
 | Changes to scopes/events | Reinstall the app after editing the manifest |
 | Approval message has no Approve / Deny buttons | Turn **Interactivity** on (manifest `interactivity.is_enabled: true`), then reinstall; Socket Mode must be enabled |
+| `_Couldn't attach chart images…_` | Needs bot scope **`files:write`**, then **Reinstall to Workspace**, then update TrueNAS `SLACK_BOT_TOKEN` if Slack issued a new `xoxb-…`. The message now includes Slack’s error (`missing_scope`, `invalid_arguments`, …). Restart FamilyBoard after deploying a build that includes chart PNG support. |
