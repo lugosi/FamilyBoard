@@ -11,6 +11,7 @@ import {
   MAX_ATTACHMENTS,
   type ChatAttachment,
 } from "./attachments";
+import { stripChatChartFences } from "./chat-chart";
 import { clearChatHistory, getChatHistory, saveChatHistory } from "./chat-memory";
 import {
   downloadSlackFile,
@@ -322,7 +323,7 @@ async function handle(msg: Incoming): Promise<void> {
         ? `\n\n*Actions — reply with one:*\n${result.quickActions.map((a) => `• ${a.label}`).join("\n")}`
         : "";
     const fileNotes = problems.length ? `\n${problems.map((p) => `⚠️ ${p}`).join("\n")}` : "";
-    const body = `${result.reply}${footer}${quick}${fileNotes}`;
+    const body = stripChatChartFences(`${result.reply}${footer}${quick}${fileNotes}`);
     if (result.pendingApproval) {
       const fallback = `${body}\n\n⏸ Review before writing — tap Approve / Deny (or reply *approve* / *deny*)`;
       await postSlackMessage({

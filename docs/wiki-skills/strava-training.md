@@ -30,8 +30,9 @@ Data comes from FamilyBoard's local cache (`strava_training_summary`), not Strav
    - Week-over-week from `byWeek` (up/down vs prior week; flag big spikes or empty weeks)
    - Sport mix from `bySport`
    - One highlight from `recent` if useful
-6. Give 1–3 practical next steps (volume, easy days, consistency). If HR/`suffer_score` is missing on many activities, say load is incomplete.
-7. Do not claim medical diagnosis, guaranteed race times, or Strava Premium analytics the cache does not have.
+6. On Board/AI chat (not Slack), after the recap emit one fenced `chart` JSON block: bar of `byWeek` distance (label = weekStart, value = km or mi) or `bySport` when they ask about sport mix. Use tool numbers only.
+7. Give 1–3 practical next steps (volume, easy days, consistency). If HR/`suffer_score` is missing on many activities, say load is incomplete.
+8. Do not claim medical diagnosis, guaranteed race times, or Strava Premium analytics the cache does not have.
 
 ## Notes
 
