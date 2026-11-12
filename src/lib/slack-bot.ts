@@ -323,6 +323,7 @@ async function handle(msg: Incoming): Promise<void> {
         ? `\n\n*Actions — reply with one:*\n${result.quickActions.map((a) => `• ${a.label}`).join("\n")}`
         : "";
     const fileNotes = problems.length ? `\n${problems.map((p) => `⚠️ ${p}`).join("\n")}` : "";
+    // Same ```chart fences as the AI tab; convert to Unicode bars for Slack.
     const body = stripChatChartFences(`${result.reply}${footer}${quick}${fileNotes}`);
     if (result.pendingApproval) {
       const fallback = `${body}\n\n⏸ Review before writing — tap Approve / Deny (or reply *approve* / *deny*)`;
