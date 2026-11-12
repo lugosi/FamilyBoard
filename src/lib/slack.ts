@@ -56,6 +56,34 @@ export async function slackApi<T extends SlackResponse>(
   return json;
 }
 
+/** Some Slack file methods only accept form-urlencoded bodies. */
+async function slackApiForm<T extends SlackResponse>(
+  method: string,
+  token: string,
+  fields: Record<string, string>,
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase()}/${method}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+      },
+      body: new URLSearchParams(fields),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      cache: "no-store",
+    });
+  } catch (e) {
+    throw new Error(`Slack ${method} unreachable: ${e instanceof Error ? e.message : e}`);
+  }
+  const json = (await res.json().catch(() => null)) as T | null;
+  if (!res.ok || !json?.ok) {
+    throw new Error(`Slack ${method}: ${json?.error ?? `HTTP ${res.status}`}`);
+  }
+  return json;
+}
+
 function requireConfig(): SlackConfig {
   const cfg = getSlackConfig();
   if (!cfg) throw new Error("slack_not_configured");
@@ -189,6 +217,8 @@ export async function postSlackMessage(input: {
 /**
  * Upload a file (e.g. chart PNG) into a channel/thread via Slack's external upload API.
  * Needs `files:write` on the bot token.
+ *
+ * Flow: getUploadURLExternal (form) → POST raw bytes → completeUploadExternal.
  */
 export async function uploadSlackFile(input: {
   channel: string;
@@ -200,26 +230,32 @@ export async function uploadSlackFile(input: {
 }): Promise<void> {
   const { botToken } = requireConfig();
   const length = input.data.byteLength;
-  const prep = await slackApi<
+  if (!length) throw new Error("Slack file upload: empty file");
+
+  // Docs require form-urlencoded for getUploadURLExternal (JSON often returns invalid_arguments).
+  const prep = await slackApiForm<
     SlackResponse & { upload_url?: string; file_id?: string }
   >("files.getUploadURLExternal", botToken, {
     filename: input.filename,
-    length,
+    length: String(length),
   });
   if (!prep.upload_url || !prep.file_id) {
     throw new Error("Slack files.getUploadURLExternal missing upload_url/file_id");
   }
 
+  // Raw bytes (not multipart). Do not send Authorization to the upload host.
   const put = await fetch(prep.upload_url, {
     method: "POST",
-    headers: {
-      "Content-Type": input.mimeType || "application/octet-stream",
-    },
     body: new Uint8Array(input.data),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     cache: "no-store",
   });
-  if (!put.ok) throw new Error(`Slack file PUT failed: HTTP ${put.status}`);
+  if (!put.ok) {
+    const detail = (await put.text().catch(() => "")).slice(0, 120);
+    throw new Error(
+      `Slack file PUT failed: HTTP ${put.status}${detail ? ` ${detail}` : ""}`,
+    );
+  }
 
   await slackApi("files.completeUploadExternal", botToken, {
     files: [

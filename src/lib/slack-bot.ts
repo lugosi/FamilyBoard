@@ -369,11 +369,13 @@ async function handle(msg: Incoming): Promise<void> {
           });
         }
       } catch (e) {
-        const hint =
-          e instanceof Error && /missing_scope|not_allowed_token_type|invalid_auth/i.test(e.message)
-            ? " (add files:write to the Slack bot and reinstall the app)"
-            : "";
-        await reply(`_Couldn't attach chart images${hint}._`);
+        const message = e instanceof Error ? e.message : String(e);
+        state.lastError = `Chart upload: ${message}`;
+        const scopeHint = /missing_scope|not_allowed_token_type|invalid_auth/i.test(message)
+          ? " Add *files:write*, reinstall the Slack app, and update `SLACK_BOT_TOKEN`."
+          : "";
+        const clipped = message.replace(/\s+/g, " ").slice(0, 160);
+        await reply(`_Couldn't attach chart images: \`${clipped}\`.${scopeHint}_`);
       }
     }
     state.handled += 1;
