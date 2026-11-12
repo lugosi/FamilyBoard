@@ -38,3 +38,4 @@ Data comes from FamilyBoard's local cache (`strava_training_summary`), not Strav
 - Inspiration for the coaching lens: public Strava coach skills (e.g. [srothgan/strava-claude-skill](https://github.com/srothgan/strava-claude-skill)) — adapted here for FamilyBoard REST tools and the 30-day cache.
 - Cache file: `DATA_DIR/strava-activity-cache.json`. Unlinking Strava clears that person's cache.
 - Prefer this wiki page when present; the board also injects a built-in copy of this skill when Strava is configured.
+- The board seeds this file automatically when Strava + wiki are configured (or via **Add skill to wiki** in AI Tools). Do not hand-copy unless you are editing offline.

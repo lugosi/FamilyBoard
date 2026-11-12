@@ -75,6 +75,9 @@ const blobCache = new Map<string, string>();
 /** Default private family wiki; override with WIKILM_GITHUB_REPO if needed. */
 export const DEFAULT_WIKILM_GITHUB_REPO = "lugosi/family-wiki";
 
+/** Seeded starter skill path (relative to wiki root). */
+export const STRAVA_TRAINING_SKILL_PATH = `${SKILLS_FOLDER}/strava-training.md`;
+
 export function getWikilmGithubConfig(): WikiConfig | null {
   const token = process.env.WIKILM_GITHUB_TOKEN?.trim();
   if (!token) return null;
@@ -565,6 +568,30 @@ export async function saveWikiPageRaw(input: {
     : newWikiPath(input.path, cfg.basePath);
   const content = withChanges(input.content, { updated: todayInFamilyZone() });
   return putFile(cfg, rel, content, input.sha, `wiki: ${input.sha ? "edit" : "add"} ${rel}`);
+}
+
+/**
+ * Create a skill (or any wiki page) only if it does not already exist.
+ * Used to seed starter skills without clobbering family edits.
+ */
+export async function ensureWikiSkillIfMissing(input: {
+  path: string;
+  content: string;
+  commitMessage?: string;
+}): Promise<{ status: "created" | "exists"; path: string; page?: WikiPage }> {
+  const cfg = requireConfig();
+  const rel = newWikiPath(input.path, cfg.basePath);
+  const existing = await fetchPage(cfg, rel);
+  if (existing) return { status: "exists", path: rel, page: existing };
+  const content = withChanges(input.content, { updated: todayInFamilyZone() });
+  const page = await putFile(
+    cfg,
+    rel,
+    content,
+    undefined,
+    input.commitMessage ?? `wiki: add ${rel}`,
+  );
+  return { status: "created", path: rel, page };
 }
 
 /** Save a reusable skill page under skills/; replacing an existing skill must be explicit. */

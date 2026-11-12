@@ -77,6 +77,6 @@ Peanuts (EpiPen in the blue bag).
 
 ### Starter skills (optional)
 
-Reusable how-tos live under `skills/` in the wiki. FamilyBoard ships a ready-to-paste Strava training skill at [`docs/wiki-skills/strava-training.md`](wiki-skills/strava-training.md) (30-day cache analysis). On a board with the wiki linked, paste that file into `skills/strava-training.md` via the Wiki view, or ask the assistant to create that page. A built-in copy is already injected when Strava is configured; the wiki page lets you customize steps.
+Reusable how-tos live under `skills/` in the wiki. When **Strava** and the wiki are both configured, FamilyBoard **auto-creates** `skills/strava-training.md` if it is missing (never overwrites an existing page). You can also tap **Add skill to wiki** under AI → Tools → Strava. Template source: [`docs/wiki-skills/strava-training.md`](wiki-skills/strava-training.md). A built-in copy is also injected into the assistant when Strava is configured.
 
 The repo is private, but anything you store is readable by whoever holds the token and by the assistant (Gemini). Think twice before storing things like full card numbers.
