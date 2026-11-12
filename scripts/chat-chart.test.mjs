@@ -110,7 +110,7 @@ test("Strava weekly chart stacks sports by time + Relative Effort line", () => {
       { sport: "Ride", distance_m: 5000, moving_time_s: 3000, count: 2, suffer_score: 10 },
     ],
   });
-  assert.equal(charts.length, 2);
+  assert.equal(charts.length, 1);
   const weekly = charts[0];
   assert.equal(weekly.type, "combo");
   assert.equal(weekly.stack, true);
@@ -122,14 +122,6 @@ test("Strava weekly chart stacks sports by time + Relative Effort line", () => {
   assert.ok(weekly.series.every((s) => s.unit === "h" || s.unit === "RE"));
   assert.equal(weekly.series[weekly.series.length - 1].unit, "RE");
   assert.ok(weekly.series.some((s) => s.name === "HIIT"));
-
-  const mix = charts[1];
-  assert.match(mix.title || "", /time vs Relative Effort/);
-  assert.equal(mix.series[0].unit, "h");
-  assert.deepEqual(
-    mix.series[0].data.map((d) => d.label),
-    ["Run", "HIIT", "Ride"],
-  );
 });
 
 test("Strava monthly chart stacks sports when period=month", () => {
@@ -228,11 +220,11 @@ test("Strava weekly chart uses time without suffer_score", () => {
       { sport: "Yoga", distance_m: 0, moving_time_s: 1200, count: 1 },
     ],
   });
+  assert.equal(charts.length, 1);
   assert.equal(charts[0].stack, true);
   assert.match(charts[0].leftAxisLabel || "", /Moving time/);
   assert.equal(charts[0].series.every((s) => s.unit === "h"), true);
-  assert.equal(charts[1].series[0].unit, "h");
-  assert.ok(charts[1].series[0].data.some((d) => d.label === "HIIT"));
+  assert.ok(charts[0].series.some((s) => s.name === "HIIT"));
 });
 
 test("PNG with bundled fonts still has text when system fonts are off", async () => {
