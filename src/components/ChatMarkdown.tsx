@@ -1,10 +1,19 @@
 "use client";
 
-import { useMemo } from "react";
+import { Children, isValidElement, useMemo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ChatChart } from "@/components/ChatChart";
+import { parseChatChart } from "@/lib/chat-chart";
 
 const linkClass = "text-sky-300 underline underline-offset-2 hover:text-sky-200";
+
+function codeText(children: ReactNode): string {
+  return Children.toArray(children)
+    .map((c) => (typeof c === "string" || typeof c === "number" ? String(c) : ""))
+    .join("")
+    .replace(/\n$/, "");
+}
 
 const components: Components = {
   p: ({ children }) => (
@@ -59,11 +68,22 @@ const components: Components = {
         {children}
       </code>
     ),
-  pre: ({ children }) => (
-    <pre className="board-scrollbar my-2 overflow-x-auto rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm leading-relaxed">
-      {children}
-    </pre>
-  ),
+  pre: ({ children }) => {
+    const only = Children.toArray(children)[0];
+    if (isValidElement<{ className?: string; children?: ReactNode }>(only)) {
+      const className = only.props.className ?? "";
+      const lang = /language-([\w-]+)/.exec(className)?.[1]?.toLowerCase();
+      if (lang === "chart") {
+        const spec = parseChatChart(codeText(only.props.children));
+        if (spec) return <ChatChart spec={spec} />;
+      }
+    }
+    return (
+      <pre className="board-scrollbar my-2 overflow-x-auto rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm leading-relaxed">
+        {children}
+      </pre>
+    );
+  },
   table: ({ children }) => (
     <div className="board-scrollbar my-2 overflow-x-auto">
       <table className="w-full border-collapse text-left text-sm tabular-nums">{children}</table>
@@ -83,6 +103,7 @@ const components: Components = {
 /**
  * GitHub-flavored Markdown with no raw HTML. `onRelativeLink` receives links
  * without a scheme (e.g. wiki cross-links like `../people/maya.md`).
+ * Fenced ` ```chart ` JSON blocks render as inline SVG charts.
  */
 export function ChatMarkdown({
   children,
