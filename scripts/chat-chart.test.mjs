@@ -43,13 +43,14 @@ test("rejects invalid charts", () => {
   assert.equal(parseChatChart(`{"type":"bar","data":[]}`), null);
 });
 
-test("strips chart fences for Slack", () => {
+test("strips chart fences for Slack into Unicode bars", () => {
   const out = stripChatChartFences(
-    `Hello\n\`\`\`chart\n{"type":"bar","title":"Weekly km","data":[{"label":"W1","value":3}]}\n\`\`\`\nDone`,
+    `Hello\n\`\`\`chart\n{"type":"bar","title":"Weekly km","data":[{"label":"W1","value":3},{"label":"W2","value":6}]}\n\`\`\`\nDone`,
   );
   assert.match(out, /\*Weekly km\*/);
-  assert.doesNotMatch(out, /```/);
   assert.match(out, /W1/);
+  assert.match(out, /█/);
+  assert.doesNotMatch(out, /```chart/);
 });
 
 test("injects charts when the model omits fences", () => {

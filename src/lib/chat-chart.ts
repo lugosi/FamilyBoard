@@ -115,16 +115,12 @@ export function parseChatChart(raw: string): ChatChartSpec | null {
   };
 }
 
-/** Replace ```chart … ``` fences with a short Slack-safe line. */
+/** Replace ```chart … ``` fences with Unicode bars (Slack / plain-text surfaces). */
 export function stripChatChartFences(text: string): string {
   return text.replace(/```chart\s*([\s\S]*?)```/gi, (_full, body: string) => {
     const spec = parseChatChart(String(body));
     if (!spec) return "_(chart)_";
-    const title = spec.title || "Chart";
-    const first = spec.series[0]?.data ?? [];
-    const bits = first.slice(0, 6).map((p) => `${p.label} ${formatChartValue(p.value, spec.unit)}`);
-    const more = first.length > 6 ? ` …+${first.length - 6}` : "";
-    return `*${title}*${bits.length ? `: ${bits.join(", ")}${more}` : ""}`;
+    return formatSlackChart(spec);
   });
 }
 
@@ -148,8 +144,8 @@ export function chatChartFences(charts: ChatChartSpec[]): string {
 }
 
 /**
- * Ensure board replies include charts from tools. Skips when fences already exist
- * (model emitted them) or when there is nothing to attach.
+ * Attach tool charts as ```chart fences (same for AI tab and Slack).
+ * Skips when fences already exist or there is nothing to attach.
  */
 export function injectChatCharts(reply: string, charts: ChatChartSpec[]): string {
   if (!charts.length) return reply;
@@ -157,6 +153,21 @@ export function injectChatCharts(reply: string, charts: ChatChartSpec[]): string
   const fences = chatChartFences(charts);
   const base = reply.trim();
   return base ? `${base}\n\n${fences}` : fences;
+}
+
+/** Unicode bars when a surface cannot render SVG (Slack). */
+export function formatSlackChart(spec: ChatChartSpec): string {
+  const series = spec.series[0];
+  if (!series?.data.length) return "";
+  const max = Math.max(...series.data.map((p) => Math.abs(p.value)), 1e-6);
+  const width = 10;
+  const lines = series.data.map((p) => {
+    const filled = Math.max(0, Math.round((Math.abs(p.value) / max) * width));
+    const bar = "█".repeat(filled) + "░".repeat(width - filled);
+    return `${p.label} ${bar} ${formatChartValue(p.value, spec.unit)}`;
+  });
+  const title = spec.title ? `*${spec.title}*` : "*Chart*";
+  return `${title}\n\`\`\`\n${lines.join("\n")}\n\`\`\``;
 }
 
 export function chartsFromStravaSummary(
