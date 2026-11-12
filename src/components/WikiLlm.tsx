@@ -25,6 +25,7 @@ type Status = {
   stravaAccounts?: { accountKey: string; displayName: string; athleteName?: string }[];
   stravaRedirectUri?: string;
   stravaCallbackDomain?: string;
+  stravaTrainingSkillInWiki?: boolean;
   publicAppUrl?: string | null;
 };
 
@@ -1465,6 +1466,75 @@ export function WikiLlm({
                       </button>
                     ) : null}
                   </div>
+                  {status.wikilmGithubConfigured ? (
+                    <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm text-slate-400">
+                      {status.stravaTrainingSkillInWiki ? (
+                        <p>
+                          Training skill is in the wiki as{" "}
+                          <button
+                            type="button"
+                            className="text-sky-300 underline-offset-2 hover:underline"
+                            onClick={() => {
+                              setWikiFocus({ path: "skills/strava-training.md", nonce: Date.now() });
+                              setPickedView("wiki");
+                              setToolsOpen(false);
+                            }}
+                          >
+                            skills/strava-training.md
+                          </button>
+                          .
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="flex-1">
+                            Add the 30-day training analysis skill to the wiki (one click — no copy/paste).
+                          </p>
+                          <button
+                            type="button"
+                            className={sideBtn}
+                            disabled={busy === "strava-skill"}
+                            onClick={() => {
+                              void (async () => {
+                                setBusy("strava-skill");
+                                setError(null);
+                                try {
+                                  const res = await fetch("/api/wiki/control", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ action: "ensure_strava_training_skill" }),
+                                  });
+                                  const json = (await res.json()) as {
+                                    status?: string;
+                                    path?: string;
+                                    error?: string;
+                                  };
+                                  if (!res.ok) throw new Error(json.error || `Failed (${res.status})`);
+                                  setNote(
+                                    json.status === "created"
+                                      ? `Added ${json.path ?? "skills/strava-training.md"} to the wiki`
+                                      : `Wiki already has ${json.path ?? "skills/strava-training.md"}`,
+                                  );
+                                  setWikiRefreshKey((k) => k + 1);
+                                  void refresh();
+                                } catch (e) {
+                                  setError(e instanceof Error ? e.message : "Could not add skill");
+                                } finally {
+                                  setBusy(null);
+                                }
+                              })();
+                            }}
+                          >
+                            {busy === "strava-skill" ? "Adding…" : "Add skill to wiki"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-xs text-slate-500">
+                      Link the family wiki to auto-install the training skill under{" "}
+                      <code className="text-slate-400">skills/</code>.
+                    </p>
+                  )}
                   {(status.stravaAccounts ?? []).length > 0 ? (
                     <ul className="mt-3 space-y-1 text-sm text-slate-400">
                       {(status.stravaAccounts ?? []).map((a) => (

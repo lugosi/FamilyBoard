@@ -7,9 +7,16 @@ import {
   saveWikiPageRaw,
   wikiErrorStatus,
 } from "@/lib/wikilm-github";
+import { ensureStravaTrainingWikiSkill } from "@/lib/wiki-skill-seeds";
+import { isStravaConfigured } from "@/lib/strava";
 
 type ControlBody = {
-  action?: "save_page" | "create_page" | "move_page" | "delete_page";
+  action?:
+    | "save_page"
+    | "create_page"
+    | "move_page"
+    | "delete_page"
+    | "ensure_strava_training_skill";
   path?: string;
   newPath?: string;
   /** Raw markdown (frontmatter included) for save_page. */
@@ -83,6 +90,16 @@ export async function POST(request: Request) {
         }
         const page = await deleteWikiPage({ path: body.path, sha: body.sha });
         return NextResponse.json({ deleted: page });
+      }
+      case "ensure_strava_training_skill": {
+        if (!isStravaConfigured()) {
+          return NextResponse.json(
+            { error: "Set STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET first" },
+            { status: 501 },
+          );
+        }
+        const result = await ensureStravaTrainingWikiSkill();
+        return NextResponse.json(result);
       }
       default:
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });

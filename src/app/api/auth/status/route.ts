@@ -10,6 +10,7 @@ import { isSlackConfigured } from "@/lib/slack";
 import { getInboxAutoScanMinutes } from "@/lib/background";
 import { getConfiguredPublicAppUrl } from "@/lib/app-url";
 import { getStravaRedirectUri, isStravaConfigured, listStravaAccounts } from "@/lib/strava";
+import { stravaTrainingSkillPresentInWiki } from "@/lib/wiki-skill-seeds";
 
 export async function GET(request: Request) {
   const google = await readGoogleTokens();
@@ -21,6 +22,7 @@ export async function GET(request: Request) {
   const catlinkLinked = await isCatlinkLinked();
   const googleLinked = Boolean(google?.refresh_token);
   const stravaConfigured = isStravaConfigured();
+  const wikiConfigured = isWikilmGithubConfigured();
   const stravaAccounts = stravaConfigured
     ? (await listStravaAccounts()).map((a) => ({
         accountKey: a.accountKey,
@@ -34,6 +36,15 @@ export async function GET(request: Request) {
     stravaCallbackDomain = new URL(stravaRedirectUri).hostname;
   } catch {
     stravaCallbackDomain = "";
+  }
+
+  let stravaTrainingSkillInWiki = false;
+  if (stravaConfigured && wikiConfigured) {
+    try {
+      stravaTrainingSkillInWiki = await stravaTrainingSkillPresentInWiki();
+    } catch {
+      stravaTrainingSkillInWiki = false;
+    }
   }
 
   return NextResponse.json({
@@ -53,7 +64,7 @@ export async function GET(request: Request) {
     catlinkLinked,
     catlinkConfigured: catlinkLinked || getCatlinkEnvReady(),
     geminiConfigured: isGeminiConfigured(),
-    wikilmGithubConfigured: isWikilmGithubConfigured(),
+    wikilmGithubConfigured: wikiConfigured,
     gmailReady: googleLinked,
     inboxAutoScanMinutes: getInboxAutoScanMinutes(),
     slackConfigured: isSlackConfigured(),
@@ -61,6 +72,7 @@ export async function GET(request: Request) {
     stravaAccounts,
     stravaRedirectUri,
     stravaCallbackDomain,
+    stravaTrainingSkillInWiki,
     publicAppUrl: getConfiguredPublicAppUrl(),
   });
 }

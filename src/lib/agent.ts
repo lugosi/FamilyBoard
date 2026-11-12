@@ -603,8 +603,16 @@ async function collectAgentTools(): Promise<{
   let wikiIndex: string | null = null;
   let skillsIndex: string | null = null;
   if (wikiConfigured) {
+    if (stravaConfigured) {
+      try {
+        const { ensureStravaTrainingWikiSkill } = await import("./wiki-skill-seeds");
+        await ensureStravaTrainingWikiSkill();
+      } catch {
+        /* seed is best-effort; chat still works with the built-in skill */
+      }
+    }
     try {
-      const pages = await listWikiPages();
+      const pages = await listWikiPages({ bypassCache: stravaConfigured });
       const skills = pages.filter((p) => isSkillPath(p.path));
       wikiIndex = buildWikiIndex(pages.filter((p) => !isSkillPath(p.path)), WIKI_INDEX_BUDGET);
       skillsIndex = skills.length ? buildWikiIndex(skills, SKILLS_INDEX_BUDGET) : null;
