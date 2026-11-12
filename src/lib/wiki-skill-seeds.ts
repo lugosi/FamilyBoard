@@ -78,7 +78,7 @@ export async function ensureStravaTrainingWikiSkill(): Promise<{
   if (!seedInFlight) {
     seedInFlight = ensureWikiSkillIfMissing({
       path: STRAVA_TRAINING_SKILL_PATH,
-      markdown: STRAVA_TRAINING_SKILL_MARKDOWN,
+      content: STRAVA_TRAINING_SKILL_MARKDOWN,
       commitMessage: "skill: add strava-training (board seed)",
     })
       .then((result) => {
