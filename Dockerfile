@@ -18,7 +18,9 @@ ENV PORT=3000
 ENV APP_PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-RUN addgroup --system --gid 1001 nodejs \
+# System fonts for resvg Slack chart PNGs (also bundle DejaVu under public/fonts/).
+RUN apk add --no-cache fontconfig font-dejavu \
+  && addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
