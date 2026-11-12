@@ -120,6 +120,44 @@ test("Strava summary falls back to distance vs time without suffer_score", () =>
   assert.equal(charts[1].series[1].unit, "n");
 });
 
+test("PNG with bundled fonts still has text when system fonts are off", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const script = `
+    import { writeFileSync } from "node:fs";
+    import { chartsFromStravaSummary } from "./src/lib/chat-chart.ts";
+    import { renderChatChartSvg } from "./src/lib/chat-chart-svg.ts";
+    import { Resvg } from "@resvg/resvg-js";
+    const c = chartsFromStravaSummary({
+      byWeek: [
+        { weekStart: "2026-11-03", distance_m: 12000, moving_time_s: 3600, suffer_score: 40 },
+        { weekStart: "2026-11-10", distance_m: 18000, moving_time_s: 5400, suffer_score: 62 },
+      ],
+    })[0];
+    const svg = renderChatChartSvg(c, { theme: "light" });
+    const blank = new Resvg(svg, { fitTo: { mode: "width", value: 320 }, font: { loadSystemFonts: false } });
+    const blankPng = Buffer.from(blank.render().asPng());
+    const ok = new Resvg(svg, {
+      fitTo: { mode: "width", value: 320 },
+      font: {
+        loadSystemFonts: false,
+        fontFiles: ["public/fonts/DejaVuSans.ttf", "public/fonts/DejaVuSans-Bold.ttf"],
+        defaultFontFamily: "DejaVu Sans",
+      },
+    });
+    const okPng = Buffer.from(ok.render().asPng());
+    // Bundled fonts must change the PNG (text glyphs add opaque pixels).
+    if (blankPng.equals(okPng)) throw new Error("bundled fonts did not change PNG output");
+    if (okPng.byteLength <= blankPng.byteLength) throw new Error("expected larger PNG with text");
+    writeFileSync("/tmp/chart-font-ok.png", okPng);
+    console.log("ok", blankPng.byteLength, okPng.byteLength);
+  `;
+  const out = execFileSync("npx", ["--yes", "tsx", "-e", script], {
+    cwd: new URL("..", import.meta.url).pathname,
+    encoding: "utf8",
+  });
+  assert.match(out, /ok /);
+});
+
 test("combo SVG includes left and right axis legends", async () => {
   // tsx resolves extensionless TS imports the same way Next does.
   const { execFileSync } = await import("node:child_process");
