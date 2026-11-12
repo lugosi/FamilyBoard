@@ -29,12 +29,11 @@ Data comes from FamilyBoard's local cache (`strava_training_summary`), not Strav
    - Window + activity count
    - Totals (distance, moving time, elevation; `suffer_score` = Relative Effort / load proxy when present)
    - Week-over-week from `byWeek` (or month-over-month from `byMonth` when chartPeriod=month): volume **and** load — flag spikes, empty periods, or load rising faster than time (intensity creep)
-   - Sport mix from `bySport`
+   - Sport mix from `bySport` (prose only — no separate sport-mix chart)
    - One highlight from `recent` if useful
 6. Charts are attached automatically from the tool (AI tab + Slack). Prefer interpreting those; do not invent chart JSON.
-   - **Primary:** **stacked moving time by sport (bars) + Relative Effort (line)** — weekly by default, monthly when requested. Time, not distance, so HIIT/strength show up. Cache is ~30 days, so monthly views may only show 1–2 months.
+   - **One chart:** **stacked moving time by sport (bars) + Relative Effort (line)** — weekly by default, monthly when requested. Time, not distance, so HIIT/strength show up. Cache is ~30 days, so monthly views may only show 1–2 months.
    - **Fallback** (no HR/`suffer_score`): stacked time by sport only.
-   - **Sport mix:** moving time + Relative Effort when present, else time + sessions (time, not distance).
 7. Give 1–3 practical next steps (volume, easy days, consistency). If HR/`suffer_score` is missing on many activities, say load/form is incomplete.
 8. Do **not** invent CTL/ATL/TSB ("Fitness/Fatigue/Form") or Premium-only analytics. A true PMC needs ~42 days of reliable daily load ([HenrikBrehm/triathlon-coach-skill](https://github.com/HenrikBrehm/triathlon-coach-skill)); with a 30-day cache, speak in week-over-week Relative Effort and volume only.
 9. Do not claim medical diagnosis or guaranteed race times.
