@@ -584,6 +584,18 @@ export type StravaSportBucket = {
   distance_m: number;
   moving_time_s: number;
   elevation_m: number;
+  /** Sum of Strava suffer_score when present (Relative Effort proxy; often missing without HR). */
+  suffer_score?: number;
+};
+
+export type StravaWeekBucket = {
+  /** Monday-start local date key YYYY-MM-DD */
+  weekStart: string;
+  count: number;
+  distance_m: number;
+  moving_time_s: number;
+  elevation_m: number;
+  suffer_score?: number;
 };
 
 export type StravaTrainingSummary = {
@@ -593,8 +605,11 @@ export type StravaTrainingSummary = {
     distance_m: number;
     moving_time_s: number;
     elevation_m: number;
+    suffer_score?: number;
   };
   bySport: StravaSportBucket[];
+  /** Newest week first; Monday–Sunday local weeks. */
+  byWeek: StravaWeekBucket[];
   recent: Array<{
     id: number;
     name: string;
@@ -602,34 +617,78 @@ export type StravaTrainingSummary = {
     start_date_local: string;
     distance_m: number;
     moving_time_s: number;
+    average_heartrate?: number;
+    suffer_score?: number;
   }>;
 };
+
+/** Monday-start week key from an activity's local start (`YYYY-MM-DD…`). */
+export function mondayWeekStartKey(startDateLocal: string): string {
+  const day = startDateLocal.slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return day || "unknown";
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  const dow = dt.getUTCDay(); // 0=Sun … 6=Sat
+  const offset = dow === 0 ? -6 : 1 - dow;
+  dt.setUTCDate(dt.getUTCDate() + offset);
+  return dt.toISOString().slice(0, 10);
+}
 
 export function summarizeStravaActivities(
   activities: CachedStravaActivity[],
   opts: { recentLimit?: number } = {},
 ): StravaTrainingSummary {
   const bySportMap = new Map<string, StravaSportBucket>();
+  const byWeekMap = new Map<string, StravaWeekBucket>();
   let distance = 0;
   let moving = 0;
   let elevation = 0;
+  let suffer = 0;
+  let sufferPresent = false;
   for (const a of activities) {
     distance += a.distance_m || 0;
     moving += a.moving_time_s || 0;
     elevation += a.total_elevation_gain_m || 0;
+    if (typeof a.suffer_score === "number") {
+      suffer += a.suffer_score;
+      sufferPresent = true;
+    }
     const sport = a.sport_type || a.type || "Other";
-    const bucket = bySportMap.get(sport) ?? {
+    const sportBucket = bySportMap.get(sport) ?? {
       sport,
       count: 0,
       distance_m: 0,
       moving_time_s: 0,
       elevation_m: 0,
     };
-    bucket.count += 1;
-    bucket.distance_m += a.distance_m || 0;
-    bucket.moving_time_s += a.moving_time_s || 0;
-    bucket.elevation_m += a.total_elevation_gain_m || 0;
-    bySportMap.set(sport, bucket);
+    sportBucket.count += 1;
+    sportBucket.distance_m += a.distance_m || 0;
+    sportBucket.moving_time_s += a.moving_time_s || 0;
+    sportBucket.elevation_m += a.total_elevation_gain_m || 0;
+    if (typeof a.suffer_score === "number") {
+      sportBucket.suffer_score = (sportBucket.suffer_score ?? 0) + a.suffer_score;
+    }
+    bySportMap.set(sport, sportBucket);
+
+    const weekStart = mondayWeekStartKey(a.start_date_local || a.start_date);
+    const weekBucket = byWeekMap.get(weekStart) ?? {
+      weekStart,
+      count: 0,
+      distance_m: 0,
+      moving_time_s: 0,
+      elevation_m: 0,
+    };
+    weekBucket.count += 1;
+    weekBucket.distance_m += a.distance_m || 0;
+    weekBucket.moving_time_s += a.moving_time_s || 0;
+    weekBucket.elevation_m += a.total_elevation_gain_m || 0;
+    if (typeof a.suffer_score === "number") {
+      weekBucket.suffer_score = (weekBucket.suffer_score ?? 0) + a.suffer_score;
+    }
+    byWeekMap.set(weekStart, weekBucket);
   }
   const sorted = [...activities].sort((a, b) => activityStartUnix(b) - activityStartUnix(a));
   const recentLimit = Math.max(1, Math.min(opts.recentLimit ?? 5, 20));
@@ -640,8 +699,22 @@ export function summarizeStravaActivities(
       distance_m: Math.round(distance),
       moving_time_s: moving,
       elevation_m: Math.round(elevation),
+      ...(sufferPresent ? { suffer_score: suffer } : {}),
     },
-    bySport: [...bySportMap.values()].sort((a, b) => b.distance_m - a.distance_m),
+    bySport: [...bySportMap.values()]
+      .map((b) => ({
+        ...b,
+        distance_m: Math.round(b.distance_m),
+        elevation_m: Math.round(b.elevation_m),
+      }))
+      .sort((a, b) => b.distance_m - a.distance_m),
+    byWeek: [...byWeekMap.values()]
+      .map((b) => ({
+        ...b,
+        distance_m: Math.round(b.distance_m),
+        elevation_m: Math.round(b.elevation_m),
+      }))
+      .sort((a, b) => b.weekStart.localeCompare(a.weekStart)),
     recent: sorted.slice(0, recentLimit).map((a) => ({
       id: a.id,
       name: a.name,
@@ -649,6 +722,8 @@ export function summarizeStravaActivities(
       start_date_local: a.start_date_local,
       distance_m: a.distance_m,
       moving_time_s: a.moving_time_s,
+      average_heartrate: a.average_heartrate,
+      suffer_score: a.suffer_score,
     })),
   };
 }
