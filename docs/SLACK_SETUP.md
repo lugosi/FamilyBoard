@@ -39,6 +39,7 @@ oauth_config:
       - reactions:write
       - users:read
       - files:read
+      - files:write
 settings:
   event_subscriptions:
     bot_events:
@@ -55,7 +56,7 @@ settings:
 4. Under **Interactivity & Shortcuts**, confirm **Interactivity** is On (Socket Mode delivers button clicks; no Request URL needed).
 5. **Install App**, then **Install to Workspace**, then allow. Copy the **Bot User OAuth Token** (`xoxb-…`).
 
-If the app already exists: turn **Interactivity** on, set the manifest’s `interactivity.is_enabled: true`, then **reinstall** the app so Approve / Deny buttons work.
+If the app already exists: turn **Interactivity** on, set the manifest’s `interactivity.is_enabled: true`, add **`files:write`** if charts should upload as images, then **reinstall** the app so Approve / Deny buttons (and chart uploads) work.
 
 ## 2. Give FamilyBoard the tokens
 

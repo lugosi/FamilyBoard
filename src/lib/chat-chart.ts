@@ -8,12 +8,15 @@ export type ChatChartPoint = {
 export type ChatChartSeries = {
   name?: string;
   color?: string;
+  /** Per-series unit — when it differs across series, charts use a dual axis. */
+  unit?: string;
   data: ChatChartPoint[];
 };
 
 export type ChatChartSpec = {
   type: "bar" | "line";
   title?: string;
+  /** Default unit when series omit their own. */
   unit?: string;
   /** Optional y-axis hint shown in the corner. */
   yLabel?: string;
@@ -58,11 +61,12 @@ function normalizeSeries(raw: unknown, index: number): ChatChartSeries | null {
     .slice(0, MAX_POINTS);
   if (!data.length) return null;
   const name = typeof o.name === "string" ? o.name.trim().slice(0, 40) : undefined;
+  const unit = typeof o.unit === "string" ? o.unit.trim().slice(0, 16) : undefined;
   const color =
     typeof o.color === "string" && /^#[0-9a-fA-F]{3,8}$/.test(o.color.trim())
       ? o.color.trim()
       : DEFAULT_COLORS[index % DEFAULT_COLORS.length];
-  return { name, color, data };
+  return { name, color, unit, data };
 }
 
 /**
@@ -115,13 +119,34 @@ export function parseChatChart(raw: string): ChatChartSpec | null {
   };
 }
 
-/** Replace ```chart … ``` fences with Unicode bars (Slack / plain-text surfaces). */
-export function stripChatChartFences(text: string): string {
-  return text.replace(/```chart\s*([\s\S]*?)```/gi, (_full, body: string) => {
-    const spec = parseChatChart(String(body));
-    if (!spec) return "_(chart)_";
-    return formatSlackChart(spec);
-  });
+/**
+ * Remove ```chart fences from Slack text (images are uploaded separately).
+ * Falls back to a one-line caption if PNG upload is unavailable.
+ */
+export function stripChatChartFences(text: string, mode: "remove" | "caption" = "remove"): string {
+  return text
+    .replace(/```chart\s*([\s\S]*?)```/gi, (_full, body: string) => {
+      if (mode === "remove") return "";
+      const spec = parseChatChart(String(body));
+      if (!spec) return "";
+      const title = spec.title || "Chart";
+      const names = spec.series.map((s) => s.name).filter(Boolean).join(" vs ");
+      return names ? `_Chart: ${title} (${names})_` : `_Chart: ${title}_`;
+    })
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Extract chart specs embedded as ```chart fences in a reply. */
+export function extractChatChartsFromText(text: string): ChatChartSpec[] {
+  const out: ChatChartSpec[] = [];
+  const re = /```chart\s*([\s\S]*?)```/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const spec = parseChatChart(m[1] ?? "");
+    if (spec) out.push(spec);
+  }
+  return out;
 }
 
 export function formatChartValue(value: number, unit?: string): string {
@@ -155,25 +180,15 @@ export function injectChatCharts(reply: string, charts: ChatChartSpec[]): string
   return base ? `${base}\n\n${fences}` : fences;
 }
 
-/** Unicode bars when a surface cannot render SVG (Slack). */
-export function formatSlackChart(spec: ChatChartSpec): string {
-  const series = spec.series[0];
-  if (!series?.data.length) return "";
-  const max = Math.max(...series.data.map((p) => Math.abs(p.value)), 1e-6);
-  const width = 10;
-  const lines = series.data.map((p) => {
-    const filled = Math.max(0, Math.round((Math.abs(p.value) / max) * width));
-    const bar = "█".repeat(filled) + "░".repeat(width - filled);
-    return `${p.label} ${bar} ${formatChartValue(p.value, spec.unit)}`;
-  });
-  const title = spec.title ? `*${spec.title}*` : "*Chart*";
-  return `${title}\n\`\`\`\n${lines.join("\n")}\n\`\`\``;
-}
-
 export function chartsFromStravaSummary(
   summary: {
-    byWeek?: Array<{ weekStart: string; distance_m: number; moving_time_s?: number }>;
-    bySport?: Array<{ sport: string; distance_m: number; count?: number }>;
+    byWeek?: Array<{
+      weekStart: string;
+      distance_m: number;
+      moving_time_s?: number;
+      elevation_m?: number;
+    }>;
+    bySport?: Array<{ sport: string; distance_m: number; count?: number; moving_time_s?: number }>;
   },
   opts: { unit?: "km" | "mi" } = {},
 ): ChatChartSpec[] {
@@ -182,43 +197,63 @@ export function chartsFromStravaSummary(
     unit === "mi"
       ? Math.round((m / 1609.34) * 10) / 10
       : Math.round((m / 1000) * 10) / 10;
+  const toHours = (s: number) => Math.round(((s || 0) / 3600) * 100) / 100;
   const out: ChatChartSpec[] = [];
   const weeks = [...(summary.byWeek ?? [])].sort((a, b) =>
     a.weekStart.localeCompare(b.weekStart),
   );
   if (weeks.length > 0) {
+    // Dual-axis: distance vs moving time so metrics compare week-over-week.
     out.push({
       type: "bar",
-      title: `Distance by week (${unit})`,
-      unit,
+      title: "Weekly distance vs moving time",
       series: [
         {
           name: "Distance",
+          unit,
           color: DEFAULT_COLORS[0],
           data: weeks.map((w) => ({
             label: w.weekStart.slice(5) || w.weekStart,
             value: toDist(w.distance_m || 0),
           })),
         },
+        {
+          name: "Moving time",
+          unit: "h",
+          color: DEFAULT_COLORS[2],
+          data: weeks.map((w) => ({
+            label: w.weekStart.slice(5) || w.weekStart,
+            value: toHours(w.moving_time_s || 0),
+          })),
+        },
       ],
     });
   }
   const sports = [...(summary.bySport ?? [])]
-    .filter((s) => (s.distance_m || 0) > 0)
+    .filter((s) => (s.distance_m || 0) > 0 || (s.count || 0) > 0)
     .sort((a, b) => b.distance_m - a.distance_m)
     .slice(0, 8);
   if (sports.length > 1) {
     out.push({
       type: "bar",
-      title: `Distance by sport (${unit})`,
-      unit,
+      title: "Sport mix: distance vs sessions",
       series: [
         {
           name: "Distance",
+          unit,
           color: DEFAULT_COLORS[1],
           data: sports.map((s) => ({
             label: s.sport.slice(0, 16),
             value: toDist(s.distance_m || 0),
+          })),
+        },
+        {
+          name: "Sessions",
+          unit: "n",
+          color: DEFAULT_COLORS[3],
+          data: sports.map((s) => ({
+            label: s.sport.slice(0, 16),
+            value: s.count ?? 0,
           })),
         },
       ],

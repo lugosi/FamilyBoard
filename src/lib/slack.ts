@@ -186,6 +186,53 @@ export async function postSlackMessage(input: {
   return { ts: res.ts, channel: res.channel ?? input.channel };
 }
 
+/**
+ * Upload a file (e.g. chart PNG) into a channel/thread via Slack's external upload API.
+ * Needs `files:write` on the bot token.
+ */
+export async function uploadSlackFile(input: {
+  channel: string;
+  threadTs?: string;
+  filename: string;
+  title?: string;
+  data: Buffer;
+  mimeType?: string;
+}): Promise<void> {
+  const { botToken } = requireConfig();
+  const length = input.data.byteLength;
+  const prep = await slackApi<
+    SlackResponse & { upload_url?: string; file_id?: string }
+  >("files.getUploadURLExternal", botToken, {
+    filename: input.filename,
+    length,
+  });
+  if (!prep.upload_url || !prep.file_id) {
+    throw new Error("Slack files.getUploadURLExternal missing upload_url/file_id");
+  }
+
+  const put = await fetch(prep.upload_url, {
+    method: "POST",
+    headers: {
+      "Content-Type": input.mimeType || "application/octet-stream",
+    },
+    body: new Uint8Array(input.data),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    cache: "no-store",
+  });
+  if (!put.ok) throw new Error(`Slack file PUT failed: HTTP ${put.status}`);
+
+  await slackApi("files.completeUploadExternal", botToken, {
+    files: [
+      {
+        id: prep.file_id,
+        title: input.title || input.filename,
+      },
+    ],
+    channel_id: input.channel,
+    ...(input.threadTs ? { thread_ts: input.threadTs } : {}),
+  });
+}
+
 export async function updateSlackMessage(input: {
   channel: string;
   ts: string;
