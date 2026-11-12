@@ -42,6 +42,7 @@ const READ_ONLY_TOOLS = new Set([
   "house_dashboard",
   "strava_athlete",
   "strava_recent_activities",
+  "strava_training_summary",
 ]);
 const LINK_STRAVA_WORDS = new Set(["link strava", "/strava", "connect strava"]);
 

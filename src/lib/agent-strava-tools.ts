@@ -4,7 +4,9 @@ import {
   fetchStravaAthlete,
   getStravaAccount,
   isStravaConfigured,
-  listStravaActivities,
+  listCachedStravaActivities,
+  summarizeStravaActivities,
+  syncStravaActivityCache,
   type StravaAccountKey,
 } from "./strava";
 
@@ -52,6 +54,40 @@ async function notLinkedResponse(ctx: AgentToolContext, accountKey: StravaAccoun
           : `Connect Strava for ${ctx.actor?.displayName || accountKey}: ${url}`,
     },
     label: "Strava not linked",
+  };
+}
+
+function publicActivity(a: {
+  id: number;
+  name: string;
+  type?: string;
+  sport_type?: string;
+  start_date_local: string;
+  distance_m: number;
+  moving_time_s: number;
+  elapsed_time_s?: number;
+  total_elevation_gain_m?: number;
+  average_speed_mps?: number;
+  max_speed_mps?: number;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  suffer_score?: number;
+}) {
+  return {
+    id: a.id,
+    name: a.name,
+    type: a.type,
+    sport_type: a.sport_type,
+    start_date_local: a.start_date_local,
+    distance_m: a.distance_m,
+    moving_time_s: a.moving_time_s,
+    elapsed_time_s: a.elapsed_time_s,
+    total_elevation_gain_m: a.total_elevation_gain_m,
+    average_speed_mps: a.average_speed_mps,
+    max_speed_mps: a.max_speed_mps,
+    average_heartrate: a.average_heartrate,
+    max_heartrate: a.max_heartrate,
+    suffer_score: a.suffer_score,
   };
 }
 
@@ -108,22 +144,13 @@ export function buildStravaTools(): AgentTool[] {
       declaration: {
         name: "strava_recent_activities",
         description:
-          "List recent Strava activities for the current person (runs, rides, etc.). Use when they ask about workouts, mileage, last run/ride, or training this week. If not linked, returns their personal authorize URL.",
+          "List recent Strava activities for the current person from a local 30-day cache (first call bootstraps last 30 days; later calls only pull new activities). Use for last run/ride or a short list. Prefer strava_training_summary for week/month totals.",
         parameters: {
           type: "object",
           properties: {
             per_page: {
               type: "number",
               description: "How many activities to return (1–30, default 10).",
-            },
-            page: { type: "number", description: "Page number (default 1)." },
-            after_unix: {
-              type: "number",
-              description: "Only activities after this Unix epoch seconds.",
-            },
-            before_unix: {
-              type: "number",
-              description: "Only activities before this Unix epoch seconds.",
             },
           },
         },
@@ -137,37 +164,24 @@ export function buildStravaTools(): AgentTool[] {
           typeof args.per_page === "number" && args.per_page > 0
             ? Math.min(Math.floor(args.per_page), 30)
             : 10;
-        const page =
-          typeof args.page === "number" && args.page > 0 ? Math.floor(args.page) : 1;
-        const after =
-          typeof args.after_unix === "number" ? Math.floor(args.after_unix) : undefined;
-        const before =
-          typeof args.before_unix === "number" ? Math.floor(args.before_unix) : undefined;
         try {
-          const rows = await listStravaActivities(accountKey, {
-            page,
-            perPage,
-            after,
-            before,
-          });
-          const activities = rows.map((a) => ({
-            id: a.id,
-            name: a.name,
-            type: a.type,
-            sport_type: a.sport_type,
-            start_date_local: a.start_date_local,
-            distance_m: a.distance,
-            moving_time_s: a.moving_time,
-            elapsed_time_s: a.elapsed_time,
-            total_elevation_gain_m: a.total_elevation_gain,
-            average_speed_mps: a.average_speed,
-            max_speed_mps: a.max_speed,
-            average_heartrate: a.average_heartrate,
-            max_heartrate: a.max_heartrate,
-          }));
+          const sync = await syncStravaActivityCache(accountKey);
+          const rows = await listCachedStravaActivities(accountKey, { limit: perPage });
           return {
-            response: { linked: true, accountKey, count: activities.length, activities },
-            label: `Strava activities (${activities.length})`,
+            response: {
+              linked: true,
+              accountKey,
+              sync: {
+                mode: sync.mode,
+                fetched: sync.fetched,
+                upserted: sync.upserted,
+                total: sync.total,
+                windowDays: sync.windowDays,
+              },
+              count: rows.length,
+              activities: rows.map(publicActivity),
+            },
+            label: `Strava activities (${rows.length}, ${sync.mode})`,
           };
         } catch (e) {
           return {
@@ -176,6 +190,49 @@ export function buildStravaTools(): AgentTool[] {
               error: e instanceof Error ? e.message : "strava_error",
             },
             label: "Strava activities failed",
+          };
+        }
+      },
+    },
+    {
+      declaration: {
+        name: "strava_training_summary",
+        description:
+          "Summarize the current person's last 30 days of Strava training (totals + by sport + recent highlights). Syncs the local cache first (bootstrap 30 days, then diff). Use for mileage, volume, how training is going, week/month recap — not Strava's official MCP analytics.",
+        parameters: { type: "object", properties: {} },
+      },
+      async run(_args, ctx) {
+        const accountKey = accountKeyFromCtx(ctx);
+        if (!accountKey || !(await getStravaAccount(accountKey))) {
+          return notLinkedResponse(ctx, accountKey);
+        }
+        try {
+          const sync = await syncStravaActivityCache(accountKey);
+          const rows = await listCachedStravaActivities(accountKey);
+          const summary = summarizeStravaActivities(rows);
+          return {
+            response: {
+              linked: true,
+              accountKey,
+              sync: {
+                mode: sync.mode,
+                fetched: sync.fetched,
+                upserted: sync.upserted,
+                pruned: sync.pruned,
+                total: sync.total,
+                windowDays: sync.windowDays,
+              },
+              summary,
+            },
+            label: `Strava summary (${summary.activityCount} in ${summary.windowDays}d, ${sync.mode})`,
+          };
+        } catch (e) {
+          return {
+            response: {
+              linked: true,
+              error: e instanceof Error ? e.message : "strava_error",
+            },
+            label: "Strava summary failed",
           };
         }
       },
