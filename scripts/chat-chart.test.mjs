@@ -1,7 +1,12 @@
 // node --test scripts/chat-chart.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseChatChart, stripChatChartFences } from "../src/lib/chat-chart.ts";
+import {
+  chartsFromStravaSummary,
+  injectChatCharts,
+  parseChatChart,
+  stripChatChartFences,
+} from "../src/lib/chat-chart.ts";
 
 test("parses bar chart with data[]", () => {
   const spec = parseChatChart(`{
@@ -45,4 +50,24 @@ test("strips chart fences for Slack", () => {
   assert.match(out, /\*Weekly km\*/);
   assert.doesNotMatch(out, /```/);
   assert.match(out, /W1/);
+});
+
+test("injects charts when the model omits fences", () => {
+  const charts = chartsFromStravaSummary({
+    byWeek: [
+      { weekStart: "2026-11-03", distance_m: 12000 },
+      { weekStart: "2026-11-10", distance_m: 18000 },
+    ],
+    bySport: [
+      { sport: "Run", distance_m: 20000 },
+      { sport: "Ride", distance_m: 10000 },
+    ],
+  });
+  assert.equal(charts.length, 2);
+  const out = injectChatCharts("Here is your week.", charts);
+  assert.match(out, /Here is your week/);
+  assert.match(out, /```chart/);
+  assert.match(out, /Distance by week/);
+  const again = injectChatCharts(out, charts);
+  assert.equal(again, out);
 });

@@ -1,4 +1,5 @@
 import type { AgentTool, AgentToolContext } from "./agent";
+import { chartsFromStravaSummary } from "./chat-chart";
 import {
   buildStravaAuthorizeUrl,
   fetchStravaAthlete,
@@ -210,6 +211,7 @@ export function buildStravaTools(): AgentTool[] {
           const sync = await syncStravaActivityCache(accountKey);
           const rows = await listCachedStravaActivities(accountKey);
           const summary = summarizeStravaActivities(rows);
+          const charts = chartsFromStravaSummary(summary, { unit: "km" });
           return {
             response: {
               linked: true,
@@ -223,7 +225,10 @@ export function buildStravaTools(): AgentTool[] {
                 windowDays: sync.windowDays,
               },
               summary,
+              /** Hint for the model — board also attaches these as ```chart fences. */
+              chartHints: charts.map((c) => c.title).filter(Boolean),
             },
+            charts,
             label: `Strava summary (${summary.activityCount} in ${summary.windowDays}d, ${sync.mode})`,
           };
         } catch (e) {

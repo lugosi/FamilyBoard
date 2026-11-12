@@ -139,3 +139,79 @@ export function formatChartValue(value: number, unit?: string): string {
 export function chatChartColors(): readonly string[] {
   return DEFAULT_COLORS;
 }
+
+/** Serialize chart specs as markdown fences the Board ChatMarkdown renderer understands. */
+export function chatChartFences(charts: ChatChartSpec[]): string {
+  return charts
+    .map((spec) => `\`\`\`chart\n${JSON.stringify(spec, null, 2)}\n\`\`\``)
+    .join("\n\n");
+}
+
+/**
+ * Ensure board replies include charts from tools. Skips when fences already exist
+ * (model emitted them) or when there is nothing to attach.
+ */
+export function injectChatCharts(reply: string, charts: ChatChartSpec[]): string {
+  if (!charts.length) return reply;
+  if (/```chart\b/i.test(reply)) return reply;
+  const fences = chatChartFences(charts);
+  const base = reply.trim();
+  return base ? `${base}\n\n${fences}` : fences;
+}
+
+export function chartsFromStravaSummary(
+  summary: {
+    byWeek?: Array<{ weekStart: string; distance_m: number; moving_time_s?: number }>;
+    bySport?: Array<{ sport: string; distance_m: number; count?: number }>;
+  },
+  opts: { unit?: "km" | "mi" } = {},
+): ChatChartSpec[] {
+  const unit = opts.unit === "mi" ? "mi" : "km";
+  const toDist = (m: number) =>
+    unit === "mi"
+      ? Math.round((m / 1609.34) * 10) / 10
+      : Math.round((m / 1000) * 10) / 10;
+  const out: ChatChartSpec[] = [];
+  const weeks = [...(summary.byWeek ?? [])].sort((a, b) =>
+    a.weekStart.localeCompare(b.weekStart),
+  );
+  if (weeks.length > 0) {
+    out.push({
+      type: "bar",
+      title: `Distance by week (${unit})`,
+      unit,
+      series: [
+        {
+          name: "Distance",
+          color: DEFAULT_COLORS[0],
+          data: weeks.map((w) => ({
+            label: w.weekStart.slice(5) || w.weekStart,
+            value: toDist(w.distance_m || 0),
+          })),
+        },
+      ],
+    });
+  }
+  const sports = [...(summary.bySport ?? [])]
+    .filter((s) => (s.distance_m || 0) > 0)
+    .sort((a, b) => b.distance_m - a.distance_m)
+    .slice(0, 8);
+  if (sports.length > 1) {
+    out.push({
+      type: "bar",
+      title: `Distance by sport (${unit})`,
+      unit,
+      series: [
+        {
+          name: "Distance",
+          color: DEFAULT_COLORS[1],
+          data: sports.map((s) => ({
+            label: s.sport.slice(0, 16),
+            value: toDist(s.distance_m || 0),
+          })),
+        },
+      ],
+    });
+  }
+  return out;
+}
