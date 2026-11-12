@@ -23,6 +23,9 @@ type Status = {
   slackConfigured?: boolean;
   stravaConfigured?: boolean;
   stravaAccounts?: { accountKey: string; displayName: string; athleteName?: string }[];
+  stravaRedirectUri?: string;
+  stravaCallbackDomain?: string;
+  publicAppUrl?: string | null;
 };
 
 type AgentAction = { tool: string; ok: boolean; label: string };
@@ -1373,6 +1376,27 @@ export function WikiLlm({
                   <p className="mt-1 text-sm leading-relaxed text-slate-400">
                     Each person links their own account. Pick who you are on this display, then connect.
                   </p>
+                  {status.stravaCallbackDomain ? (
+                    <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                      If Link opens Strava with <span className="text-rose-300">Bad Request</span>, set
+                      Strava → My API Application →{" "}
+                      <span className="text-slate-300">Authorization Callback Domain</span> to{" "}
+                      <code className="rounded bg-slate-950 px-1 text-sky-200">
+                        {status.stravaCallbackDomain}
+                      </code>{" "}
+                      (host only — no https://, no path). Full redirect used:{" "}
+                      <code className="break-all rounded bg-slate-950 px-1 text-slate-400">
+                        {status.stravaRedirectUri}
+                      </code>
+                      {!status.publicAppUrl ? (
+                        <>
+                          {" "}
+                          Tip: set <code className="text-slate-300">PUBLIC_APP_URL</code> to your board’s
+                          public URL so the redirect host stays stable.
+                        </>
+                      ) : null}
+                    </p>
+                  ) : null}
                   <label className="mt-3 block text-sm text-slate-300">
                     Who am I?
                     <input

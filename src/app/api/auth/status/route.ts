@@ -8,9 +8,10 @@ import { isGeminiConfigured } from "@/lib/gemini";
 import { isWikilmGithubConfigured } from "@/lib/wikilm-github";
 import { isSlackConfigured } from "@/lib/slack";
 import { getInboxAutoScanMinutes } from "@/lib/background";
-import { isStravaConfigured, listStravaAccounts } from "@/lib/strava";
+import { getConfiguredPublicAppUrl } from "@/lib/app-url";
+import { getStravaRedirectUri, isStravaConfigured, listStravaAccounts } from "@/lib/strava";
 
-export async function GET() {
+export async function GET(request: Request) {
   const google = await readGoogleTokens();
   const spotify = await readSpotifyTokens();
   const hueIp = getHueBridgeIp();
@@ -27,6 +28,13 @@ export async function GET() {
         athleteName: a.athleteName,
       }))
     : [];
+  const stravaRedirectUri = getStravaRedirectUri(request);
+  let stravaCallbackDomain = "";
+  try {
+    stravaCallbackDomain = new URL(stravaRedirectUri).hostname;
+  } catch {
+    stravaCallbackDomain = "";
+  }
 
   return NextResponse.json({
     googleLinked,
@@ -51,5 +59,8 @@ export async function GET() {
     slackConfigured: isSlackConfigured(),
     stravaConfigured,
     stravaAccounts,
+    stravaRedirectUri,
+    stravaCallbackDomain,
+    publicAppUrl: getConfiguredPublicAppUrl(),
   });
 }
