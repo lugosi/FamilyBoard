@@ -199,23 +199,40 @@ export function buildStravaTools(): AgentTool[] {
       declaration: {
         name: "strava_training_summary",
         description:
-          "Summarize the current person's last 30 days of Strava training (totals, by sport, Monday week buckets for week-over-week, recent highlights). Syncs the local cache first (bootstrap 30 days, then diff). Use for mileage, volume, how training is going, week/month recap — not Strava's official MCP analytics.",
-        parameters: { type: "object", properties: {} },
+          "Summarize the current person's last 30 days of Strava training (totals, by sport, week + month buckets, recent highlights). Syncs the local cache first (bootstrap 30 days, then diff). Use for mileage, volume, how training is going, week/month recap — not Strava's official MCP analytics. Pass chartPeriod=month when they ask for a monthly chart; default is week.",
+        parameters: {
+          type: "object",
+          properties: {
+            chartPeriod: {
+              type: "string",
+              description:
+                'Chart time bucket: "week" (default) or "month". Use month for monthly / month-over-month charts.',
+            },
+          },
+        },
       },
-      async run(_args, ctx) {
+      async run(args, ctx) {
         const accountKey = accountKeyFromCtx(ctx);
         if (!accountKey || !(await getStravaAccount(accountKey))) {
           return notLinkedResponse(ctx, accountKey);
         }
         try {
+          const rawPeriod =
+            args && typeof args === "object"
+              ? String((args as { chartPeriod?: unknown }).chartPeriod ?? "")
+                  .trim()
+                  .toLowerCase()
+              : "";
+          const chartPeriod = rawPeriod === "month" || rawPeriod === "monthly" ? "month" : "week";
           const sync = await syncStravaActivityCache(accountKey);
           const rows = await listCachedStravaActivities(accountKey);
           const summary = summarizeStravaActivities(rows);
-          const charts = chartsFromStravaSummary(summary, { unit: "km" });
+          const charts = chartsFromStravaSummary(summary, { unit: "km", period: chartPeriod });
           return {
             response: {
               linked: true,
               accountKey,
+              chartPeriod,
               sync: {
                 mode: sync.mode,
                 fetched: sync.fetched,
@@ -229,7 +246,7 @@ export function buildStravaTools(): AgentTool[] {
               chartHints: charts.map((c) => c.title).filter(Boolean),
             },
             charts,
-            label: `Strava summary (${summary.activityCount} in ${summary.windowDays}d, ${sync.mode})`,
+            label: `Strava summary (${summary.activityCount} in ${summary.windowDays}d, ${chartPeriod}, ${sync.mode})`,
           };
         } catch (e) {
           return {

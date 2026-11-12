@@ -78,46 +78,161 @@ test("inject replaces model chart fences with tool combo charts", () => {
   assert.equal(extractChatChartsFromText(out)[0].series.length, 2);
 });
 
-test("Strava summary prefers volume vs Relative Effort when suffer_score present", () => {
+test("Strava weekly chart stacks sports by time + Relative Effort line", () => {
   const charts = chartsFromStravaSummary({
     byWeek: [
-      { weekStart: "2026-11-03", distance_m: 12000, moving_time_s: 3600, suffer_score: 40 },
-      { weekStart: "2026-11-10", distance_m: 18000, moving_time_s: 5400, suffer_score: 62 },
+      {
+        weekStart: "2026-11-03",
+        distance_m: 12000,
+        moving_time_s: 7200,
+        suffer_score: 40,
+        bySport: [
+          { sport: "Run", moving_time_s: 3600, distance_m: 10000, count: 2, suffer_score: 25 },
+          { sport: "HIIT", moving_time_s: 2400, distance_m: 0, count: 2, suffer_score: 15 },
+          { sport: "Ride", moving_time_s: 1200, distance_m: 2000, count: 1 },
+        ],
+      },
+      {
+        weekStart: "2026-11-10",
+        distance_m: 18000,
+        moving_time_s: 9000,
+        suffer_score: 62,
+        bySport: [
+          { sport: "Run", moving_time_s: 5400, distance_m: 15000, count: 3, suffer_score: 40 },
+          { sport: "HIIT", moving_time_s: 1800, distance_m: 0, count: 1, suffer_score: 12 },
+          { sport: "Ride", moving_time_s: 1800, distance_m: 3000, count: 1, suffer_score: 10 },
+        ],
+      },
     ],
     bySport: [
-      { sport: "Run", distance_m: 20000, count: 4, suffer_score: 70 },
-      { sport: "Ride", distance_m: 10000, count: 2, suffer_score: 32 },
+      { sport: "Run", distance_m: 25000, moving_time_s: 9000, count: 5, suffer_score: 65 },
+      { sport: "HIIT", distance_m: 0, moving_time_s: 4200, count: 3, suffer_score: 27 },
+      { sport: "Ride", distance_m: 5000, moving_time_s: 3000, count: 2, suffer_score: 10 },
     ],
   });
   assert.equal(charts.length, 2);
-  assert.equal(charts[0].type, "combo");
-  assert.match(charts[0].title || "", /Relative Effort/);
-  assert.equal(charts[0].series[0].unit, "km");
-  assert.equal(charts[0].series[1].unit, "RE");
-  assert.match(charts[0].rightAxisLabel || "", /Relative Effort/);
-  assert.match(charts[1].title || "", /Relative Effort/);
-  assert.equal(charts[1].series[1].unit, "RE");
-  const out = injectChatCharts("Here is your week.", charts);
-  assert.match(out, /```chart/);
-  const extracted = extractChatChartsFromText(out);
-  assert.equal(extracted.length, 2);
-  assert.equal(extracted[0].type, "combo");
+  const weekly = charts[0];
+  assert.equal(weekly.type, "combo");
+  assert.equal(weekly.stack, true);
+  assert.match(weekly.title || "", /time by sport/);
+  assert.match(weekly.leftAxisLabel || "", /Moving time/);
+  assert.match(weekly.rightAxisLabel || "", /Relative Effort/);
+  // Sport bars + RE line
+  assert.ok(weekly.series.length >= 3);
+  assert.ok(weekly.series.every((s) => s.unit === "h" || s.unit === "RE"));
+  assert.equal(weekly.series[weekly.series.length - 1].unit, "RE");
+  assert.ok(weekly.series.some((s) => s.name === "HIIT"));
+
+  const mix = charts[1];
+  assert.match(mix.title || "", /time vs Relative Effort/);
+  assert.equal(mix.series[0].unit, "h");
+  assert.deepEqual(
+    mix.series[0].data.map((d) => d.label),
+    ["Run", "HIIT", "Ride"],
+  );
 });
 
-test("Strava summary falls back to distance vs time without suffer_score", () => {
-  const charts = chartsFromStravaSummary({
+test("Strava monthly chart stacks sports when period=month", () => {
+  const charts = chartsFromStravaSummary(
+    {
+      byWeek: [
+        {
+          weekStart: "2026-10-27",
+          distance_m: 1000,
+          moving_time_s: 1000,
+          bySport: [{ sport: "Run", moving_time_s: 1000, count: 1 }],
+        },
+      ],
+      byMonth: [
+        {
+          monthStart: "2026-10",
+          distance_m: 20000,
+          moving_time_s: 20000,
+          suffer_score: 80,
+          bySport: [
+            { sport: "Ride", moving_time_s: 12000, count: 3, suffer_score: 40 },
+            { sport: "HIIT", moving_time_s: 5000, count: 4, suffer_score: 25 },
+            { sport: "Run", moving_time_s: 3000, count: 2, suffer_score: 15 },
+          ],
+        },
+        {
+          monthStart: "2026-11",
+          distance_m: 8000,
+          moving_time_s: 15000,
+          suffer_score: 55,
+          bySport: [
+            { sport: "HIIT", moving_time_s: 8000, count: 5, suffer_score: 35 },
+            { sport: "Run", moving_time_s: 7000, count: 3, suffer_score: 20 },
+          ],
+        },
+      ],
+      bySport: [
+        { sport: "HIIT", distance_m: 0, moving_time_s: 13000, count: 9, suffer_score: 60 },
+        { sport: "Ride", distance_m: 20000, moving_time_s: 12000, count: 3, suffer_score: 40 },
+        { sport: "Run", distance_m: 8000, moving_time_s: 10000, count: 5, suffer_score: 35 },
+      ],
+    },
+    { period: "month" },
+  );
+  assert.match(charts[0].title || "", /Monthly/);
+  assert.equal(charts[0].xAxisLabel, "Month");
+  assert.equal(charts[0].stack, true);
+  assert.ok(charts[0].series.some((s) => s.name === "HIIT"));
+  assert.deepEqual(
+    charts[0].series[0].data.map((d) => d.label),
+    ["Oct 2026", "Nov 2026"],
+  );
+  // Default remains weekly when period omitted.
+  const weekly = chartsFromStravaSummary({
     byWeek: [
-      { weekStart: "2026-11-03", distance_m: 12000, moving_time_s: 3600 },
-      { weekStart: "2026-11-10", distance_m: 18000, moving_time_s: 5400 },
-    ],
-    bySport: [
-      { sport: "Run", distance_m: 20000, count: 4 },
-      { sport: "Ride", distance_m: 10000, count: 2 },
+      {
+        weekStart: "2026-11-03",
+        distance_m: 1000,
+        moving_time_s: 3600,
+        bySport: [
+          { sport: "Run", moving_time_s: 2000, count: 1 },
+          { sport: "HIIT", moving_time_s: 1600, count: 1 },
+        ],
+      },
     ],
   });
-  assert.equal(charts[0].series[1].unit, "h");
-  assert.match(charts[0].rightAxisLabel || "", /Moving time/);
-  assert.equal(charts[1].series[1].unit, "n");
+  assert.match(weekly[0].title || "", /Weekly/);
+  assert.equal(weekly[0].xAxisLabel, "Week starting");
+});
+
+test("Strava weekly chart uses time without suffer_score", () => {
+  const charts = chartsFromStravaSummary({
+    byWeek: [
+      {
+        weekStart: "2026-11-03",
+        distance_m: 0,
+        moving_time_s: 3600,
+        bySport: [
+          { sport: "HIIT", moving_time_s: 2400, distance_m: 0, count: 2 },
+          { sport: "Yoga", moving_time_s: 1200, distance_m: 0, count: 1 },
+        ],
+      },
+      {
+        weekStart: "2026-11-10",
+        distance_m: 5000,
+        moving_time_s: 4800,
+        bySport: [
+          { sport: "HIIT", moving_time_s: 1800, distance_m: 0, count: 1 },
+          { sport: "Run", moving_time_s: 3000, distance_m: 5000, count: 2 },
+        ],
+      },
+    ],
+    bySport: [
+      { sport: "HIIT", distance_m: 0, moving_time_s: 4200, count: 3 },
+      { sport: "Run", distance_m: 5000, moving_time_s: 3000, count: 2 },
+      { sport: "Yoga", distance_m: 0, moving_time_s: 1200, count: 1 },
+    ],
+  });
+  assert.equal(charts[0].stack, true);
+  assert.match(charts[0].leftAxisLabel || "", /Moving time/);
+  assert.equal(charts[0].series.every((s) => s.unit === "h"), true);
+  assert.equal(charts[1].series[0].unit, "h");
+  assert.ok(charts[1].series[0].data.some((d) => d.label === "HIIT"));
 });
 
 test("PNG with bundled fonts still has text when system fonts are off", async () => {
