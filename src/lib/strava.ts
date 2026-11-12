@@ -5,7 +5,8 @@ import { getDataDir } from "./data-dir";
 
 const STORE_FILE = "strava-accounts.json";
 const STRAVA_AUTH = "https://www.strava.com/oauth/authorize";
-const STRAVA_TOKEN = "https://www.strava.com/oauth/token";
+/** Official token endpoint (form-urlencoded). /oauth/token also works; v3 is what the docs show. */
+const STRAVA_TOKEN = "https://www.strava.com/api/v3/oauth/token";
 const STRAVA_API = "https://www.strava.com/api/v3";
 
 /** Read-only athlete + activity access (per-user). */
@@ -149,8 +150,8 @@ export async function getStravaAccessToken(accountKey: StravaAccountKey): Promis
     const { clientId, clientSecret } = requireStravaOAuthEnv();
     const res = await fetch(STRAVA_TOKEN, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,
         grant_type: "refresh_token",
@@ -160,9 +161,9 @@ export async function getStravaAccessToken(accountKey: StravaAccountKey): Promis
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`strava_refresh_failed:${res.status}:${text.slice(0, 120)}`);
+      throw new Error(`strava_refresh_failed:${res.status}:${summarizeStravaError(text)}`);
     }
-    const j = (await res.json()) as {
+    const j = (await parseStravaTokenJson(res)) as {
       access_token: string;
       refresh_token?: string;
       expires_at?: number;
@@ -188,6 +189,29 @@ export async function getStravaAccessToken(accountKey: StravaAccountKey): Promis
   }
 }
 
+function summarizeStravaError(text: string): string {
+  const trimmed = text.trim();
+  if (/request blocked/i.test(trimmed) || /^blocked$/i.test(trimmed)) {
+    return "blocked (Strava/CloudFront rejected the token request from this server — retry; if it persists, Strava may be blocking the outbound IP)";
+  }
+  try {
+    const j = JSON.parse(trimmed) as { message?: string; errors?: unknown };
+    if (j.message) return j.message.slice(0, 160);
+  } catch {
+    /* not JSON */
+  }
+  return trimmed.replace(/\s+/g, " ").slice(0, 160);
+}
+
+async function parseStravaTokenJson(res: Response): Promise<unknown> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new Error(`strava_token_non_json:${summarizeStravaError(text)}`);
+  }
+}
+
 export async function exchangeStravaCode(input: {
   code: string;
   accountKey: StravaAccountKey;
@@ -196,8 +220,8 @@ export async function exchangeStravaCode(input: {
   const { clientId, clientSecret } = requireStravaOAuthEnv();
   const res = await fetch(STRAVA_TOKEN, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
       client_id: clientId,
       client_secret: clientSecret,
       code: input.code,
@@ -207,9 +231,9 @@ export async function exchangeStravaCode(input: {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`strava_token_exchange_failed:${res.status}:${text.slice(0, 160)}`);
+    throw new Error(`strava_token_exchange_failed:${res.status}:${summarizeStravaError(text)}`);
   }
-  const j = (await res.json()) as {
+  const j = (await parseStravaTokenJson(res)) as {
     access_token: string;
     refresh_token: string;
     expires_at?: number;
