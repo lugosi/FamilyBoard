@@ -235,6 +235,71 @@ export function injectChatCharts(reply: string, charts: ChatChartSpec[]): string
   return base ? `${base}\n\n${fences}` : fences;
 }
 
+export type StravaChartPeriod = "week" | "month";
+
+type PeriodSportSlice = {
+  sport: string;
+  moving_time_s?: number;
+  distance_m?: number;
+  count?: number;
+  suffer_score?: number;
+};
+
+type PeriodBucket = {
+  key: string;
+  label: string;
+  moving_time_s?: number;
+  suffer_score?: number;
+  bySport?: PeriodSportSlice[];
+};
+
+function monthChartLabel(monthStart: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(monthStart);
+  if (!m) return monthStart;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const idx = Number(m[2]) - 1;
+  return `${months[idx] ?? m[2]} ${m[1]}`;
+}
+
+function periodsFromSummary(
+  summary: {
+    byWeek?: Array<{
+      weekStart: string;
+      moving_time_s?: number;
+      suffer_score?: number;
+      bySport?: PeriodSportSlice[];
+    }>;
+    byMonth?: Array<{
+      monthStart: string;
+      moving_time_s?: number;
+      suffer_score?: number;
+      bySport?: PeriodSportSlice[];
+    }>;
+  },
+  period: StravaChartPeriod,
+): PeriodBucket[] {
+  if (period === "month") {
+    return [...(summary.byMonth ?? [])]
+      .sort((a, b) => a.monthStart.localeCompare(b.monthStart))
+      .map((m) => ({
+        key: m.monthStart,
+        label: monthChartLabel(m.monthStart),
+        moving_time_s: m.moving_time_s,
+        suffer_score: m.suffer_score,
+        bySport: m.bySport,
+      }));
+  }
+  return [...(summary.byWeek ?? [])]
+    .sort((a, b) => a.weekStart.localeCompare(b.weekStart))
+    .map((w) => ({
+      key: w.weekStart,
+      label: w.weekStart.slice(5) || w.weekStart,
+      moving_time_s: w.moving_time_s,
+      suffer_score: w.suffer_score,
+      bySport: w.bySport,
+    }));
+}
+
 export function chartsFromStravaSummary(
   summary: {
     byWeek?: Array<{
@@ -245,13 +310,16 @@ export function chartsFromStravaSummary(
       /** Relative Effort proxy (Strava suffer_score). */
       suffer_score?: number;
       count?: number;
-      bySport?: Array<{
-        sport: string;
-        moving_time_s?: number;
-        distance_m?: number;
-        count?: number;
-        suffer_score?: number;
-      }>;
+      bySport?: PeriodSportSlice[];
+    }>;
+    byMonth?: Array<{
+      monthStart: string;
+      distance_m?: number;
+      moving_time_s?: number;
+      elevation_m?: number;
+      suffer_score?: number;
+      count?: number;
+      bySport?: PeriodSportSlice[];
     }>;
     bySport?: Array<{
       sport: string;
@@ -261,28 +329,28 @@ export function chartsFromStravaSummary(
       suffer_score?: number;
     }>;
   },
-  opts: { unit?: "km" | "mi" } = {},
+  opts: { unit?: "km" | "mi"; period?: StravaChartPeriod } = {},
 ): ChatChartSpec[] {
+  const period: StravaChartPeriod = opts.period === "month" ? "month" : "week";
   const toHours = (s: number) => Math.round(((s || 0) / 3600) * 100) / 100;
   const out: ChatChartSpec[] = [];
-  const weeks = [...(summary.byWeek ?? [])].sort((a, b) =>
-    a.weekStart.localeCompare(b.weekStart),
-  );
-  const weekLabels = (w: { weekStart: string }) => w.weekStart.slice(5) || w.weekStart;
-  const hasWeeklyLoad = weeks.some((w) => (w.suffer_score ?? 0) > 0);
+  const buckets = periodsFromSummary(summary, period);
+  const hasLoad = buckets.some((b) => (b.suffer_score ?? 0) > 0);
+  const periodWord = period === "month" ? "Monthly" : "Weekly";
+  const xAxisLabel = period === "month" ? "Month" : "Week starting";
 
-  if (weeks.length > 0) {
+  if (buckets.length > 0) {
     // Rank sports by total moving time across the window; keep top N for stacks.
     const sportTotals = new Map<string, number>();
-    for (const w of weeks) {
-      for (const s of w.bySport ?? []) {
+    for (const b of buckets) {
+      for (const s of b.bySport ?? []) {
         sportTotals.set(s.sport, (sportTotals.get(s.sport) || 0) + (s.moving_time_s || 0));
       }
     }
     const rankedSports = [...sportTotals.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([name]) => name)
-      .slice(0, Math.max(1, MAX_SERIES - (hasWeeklyLoad ? 1 : 0)));
+      .slice(0, Math.max(1, MAX_SERIES - (hasLoad ? 1 : 0)));
     const hasSportSlices = rankedSports.length > 0;
 
     const series: ChatChartSeries[] = hasSportSlices
@@ -290,10 +358,10 @@ export function chartsFromStravaSummary(
           name: sport.slice(0, 16),
           unit: "h",
           color: DEFAULT_COLORS[i % DEFAULT_COLORS.length],
-          data: weeks.map((w) => {
-            const slice = (w.bySport ?? []).find((s) => s.sport === sport);
+          data: buckets.map((b) => {
+            const slice = (b.bySport ?? []).find((s) => s.sport === sport);
             return {
-              label: weekLabels(w),
+              label: b.label,
               value: toHours(slice?.moving_time_s || 0),
             };
           }),
@@ -303,33 +371,33 @@ export function chartsFromStravaSummary(
             name: "Moving time",
             unit: "h",
             color: DEFAULT_COLORS[0],
-            data: weeks.map((w) => ({
-              label: weekLabels(w),
-              value: toHours(w.moving_time_s || 0),
+            data: buckets.map((b) => ({
+              label: b.label,
+              value: toHours(b.moving_time_s || 0),
             })),
           },
         ];
 
-    if (hasWeeklyLoad) {
+    if (hasLoad) {
       series.push({
         name: "Relative Effort",
         unit: "RE",
         color: "#f59e0b",
-        data: weeks.map((w) => ({
-          label: weekLabels(w),
-          value: Math.round((w.suffer_score || 0) * 10) / 10,
+        data: buckets.map((b) => ({
+          label: b.label,
+          value: Math.round((b.suffer_score || 0) * 10) / 10,
         })),
       });
     }
 
     out.push({
       type: "combo",
-      title: hasWeeklyLoad
-        ? "Weekly time by sport vs Relative Effort"
-        : "Weekly time by sport",
+      title: hasLoad
+        ? `${periodWord} time by sport vs Relative Effort`
+        : `${periodWord} time by sport`,
       leftAxisLabel: "Moving time (h)",
-      rightAxisLabel: hasWeeklyLoad ? "Relative Effort" : undefined,
-      xAxisLabel: "Week starting",
+      rightAxisLabel: hasLoad ? "Relative Effort" : undefined,
+      xAxisLabel,
       stack: hasSportSlices && rankedSports.length > 1,
       series,
     });

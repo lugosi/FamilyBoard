@@ -132,6 +132,74 @@ test("Strava weekly chart stacks sports by time + Relative Effort line", () => {
   );
 });
 
+test("Strava monthly chart stacks sports when period=month", () => {
+  const charts = chartsFromStravaSummary(
+    {
+      byWeek: [
+        {
+          weekStart: "2026-10-27",
+          distance_m: 1000,
+          moving_time_s: 1000,
+          bySport: [{ sport: "Run", moving_time_s: 1000, count: 1 }],
+        },
+      ],
+      byMonth: [
+        {
+          monthStart: "2026-10",
+          distance_m: 20000,
+          moving_time_s: 20000,
+          suffer_score: 80,
+          bySport: [
+            { sport: "Ride", moving_time_s: 12000, count: 3, suffer_score: 40 },
+            { sport: "HIIT", moving_time_s: 5000, count: 4, suffer_score: 25 },
+            { sport: "Run", moving_time_s: 3000, count: 2, suffer_score: 15 },
+          ],
+        },
+        {
+          monthStart: "2026-11",
+          distance_m: 8000,
+          moving_time_s: 15000,
+          suffer_score: 55,
+          bySport: [
+            { sport: "HIIT", moving_time_s: 8000, count: 5, suffer_score: 35 },
+            { sport: "Run", moving_time_s: 7000, count: 3, suffer_score: 20 },
+          ],
+        },
+      ],
+      bySport: [
+        { sport: "HIIT", distance_m: 0, moving_time_s: 13000, count: 9, suffer_score: 60 },
+        { sport: "Ride", distance_m: 20000, moving_time_s: 12000, count: 3, suffer_score: 40 },
+        { sport: "Run", distance_m: 8000, moving_time_s: 10000, count: 5, suffer_score: 35 },
+      ],
+    },
+    { period: "month" },
+  );
+  assert.match(charts[0].title || "", /Monthly/);
+  assert.equal(charts[0].xAxisLabel, "Month");
+  assert.equal(charts[0].stack, true);
+  assert.ok(charts[0].series.some((s) => s.name === "HIIT"));
+  assert.deepEqual(
+    charts[0].series[0].data.map((d) => d.label),
+    ["Oct 2026", "Nov 2026"],
+  );
+  // Default remains weekly when period omitted.
+  const weekly = chartsFromStravaSummary({
+    byWeek: [
+      {
+        weekStart: "2026-11-03",
+        distance_m: 1000,
+        moving_time_s: 3600,
+        bySport: [
+          { sport: "Run", moving_time_s: 2000, count: 1 },
+          { sport: "HIIT", moving_time_s: 1600, count: 1 },
+        ],
+      },
+    ],
+  });
+  assert.match(weekly[0].title || "", /Weekly/);
+  assert.equal(weekly[0].xAxisLabel, "Week starting");
+});
+
 test("Strava weekly chart uses time without suffer_score", () => {
   const charts = chartsFromStravaSummary({
     byWeek: [

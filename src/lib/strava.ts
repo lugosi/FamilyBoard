@@ -608,6 +608,18 @@ export type StravaWeekBucket = {
   bySport?: StravaWeekSportSlice[];
 };
 
+/** Calendar-month bucket (same shape as week; key is YYYY-MM). */
+export type StravaMonthBucket = {
+  /** Local calendar month `YYYY-MM` */
+  monthStart: string;
+  count: number;
+  distance_m: number;
+  moving_time_s: number;
+  elevation_m: number;
+  suffer_score?: number;
+  bySport?: StravaWeekSportSlice[];
+};
+
 export type StravaTrainingSummary = {
   windowDays: number;
   activityCount: number;
@@ -620,6 +632,8 @@ export type StravaTrainingSummary = {
   bySport: StravaSportBucket[];
   /** Newest week first; Monday–Sunday local weeks. */
   byWeek: StravaWeekBucket[];
+  /** Newest month first; calendar months. */
+  byMonth: StravaMonthBucket[];
   recent: Array<{
     id: number;
     name: string;
@@ -647,19 +661,55 @@ export function mondayWeekStartKey(startDateLocal: string): string {
   return dt.toISOString().slice(0, 10);
 }
 
+/** Calendar month key `YYYY-MM` from an activity's local start. */
+export function monthStartKey(startDateLocal: string): string {
+  const day = startDateLocal.slice(0, 10);
+  const m = /^(\d{4})-(\d{2})/.exec(day);
+  return m ? `${m[1]}-${m[2]}` : day.slice(0, 7) || "unknown";
+}
+
 export function summarizeStravaActivities(
   activities: CachedStravaActivity[],
   opts: { recentLimit?: number } = {},
 ): StravaTrainingSummary {
   const bySportMap = new Map<string, StravaSportBucket>();
   const byWeekMap = new Map<string, StravaWeekBucket>();
-  /** weekStart → sport → slice */
+  const byMonthMap = new Map<string, StravaMonthBucket>();
+  /** periodKey → sport → slice (weeks and months share the helper shape). */
   const weekSportMaps = new Map<string, Map<string, StravaWeekSportSlice>>();
+  const monthSportMaps = new Map<string, Map<string, StravaWeekSportSlice>>();
   let distance = 0;
   let moving = 0;
   let elevation = 0;
   let suffer = 0;
   let sufferPresent = false;
+
+  const bumpSportSlice = (
+    maps: Map<string, Map<string, StravaWeekSportSlice>>,
+    periodKey: string,
+    sport: string,
+    a: CachedStravaActivity,
+  ) => {
+    let sportMap = maps.get(periodKey);
+    if (!sportMap) {
+      sportMap = new Map();
+      maps.set(periodKey, sportMap);
+    }
+    const slice = sportMap.get(sport) ?? {
+      sport,
+      count: 0,
+      distance_m: 0,
+      moving_time_s: 0,
+    };
+    slice.count += 1;
+    slice.distance_m += a.distance_m || 0;
+    slice.moving_time_s += a.moving_time_s || 0;
+    if (typeof a.suffer_score === "number") {
+      slice.suffer_score = (slice.suffer_score ?? 0) + a.suffer_score;
+    }
+    sportMap.set(sport, slice);
+  };
+
   for (const a of activities) {
     distance += a.distance_m || 0;
     moving += a.moving_time_s || 0;
@@ -685,7 +735,8 @@ export function summarizeStravaActivities(
     }
     bySportMap.set(sport, sportBucket);
 
-    const weekStart = mondayWeekStartKey(a.start_date_local || a.start_date);
+    const localStart = a.start_date_local || a.start_date;
+    const weekStart = mondayWeekStartKey(localStart);
     const weekBucket = byWeekMap.get(weekStart) ?? {
       weekStart,
       count: 0,
@@ -701,25 +752,25 @@ export function summarizeStravaActivities(
       weekBucket.suffer_score = (weekBucket.suffer_score ?? 0) + a.suffer_score;
     }
     byWeekMap.set(weekStart, weekBucket);
+    bumpSportSlice(weekSportMaps, weekStart, sport, a);
 
-    let sportMap = weekSportMaps.get(weekStart);
-    if (!sportMap) {
-      sportMap = new Map();
-      weekSportMaps.set(weekStart, sportMap);
-    }
-    const slice = sportMap.get(sport) ?? {
-      sport,
+    const monthStart = monthStartKey(localStart);
+    const monthBucket = byMonthMap.get(monthStart) ?? {
+      monthStart,
       count: 0,
       distance_m: 0,
       moving_time_s: 0,
+      elevation_m: 0,
     };
-    slice.count += 1;
-    slice.distance_m += a.distance_m || 0;
-    slice.moving_time_s += a.moving_time_s || 0;
+    monthBucket.count += 1;
+    monthBucket.distance_m += a.distance_m || 0;
+    monthBucket.moving_time_s += a.moving_time_s || 0;
+    monthBucket.elevation_m += a.total_elevation_gain_m || 0;
     if (typeof a.suffer_score === "number") {
-      slice.suffer_score = (slice.suffer_score ?? 0) + a.suffer_score;
+      monthBucket.suffer_score = (monthBucket.suffer_score ?? 0) + a.suffer_score;
     }
-    sportMap.set(sport, slice);
+    byMonthMap.set(monthStart, monthBucket);
+    bumpSportSlice(monthSportMaps, monthStart, sport, a);
   }
   const sorted = [...activities].sort((a, b) => activityStartUnix(b) - activityStartUnix(a));
   const recentLimit = Math.max(1, Math.min(opts.recentLimit ?? 5, 20));
@@ -758,6 +809,25 @@ export function summarizeStravaActivities(
         };
       })
       .sort((a, b) => b.weekStart.localeCompare(a.weekStart)),
+    byMonth: [...byMonthMap.values()]
+      .map((b) => {
+        const sportMap = monthSportMaps.get(b.monthStart);
+        const bySport = sportMap
+          ? [...sportMap.values()]
+              .map((s) => ({
+                ...s,
+                distance_m: Math.round(s.distance_m),
+              }))
+              .sort((a, c) => c.moving_time_s - a.moving_time_s)
+          : undefined;
+        return {
+          ...b,
+          distance_m: Math.round(b.distance_m),
+          elevation_m: Math.round(b.elevation_m),
+          ...(bySport?.length ? { bySport } : {}),
+        };
+      })
+      .sort((a, b) => b.monthStart.localeCompare(a.monthStart)),
     recent: sorted.slice(0, recentLimit).map((a) => ({
       id: a.id,
       name: a.name,
