@@ -6,6 +6,11 @@ function isPublicPath(pathname: string): boolean {
   return (
     pathname === "/unlock" ||
     pathname === "/api/unlock" ||
+    // OAuth provider redirects back here without the unlock cookie on some browsers.
+    pathname === "/api/auth/google/callback" ||
+    pathname === "/api/auth/spotify/callback" ||
+    pathname === "/api/auth/strava/callback" ||
+    pathname === "/api/auth/nest/pcm/callback" ||
     pathname.startsWith("/_next/") ||
     pathname === "/favicon.ico" ||
     pathname === "/robots.txt" ||
