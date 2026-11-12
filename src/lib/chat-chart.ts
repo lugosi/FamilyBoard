@@ -15,28 +15,44 @@ export type ChatChartSeries = {
 
 export type ChatChartSpec = {
   /**
-   * `combo` = first series as bars + second as a line (preferred for comparing metrics).
+   * `combo` = bars + a line (preferred for comparing metrics).
    * `bar` / `line` are single-style fallbacks.
    */
   type: "bar" | "line" | "combo";
   title?: string;
   /** Default unit when series omit their own. */
   unit?: string;
-  /** Left Y-axis legend (e.g. "Distance (km)"). */
+  /** Left Y-axis legend (e.g. "Moving time (h)"). */
   leftAxisLabel?: string;
-  /** Right Y-axis legend for combo charts (e.g. "Moving time (h)"). */
+  /** Right Y-axis legend for combo charts (e.g. "Relative Effort"). */
   rightAxisLabel?: string;
   /** Bottom X-axis legend (e.g. "Week" / "Sport"). */
   xAxisLabel?: string;
+  /**
+   * Stack bar series that share the left-axis unit (e.g. sports by week).
+   * A series with a different unit still draws as the right-axis line.
+   */
+  stack?: boolean;
   /** @deprecated Prefer leftAxisLabel. */
   yLabel?: string;
   series: ChatChartSeries[];
 };
 
 const MAX_POINTS = 24;
-const MAX_SERIES = 4;
+const MAX_SERIES = 8;
 
-const DEFAULT_COLORS = ["#38bdf8", "#34d399", "#fbbf24", "#fb7185"];
+export const DEFAULT_CHART_COLORS = [
+  "#38bdf8",
+  "#34d399",
+  "#a78bfa",
+  "#fb7185",
+  "#fbbf24",
+  "#2dd4bf",
+  "#f472b6",
+  "#94a3b8",
+];
+
+const DEFAULT_COLORS = DEFAULT_CHART_COLORS;
 
 function asFiniteNumber(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -152,6 +168,7 @@ export function parseChatChart(raw: string): ChatChartSpec | null {
         ? explicitRight || seriesAxisLabel(series[1])
         : explicitRight,
     xAxisLabel: typeof o.xAxisLabel === "string" ? o.xAxisLabel.trim().slice(0, 40) : undefined,
+    stack: o.stack === true,
     yLabel: typeof o.yLabel === "string" ? o.yLabel.trim().slice(0, 40) : undefined,
     series,
   };
@@ -228,6 +245,13 @@ export function chartsFromStravaSummary(
       /** Relative Effort proxy (Strava suffer_score). */
       suffer_score?: number;
       count?: number;
+      bySport?: Array<{
+        sport: string;
+        moving_time_s?: number;
+        distance_m?: number;
+        count?: number;
+        suffer_score?: number;
+      }>;
     }>;
     bySport?: Array<{
       sport: string;
@@ -239,11 +263,6 @@ export function chartsFromStravaSummary(
   },
   opts: { unit?: "km" | "mi" } = {},
 ): ChatChartSpec[] {
-  const unit = opts.unit === "mi" ? "mi" : "km";
-  const toDist = (m: number) =>
-    unit === "mi"
-      ? Math.round((m / 1609.34) * 10) / 10
-      : Math.round((m / 1000) * 10) / 10;
   const toHours = (s: number) => Math.round(((s || 0) / 3600) * 100) / 100;
   const out: ChatChartSpec[] = [];
   const weeks = [...(summary.byWeek ?? [])].sort((a, b) =>
@@ -253,66 +272,67 @@ export function chartsFromStravaSummary(
   const hasWeeklyLoad = weeks.some((w) => (w.suffer_score ?? 0) > 0);
 
   if (weeks.length > 0) {
-    // Coaching-style primary chart (srothgan/strava-claude-skill): volume bars + load line.
-    // Relative Effort (suffer_score) is the best form/load proxy Strava list activities expose.
-    if (hasWeeklyLoad) {
-      out.push({
-        type: "combo",
-        title: "Weekly volume vs Relative Effort",
-        leftAxisLabel: `Distance (${unit})`,
-        rightAxisLabel: "Relative Effort",
-        xAxisLabel: "Week starting",
-        series: [
-          {
-            name: "Distance",
-            unit,
-            color: DEFAULT_COLORS[0],
-            data: weeks.map((w) => ({
+    // Rank sports by total moving time across the window; keep top N for stacks.
+    const sportTotals = new Map<string, number>();
+    for (const w of weeks) {
+      for (const s of w.bySport ?? []) {
+        sportTotals.set(s.sport, (sportTotals.get(s.sport) || 0) + (s.moving_time_s || 0));
+      }
+    }
+    const rankedSports = [...sportTotals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name)
+      .slice(0, Math.max(1, MAX_SERIES - (hasWeeklyLoad ? 1 : 0)));
+    const hasSportSlices = rankedSports.length > 0;
+
+    const series: ChatChartSeries[] = hasSportSlices
+      ? rankedSports.map((sport, i) => ({
+          name: sport.slice(0, 16),
+          unit: "h",
+          color: DEFAULT_COLORS[i % DEFAULT_COLORS.length],
+          data: weeks.map((w) => {
+            const slice = (w.bySport ?? []).find((s) => s.sport === sport);
+            return {
               label: weekLabels(w),
-              value: toDist(w.distance_m || 0),
-            })),
-          },
-          {
-            name: "Relative Effort",
-            unit: "RE",
-            color: DEFAULT_COLORS[2],
-            data: weeks.map((w) => ({
-              label: weekLabels(w),
-              value: Math.round((w.suffer_score || 0) * 10) / 10,
-            })),
-          },
-        ],
-      });
-    } else {
-      // No HR load → fall back to distance + time (still combo).
-      out.push({
-        type: "combo",
-        title: "Weekly distance vs moving time",
-        leftAxisLabel: `Distance (${unit})`,
-        rightAxisLabel: "Moving time (h)",
-        xAxisLabel: "Week starting",
-        series: [
-          {
-            name: "Distance",
-            unit,
-            color: DEFAULT_COLORS[0],
-            data: weeks.map((w) => ({
-              label: weekLabels(w),
-              value: toDist(w.distance_m || 0),
-            })),
-          },
+              value: toHours(slice?.moving_time_s || 0),
+            };
+          }),
+        }))
+      : [
           {
             name: "Moving time",
             unit: "h",
-            color: DEFAULT_COLORS[2],
+            color: DEFAULT_COLORS[0],
             data: weeks.map((w) => ({
               label: weekLabels(w),
               value: toHours(w.moving_time_s || 0),
             })),
           },
-        ],
+        ];
+
+    if (hasWeeklyLoad) {
+      series.push({
+        name: "Relative Effort",
+        unit: "RE",
+        color: "#f59e0b",
+        data: weeks.map((w) => ({
+          label: weekLabels(w),
+          value: Math.round((w.suffer_score || 0) * 10) / 10,
+        })),
       });
     }
+
+    out.push({
+      type: "combo",
+      title: hasWeeklyLoad
+        ? "Weekly time by sport vs Relative Effort"
+        : "Weekly time by sport",
+      leftAxisLabel: "Moving time (h)",
+      rightAxisLabel: hasWeeklyLoad ? "Relative Effort" : undefined,
+      xAxisLabel: "Week starting",
+      stack: hasSportSlices && rankedSports.length > 1,
+      series,
+    });
   }
 
   // Sport mix uses moving time (not distance) so HIIT / strength / yoga still appear.

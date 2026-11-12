@@ -588,6 +588,14 @@ export type StravaSportBucket = {
   suffer_score?: number;
 };
 
+export type StravaWeekSportSlice = {
+  sport: string;
+  count: number;
+  distance_m: number;
+  moving_time_s: number;
+  suffer_score?: number;
+};
+
 export type StravaWeekBucket = {
   /** Monday-start local date key YYYY-MM-DD */
   weekStart: string;
@@ -596,6 +604,8 @@ export type StravaWeekBucket = {
   moving_time_s: number;
   elevation_m: number;
   suffer_score?: number;
+  /** Per-sport time within this week (for stacked weekly charts). */
+  bySport?: StravaWeekSportSlice[];
 };
 
 export type StravaTrainingSummary = {
@@ -643,6 +653,8 @@ export function summarizeStravaActivities(
 ): StravaTrainingSummary {
   const bySportMap = new Map<string, StravaSportBucket>();
   const byWeekMap = new Map<string, StravaWeekBucket>();
+  /** weekStart → sport → slice */
+  const weekSportMaps = new Map<string, Map<string, StravaWeekSportSlice>>();
   let distance = 0;
   let moving = 0;
   let elevation = 0;
@@ -689,6 +701,25 @@ export function summarizeStravaActivities(
       weekBucket.suffer_score = (weekBucket.suffer_score ?? 0) + a.suffer_score;
     }
     byWeekMap.set(weekStart, weekBucket);
+
+    let sportMap = weekSportMaps.get(weekStart);
+    if (!sportMap) {
+      sportMap = new Map();
+      weekSportMaps.set(weekStart, sportMap);
+    }
+    const slice = sportMap.get(sport) ?? {
+      sport,
+      count: 0,
+      distance_m: 0,
+      moving_time_s: 0,
+    };
+    slice.count += 1;
+    slice.distance_m += a.distance_m || 0;
+    slice.moving_time_s += a.moving_time_s || 0;
+    if (typeof a.suffer_score === "number") {
+      slice.suffer_score = (slice.suffer_score ?? 0) + a.suffer_score;
+    }
+    sportMap.set(sport, slice);
   }
   const sorted = [...activities].sort((a, b) => activityStartUnix(b) - activityStartUnix(a));
   const recentLimit = Math.max(1, Math.min(opts.recentLimit ?? 5, 20));
@@ -707,13 +738,25 @@ export function summarizeStravaActivities(
         distance_m: Math.round(b.distance_m),
         elevation_m: Math.round(b.elevation_m),
       }))
-      .sort((a, b) => b.distance_m - a.distance_m),
+      .sort((a, b) => b.moving_time_s - a.moving_time_s),
     byWeek: [...byWeekMap.values()]
-      .map((b) => ({
-        ...b,
-        distance_m: Math.round(b.distance_m),
-        elevation_m: Math.round(b.elevation_m),
-      }))
+      .map((b) => {
+        const sportMap = weekSportMaps.get(b.weekStart);
+        const bySport = sportMap
+          ? [...sportMap.values()]
+              .map((s) => ({
+                ...s,
+                distance_m: Math.round(s.distance_m),
+              }))
+              .sort((a, c) => c.moving_time_s - a.moving_time_s)
+          : undefined;
+        return {
+          ...b,
+          distance_m: Math.round(b.distance_m),
+          elevation_m: Math.round(b.elevation_m),
+          ...(bySport?.length ? { bySport } : {}),
+        };
+      })
       .sort((a, b) => b.weekStart.localeCompare(a.weekStart)),
     recent: sorted.slice(0, recentLimit).map((a) => ({
       id: a.id,

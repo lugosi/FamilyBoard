@@ -40,9 +40,9 @@ Data comes from FamilyBoard's local cache (\`strava_training_summary\`), not Str
    - Sport mix from \`bySport\`
    - One highlight from \`recent\` if useful
 6. Charts are attached automatically from the tool (AI tab + Slack). Prefer interpreting those; do not invent chart JSON.
-   - **Primary:** weekly **distance (bars) + Relative Effort (line)** — best "current form / load" view with 30 days of list activities.
-   - **Fallback** (no HR/\`suffer_score\`): distance + moving time.
-   - **Sport mix:** moving time + Relative Effort when present, else time + sessions (time, not distance — HIIT/strength have no km).
+   - **Primary:** weekly **stacked moving time by sport (bars) + Relative Effort (line)** — time, not distance, so HIIT/strength show up.
+   - **Fallback** (no HR/\`suffer_score\`): stacked weekly time by sport only.
+   - **Sport mix:** moving time + Relative Effort when present, else time + sessions (time, not distance).
 7. Give 1–3 practical next steps (volume, easy days, consistency). If HR/\`suffer_score\` is missing on many activities, say load/form is incomplete.
 8. Do **not** invent CTL/ATL/TSB ("Fitness/Fatigue/Form") or Premium-only analytics. A true PMC needs ~42 days of reliable daily load ([HenrikBrehm/triathlon-coach-skill](https://github.com/HenrikBrehm/triathlon-coach-skill)); with a 30-day cache, speak in week-over-week Relative Effort and volume only.
 9. Do not claim medical diagnosis or guaranteed race times.

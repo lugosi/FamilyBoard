@@ -129,9 +129,47 @@ function axisLegend(
   return series.name || unit || "";
 }
 
-/** Two+ series → always combo (bar + line). */
-function isCombo(spec: ChatChartSpec): boolean {
-  return spec.series.length >= 2;
+/**
+ * Split series into left-axis bars and optional right-axis line.
+ * When `stack` is set, every series sharing the first series' unit stacks;
+ * a series with a different unit becomes the dual-axis line.
+ */
+function splitSeries(spec: ChatChartSpec): {
+  barSeries: ChatChartSeries[];
+  lineSeries: ChatChartSeries[];
+  dual: boolean;
+  stack: boolean;
+} {
+  if (spec.series.length < 2) {
+    return {
+      barSeries: spec.type === "line" ? [] : spec.series,
+      lineSeries: spec.type === "line" ? spec.series : [],
+      dual: false,
+      stack: false,
+    };
+  }
+  const leftUnit = seriesUnit(spec.series[0], spec.unit) || "";
+  if (spec.stack) {
+    const barSeries = spec.series.filter(
+      (s) => (seriesUnit(s, spec.unit) || leftUnit) === leftUnit,
+    );
+    const lineSeries = spec.series
+      .filter((s) => (seriesUnit(s, spec.unit) || "") !== leftUnit)
+      .slice(0, 1);
+    return {
+      barSeries: barSeries.length ? barSeries : [spec.series[0]],
+      lineSeries,
+      dual: lineSeries.length > 0,
+      stack: barSeries.length > 1,
+    };
+  }
+  // Classic combo: first = bars, second = line.
+  return {
+    barSeries: [spec.series[0]],
+    lineSeries: [spec.series[1]],
+    dual: true,
+    stack: false,
+  };
 }
 
 /** Render a chart to an SVG string (embeddable / PNG via resvg). */
@@ -141,13 +179,16 @@ export function renderChatChartSvg(
 ): string {
   const theme = THEMES[opts.theme ?? "dark"];
   const labels = allLabels(spec);
-  const combo = isCombo(spec);
-  const leftSeries = combo ? [spec.series[0]] : spec.series;
-  const rightSeries = combo ? [spec.series[1]] : [];
+  const { barSeries, lineSeries, dual, stack } = splitSeries(spec);
 
-  const leftValues = leftSeries.flatMap((s) => s.data.map((d) => d.value));
-  const rightValues = rightSeries.flatMap((s) => s.data.map((d) => d.value));
-  const leftDom = niceDomain(leftValues);
+  const stackTotals = labels.map((label) =>
+    barSeries.reduce((sum, s) => sum + (valueFor(s.data, label) ?? 0), 0),
+  );
+  const leftValues = stack
+    ? stackTotals
+    : barSeries.flatMap((s) => s.data.map((d) => d.value));
+  const rightValues = lineSeries.flatMap((s) => s.data.map((d) => d.value));
+  const leftDom = niceDomain(leftValues.length ? leftValues : [0, 1]);
   const rightDom = niceDomain(rightValues.length ? rightValues : [0, 1]);
   const leftTicks = ticks(leftDom.min, leftDom.max);
   const rightTicks = ticks(rightDom.min, rightDom.max);
@@ -162,14 +203,19 @@ export function renderChatChartSvg(
   const yRight = (v: number) =>
     PAD.top + plotH - ((v - rightDom.min) / Math.max(rightDom.max - rightDom.min, 1e-6)) * plotH;
 
-  const leftLabel = axisLegend(leftSeries[0], spec.unit, spec.leftAxisLabel || spec.yLabel);
-  const rightLabel = combo
-    ? axisLegend(rightSeries[0], spec.unit, spec.rightAxisLabel)
+  const leftLabel =
+    spec.leftAxisLabel?.trim() ||
+    (stack
+      ? `Moving time (${seriesUnit(barSeries[0], spec.unit) || "h"})`
+      : axisLegend(barSeries[0], spec.unit, spec.yLabel));
+  const rightLabel = dual
+    ? axisLegend(lineSeries[0], spec.unit, spec.rightAxisLabel)
     : "";
   const xLabel =
     spec.xAxisLabel?.trim() ||
     (labels.length ? "Category" : "");
 
+  const lineSet = new Set(lineSeries);
   const parts: string[] = [];
   // color on root helps if any child falls back to currentColor.
   parts.push(
@@ -198,7 +244,7 @@ export function renderChatChartSvg(
     const name = s.name || `Series ${i + 1}`;
     const unit = seriesUnit(s, spec.unit);
     const text = unit ? `${name} (${unit})` : name;
-    const isLine = combo ? i > 0 : spec.type === "line";
+    const isLine = lineSet.has(s) || (spec.type === "line" && !barSeries.length);
     if (isLine) {
       parts.push(
         `<line x1="${lx}" x2="${lx + 18}" y1="${legendY - 4}" y2="${legendY - 4}" stroke="${s.color ?? "#fbbf24"}" stroke-width="3.5"/>`,
@@ -303,7 +349,7 @@ export function renderChatChartSvg(
     );
   }
 
-  if (combo && rightSeries.length) {
+  if (dual && lineSeries.length) {
     for (const t of rightTicks) {
       const y = yRight(t);
       parts.push(
@@ -324,7 +370,7 @@ export function renderChatChartSvg(
   parts.push(
     `<line x1="${PAD.left}" x2="${PAD.left}" y1="${PAD.top}" y2="${PAD.top + plotH}" stroke="${theme.axis}" stroke-width="1.5" opacity="0.7"/>`,
   );
-  if (combo) {
+  if (dual) {
     parts.push(
       `<line x1="${VB_W - PAD.right}" x2="${VB_W - PAD.right}" y1="${PAD.top}" y2="${PAD.top + plotH}" stroke="${theme.axis}" stroke-width="1.5" opacity="0.7"/>`,
     );
@@ -333,21 +379,48 @@ export function renderChatChartSvg(
     `<line x1="${PAD.left}" x2="${VB_W - PAD.right}" y1="${PAD.top + plotH}" y2="${PAD.top + plotH}" stroke="${theme.axis}" stroke-width="1.5" opacity="0.7"/>`,
   );
 
-  const drawBars = (seriesList: ChatChartSeries[], yScale: (v: number) => number) => {
+  const drawBars = (
+    seriesList: ChatChartSeries[],
+    yScale: (v: number) => number,
+    stacked: boolean,
+  ) => {
+    const barW = Math.max(12, band * 0.55);
+    if (stacked && seriesList.length > 1) {
+      labels.forEach((label, li) => {
+        let cumulative = 0;
+        const x = PAD.left + li * band + (band - barW) / 2;
+        seriesList.forEach((series, si) => {
+          const v = valueFor(series.data, label) ?? 0;
+          if (v <= 0) return;
+          const y0 = yScale(cumulative);
+          const y1 = yScale(cumulative + v);
+          cumulative += v;
+          const top = Math.min(y0, y1);
+          const h = Math.max(1.5, Math.abs(y0 - y1));
+          const color = series.color ?? "#38bdf8";
+          // Round only the top segment of the stack.
+          const rx = si === seriesList.length - 1 || cumulative === stackTotals[li] ? 3 : 0;
+          parts.push(
+            `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="${rx}" fill="${color}" style="fill:${color}" opacity="0.92"/>`,
+          );
+        });
+      });
+      return;
+    }
     const seriesCount = Math.max(seriesList.length, 1);
     seriesList.forEach((series, si) => {
-      const barW = Math.max(10, (band * 0.5) / seriesCount);
+      const w = Math.max(10, (band * 0.5) / seriesCount);
       for (const p of series.data) {
         const li = labels.indexOf(p.label);
         if (li < 0) continue;
-        const x = PAD.left + li * band + (band - barW * seriesCount) / 2 + si * barW;
+        const x = PAD.left + li * band + (band - w * seriesCount) / 2 + si * w;
         const y0 = yScale(0);
         const y1 = yScale(p.value);
         const top = Math.min(y0, y1);
         const h = Math.max(2, Math.abs(y0 - y1));
         const color = series.color ?? "#38bdf8";
         parts.push(
-          `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${color}" style="fill:${color}" opacity="0.92"/>`,
+          `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${color}" style="fill:${color}" opacity="0.92"/>`,
         );
       }
     });
@@ -391,14 +464,8 @@ export function renderChatChartSvg(
     });
   };
 
-  if (combo) {
-    drawBars(leftSeries, yLeft);
-    drawLines(rightSeries, yRight);
-  } else if (spec.type === "line") {
-    drawLines(spec.series, yLeft);
-  } else {
-    drawBars(spec.series, yLeft);
-  }
+  if (barSeries.length) drawBars(barSeries, yLeft, stack);
+  if (lineSeries.length) drawLines(lineSeries, dual ? yRight : yLeft);
 
   labels.forEach((label, i) => {
     const x = PAD.left + i * band + band / 2;
