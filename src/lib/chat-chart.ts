@@ -14,11 +14,21 @@ export type ChatChartSeries = {
 };
 
 export type ChatChartSpec = {
-  type: "bar" | "line";
+  /**
+   * `combo` = first series as bars + second as a line (preferred for comparing metrics).
+   * `bar` / `line` are single-style fallbacks.
+   */
+  type: "bar" | "line" | "combo";
   title?: string;
   /** Default unit when series omit their own. */
   unit?: string;
-  /** Optional y-axis hint shown in the corner. */
+  /** Left Y-axis legend (e.g. "Distance (km)"). */
+  leftAxisLabel?: string;
+  /** Right Y-axis legend for combo charts (e.g. "Moving time (h)"). */
+  rightAxisLabel?: string;
+  /** Bottom X-axis legend (e.g. "Week" / "Sport"). */
+  xAxisLabel?: string;
+  /** @deprecated Prefer leftAxisLabel. */
   yLabel?: string;
   series: ChatChartSeries[];
 };
@@ -84,7 +94,8 @@ export function parseChatChart(raw: string): ChatChartSpec | null {
   }
   if (!parsed || typeof parsed !== "object") return null;
   const o = parsed as Record<string, unknown>;
-  const type = o.type === "line" ? "line" : o.type === "bar" ? "bar" : null;
+  const type =
+    o.type === "line" ? "line" : o.type === "combo" ? "combo" : o.type === "bar" ? "bar" : null;
   if (!type) return null;
 
   let series: ChatChartSeries[] = [];
@@ -110,11 +121,38 @@ export function parseChatChart(raw: string): ChatChartSpec | null {
   }
   if (!series.length) return null;
 
+  // Prefer combo whenever two series are present (bar + line on one chart).
+  const resolvedType =
+    series.length >= 2 && type !== "line" ? "combo" : type === "combo" && series.length < 2 ? "bar" : type;
+
+  const fallbackUnit = typeof o.unit === "string" ? o.unit.trim().slice(0, 16) : undefined;
+  const explicitLeft =
+    typeof o.leftAxisLabel === "string"
+      ? o.leftAxisLabel.trim().slice(0, 40)
+      : typeof o.yLabel === "string"
+        ? o.yLabel.trim().slice(0, 40)
+        : undefined;
+  const explicitRight =
+    typeof o.rightAxisLabel === "string" ? o.rightAxisLabel.trim().slice(0, 40) : undefined;
+
+  const seriesAxisLabel = (s: ChatChartSeries | undefined): string | undefined => {
+    if (!s) return undefined;
+    const unit = s.unit || fallbackUnit;
+    if (s.name && unit) return `${s.name} (${unit})`.slice(0, 40);
+    return (s.name || unit || undefined)?.slice(0, 40);
+  };
+
   return {
-    type,
+    type: resolvedType,
     title: typeof o.title === "string" ? o.title.trim().slice(0, 80) : undefined,
-    unit: typeof o.unit === "string" ? o.unit.trim().slice(0, 16) : undefined,
-    yLabel: typeof o.yLabel === "string" ? o.yLabel.trim().slice(0, 24) : undefined,
+    unit: fallbackUnit,
+    leftAxisLabel: explicitLeft || seriesAxisLabel(series[0]),
+    rightAxisLabel:
+      resolvedType === "combo"
+        ? explicitRight || seriesAxisLabel(series[1])
+        : explicitRight,
+    xAxisLabel: typeof o.xAxisLabel === "string" ? o.xAxisLabel.trim().slice(0, 40) : undefined,
+    yLabel: typeof o.yLabel === "string" ? o.yLabel.trim().slice(0, 40) : undefined,
     series,
   };
 }
@@ -203,10 +241,13 @@ export function chartsFromStravaSummary(
     a.weekStart.localeCompare(b.weekStart),
   );
   if (weeks.length > 0) {
-    // Dual-axis: distance vs moving time so metrics compare week-over-week.
+    // Always combine related metrics: bars (distance) + line (time).
     out.push({
-      type: "bar",
+      type: "combo",
       title: "Weekly distance vs moving time",
+      leftAxisLabel: `Distance (${unit})`,
+      rightAxisLabel: "Moving time (h)",
+      xAxisLabel: "Week starting",
       series: [
         {
           name: "Distance",
@@ -235,8 +276,11 @@ export function chartsFromStravaSummary(
     .slice(0, 8);
   if (sports.length > 1) {
     out.push({
-      type: "bar",
+      type: "combo",
       title: "Sport mix: distance vs sessions",
+      leftAxisLabel: `Distance (${unit})`,
+      rightAxisLabel: "Sessions (n)",
+      xAxisLabel: "Sport",
       series: [
         {
           name: "Distance",
