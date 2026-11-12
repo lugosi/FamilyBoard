@@ -75,4 +75,8 @@ Peanuts (EpiPen in the blue bag).
 - Whole-page rewrites (`rewrite_wiki_page`) require reading the page first in the same request and fail if the page changed in the meantime. Moves and deletes happen only when asked.
 - Edits in the Wiki view are checked the same way: saving a page someone else changed since you opened it shows **Reload latest** instead of overwriting.
 
+### Starter skills (optional)
+
+Reusable how-tos live under `skills/` in the wiki. FamilyBoard ships a ready-to-paste Strava training skill at [`docs/wiki-skills/strava-training.md`](wiki-skills/strava-training.md) (30-day cache analysis). On a board with the wiki linked, paste that file into `skills/strava-training.md` via the Wiki view, or ask the assistant to create that page. A built-in copy is already injected when Strava is configured; the wiki page lets you customize steps.
+
 The repo is private, but anything you store is readable by whoever holds the token and by the assistant (Gemini). Think twice before storing things like full card numbers.

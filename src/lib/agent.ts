@@ -24,6 +24,12 @@ const FAMILY_CALENDAR_SKILL = `skills/family-calendar.md — Family calendar (Be
 
 /** Shared house-status skill for the AI tab and Slack. */
 const HOUSE_DASHBOARD_SKILL = `skills/house-dashboard.md — House dashboard: When someone asks for the house status, dashboard, overview, "how's the house", what's on, or similar, call house_dashboard first. Present its summary cleanly (sections for lights / litter / music / weather). Call out attention items (waste bin full) first. Offer the returned quickActions as the next step; if they pick one, run the matching device tool. Do not invent device state — only what house_dashboard returned.`;
+
+/**
+ * Built-in Strava training analysis (wiki may override via skills/strava-training.md).
+ * Coaching lens adapted for FamilyBoard REST cache — not Strava's official MCP.
+ */
+const STRAVA_TRAINING_SKILL = `skills/strava-training.md — Strava training (30-day cache): When someone asks how training is going, mileage, load, last weeks, race readiness, or wants a Strava recap/analysis, first call strava_training_summary (syncs cache: bootstrap last 30 days, then diff). Use strava_recent_activities for a short list and strava_athlete for name/units context. Present: (1) window + activity count, (2) totals with distance in km or mi (ask or default km; convert m→km/1000, m→mi/1609.34; run pace from m/s as min/km or min/mi — never raw m/s for runners), (3) week-over-week from summary.byWeek (Monday weeks), (4) by sport, (5) 1–3 practical next steps. Flag missing HR/suffer_score; do not invent Relative Effort, zones, or medical claims. If authorizeUrl is returned, share the link. If wiki page skills/strava-training.md exists, read_wiki_page it and prefer those steps.`;
 import { AGENT_GROUNDING_RULES } from "./agent-grounding";
 import { getDefaultTimeZone, readGoogleTokens } from "./google";
 import { scanInboxToTodos } from "./gmail";
@@ -536,7 +542,10 @@ function buildSystemPrompt(input: {
   }
   if (input.stravaConfigured) {
     lines.push(
-      "Strava: each person links their own account. Use strava_training_summary for a 30-day training recap (local cache: first sync pulls 30 days, later syncs only new activities), strava_recent_activities for a short list, strava_athlete for profile. If a tool returns authorizeUrl, share that link so they can connect — do not invent activities. These are REST-based board summaries, not Strava's official MCP analytics.",
+      "Strava: each person links their own account. REST tools only (not Strava's official MCP). If a tool returns authorizeUrl, share that link — do not invent activities.",
+      "=== STRAVA TRAINING SKILL ===",
+      STRAVA_TRAINING_SKILL.replace(/^skills\/strava-training\.md — /, ""),
+      "=== END STRAVA TRAINING SKILL ===",
     );
     if (input.actor?.displayName || input.actor?.accountKey) {
       lines.push(

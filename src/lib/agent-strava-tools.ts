@@ -198,7 +198,7 @@ export function buildStravaTools(): AgentTool[] {
       declaration: {
         name: "strava_training_summary",
         description:
-          "Summarize the current person's last 30 days of Strava training (totals + by sport + recent highlights). Syncs the local cache first (bootstrap 30 days, then diff). Use for mileage, volume, how training is going, week/month recap — not Strava's official MCP analytics.",
+          "Summarize the current person's last 30 days of Strava training (totals, by sport, Monday week buckets for week-over-week, recent highlights). Syncs the local cache first (bootstrap 30 days, then diff). Use for mileage, volume, how training is going, week/month recap — not Strava's official MCP analytics.",
         parameters: { type: "object", properties: {} },
       },
       async run(_args, ctx) {
