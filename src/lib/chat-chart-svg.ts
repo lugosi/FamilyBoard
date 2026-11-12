@@ -1,6 +1,6 @@
 /**
  * Pure SVG renderer for chat charts (AI tab + Slack PNG).
- * Dual-axis when series use different units so metrics can be compared.
+ * Combo charts: first series = bars (left axis), second = line (right axis).
  */
 import {
   formatChartValue,
@@ -11,9 +11,9 @@ import {
 
 export type ChartTheme = "dark" | "light";
 
-const VB_W = 640;
-const VB_H = 320;
-const PAD = { top: 44, right: 52, bottom: 48, left: 52 };
+const VB_W = 680;
+const VB_H = 360;
+const PAD = { top: 48, right: 72, bottom: 64, left: 72 };
 
 type ThemeColors = {
   bg: string;
@@ -27,16 +27,16 @@ const THEMES: Record<ChartTheme, ThemeColors> = {
   dark: {
     bg: "#0f172a",
     grid: "#1e293b",
-    axis: "#64748b",
+    axis: "#94a3b8",
     title: "#e2e8f0",
     muted: "#94a3b8",
   },
   light: {
     bg: "#ffffff",
     grid: "#e2e8f0",
-    axis: "#64748b",
+    axis: "#475569",
     title: "#0f172a",
-    muted: "#475569",
+    muted: "#64748b",
   },
 };
 
@@ -86,11 +86,17 @@ function seriesUnit(series: ChatChartSeries, fallback?: string): string | undefi
   return series.unit || fallback;
 }
 
-function usesDualAxis(spec: ChatChartSpec): boolean {
-  if (spec.series.length < 2) return false;
-  const u0 = seriesUnit(spec.series[0], spec.unit) || "";
-  const u1 = seriesUnit(spec.series[1], spec.unit) || "";
-  return Boolean(u0 && u1 && u0 !== u1);
+function axisLegend(series: ChatChartSeries | undefined, fallbackUnit?: string, explicit?: string): string {
+  if (explicit?.trim()) return explicit.trim();
+  if (!series) return fallbackUnit || "";
+  const unit = seriesUnit(series, fallbackUnit);
+  if (series.name && unit) return `${series.name} (${unit})`;
+  return series.name || unit || "";
+}
+
+/** Two+ series → combo (bar + line). */
+function isCombo(spec: ChatChartSpec): boolean {
+  return spec.series.length >= 2 && spec.type !== "line";
 }
 
 /** Render a chart to an SVG string (embeddable / PNG via resvg). */
@@ -100,9 +106,9 @@ export function renderChatChartSvg(
 ): string {
   const theme = THEMES[opts.theme ?? "dark"];
   const labels = allLabels(spec);
-  const dual = usesDualAxis(spec);
-  const leftSeries = dual ? [spec.series[0]] : spec.series;
-  const rightSeries = dual ? spec.series.slice(1, 2) : [];
+  const combo = isCombo(spec);
+  const leftSeries = combo ? [spec.series[0]] : spec.series;
+  const rightSeries = combo ? spec.series.slice(1, 2) : [];
 
   const leftValues = leftSeries.flatMap((s) => s.data.map((d) => d.value));
   const rightValues = rightSeries.flatMap((s) => s.data.map((d) => d.value));
@@ -121,10 +127,15 @@ export function renderChatChartSvg(
   const yRight = (v: number) =>
     PAD.top + plotH - ((v - rightDom.min) / Math.max(rightDom.max - rightDom.min, 1e-6)) * plotH;
 
-  const leftUnit = seriesUnit(leftSeries[0] ?? { data: [] }, spec.unit);
-  const rightUnit = rightSeries[0]
-    ? seriesUnit(rightSeries[0], spec.unit)
-    : undefined;
+  const leftLabel = axisLegend(
+    leftSeries[0],
+    spec.unit,
+    spec.leftAxisLabel || spec.yLabel,
+  );
+  const rightLabel = combo
+    ? axisLegend(rightSeries[0], spec.unit, spec.rightAxisLabel)
+    : "";
+  const xLabel = spec.xAxisLabel?.trim() || "";
 
   const parts: string[] = [];
   parts.push(
@@ -134,44 +145,60 @@ export function renderChatChartSvg(
 
   if (spec.title) {
     parts.push(
-      `<text x="${PAD.left}" y="26" fill="${theme.title}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="16" font-weight="600">${escapeXml(spec.title)}</text>`,
+      `<text x="${PAD.left}" y="28" fill="${theme.title}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="16" font-weight="600">${escapeXml(spec.title)}</text>`,
     );
   }
 
+  // Grid + left tick labels (values only; axis legend is separate).
   for (const t of leftTicks) {
     const y = yLeft(t);
     parts.push(
       `<line x1="${PAD.left}" x2="${VB_W - PAD.right}" y1="${y}" y2="${y}" stroke="${theme.grid}" stroke-width="1"/>`,
     );
     parts.push(
-      `<text x="${PAD.left - 8}" y="${y + 4}" text-anchor="end" fill="${theme.axis}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">${escapeXml(formatChartValue(t, leftUnit))}</text>`,
+      `<text x="${PAD.left - 10}" y="${y + 4}" text-anchor="end" fill="${theme.axis}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">${escapeXml(formatChartValue(t))}</text>`,
     );
   }
 
-  if (dual && rightSeries.length) {
+  if (combo && rightSeries.length) {
     for (const t of rightTicks) {
       const y = yRight(t);
       parts.push(
-        `<text x="${VB_W - PAD.right + 8}" y="${y + 4}" text-anchor="start" fill="${theme.axis}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">${escapeXml(formatChartValue(t, rightUnit))}</text>`,
+        `<text x="${VB_W - PAD.right + 10}" y="${y + 4}" text-anchor="start" fill="${theme.axis}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">${escapeXml(formatChartValue(t))}</text>`,
       );
     }
   }
 
-  // Draw series: left as bars (or lines if type=line), right always as line when dual.
+  // Axis legends (both Y axes when combo; always left).
+  if (leftLabel) {
+    const cx = 18;
+    const cy = PAD.top + plotH / 2;
+    parts.push(
+      `<text x="${cx}" y="${cy}" fill="${theme.muted}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" font-weight="600" text-anchor="middle" transform="rotate(-90 ${cx} ${cy})">${escapeXml(leftLabel)}</text>`,
+    );
+  }
+  if (rightLabel) {
+    const cx = VB_W - 18;
+    const cy = PAD.top + plotH / 2;
+    parts.push(
+      `<text x="${cx}" y="${cy}" fill="${theme.muted}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" font-weight="600" text-anchor="middle" transform="rotate(90 ${cx} ${cy})">${escapeXml(rightLabel)}</text>`,
+    );
+  }
+
   const drawBars = (seriesList: ChatChartSeries[], yScale: (v: number) => number) => {
     const seriesCount = Math.max(seriesList.length, 1);
     seriesList.forEach((series, si) => {
-      const barW = Math.max(6, (band * 0.72) / seriesCount);
+      const barW = Math.max(8, (band * 0.55) / seriesCount);
       for (const p of series.data) {
         const li = labels.indexOf(p.label);
         if (li < 0) continue;
-        const x = PAD.left + li * band + band * 0.14 + si * barW;
+        const x = PAD.left + li * band + (band - barW * seriesCount) / 2 + si * barW;
         const y0 = yScale(0);
         const y1 = yScale(p.value);
         const top = Math.min(y0, y1);
         const h = Math.max(1.5, Math.abs(y0 - y1));
         parts.push(
-          `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${series.color ?? "#38bdf8"}" opacity="0.92"/>`,
+          `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${series.color ?? "#38bdf8"}" opacity="0.9"/>`,
         );
       }
     });
@@ -194,18 +221,17 @@ export function renderChatChartSvg(
         .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
         .join(" ");
       parts.push(
-        `<path d="${d}" fill="none" stroke="${series.color ?? "#34d399"}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`,
+        `<path d="${d}" fill="none" stroke="${series.color ?? "#fbbf24"}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`,
       );
       for (const p of pts) {
         parts.push(
-          `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="${series.color ?? "#34d399"}"/>`,
+          `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4.5" fill="${series.color ?? "#fbbf24"}" stroke="${theme.bg}" stroke-width="1.5"/>`,
         );
       }
     });
   };
 
-  if (dual) {
-    // Compare metrics: bars for primary, line for secondary (different units).
+  if (combo) {
     drawBars(leftSeries, yLeft);
     drawLines(rightSeries, yRight);
   } else if (spec.type === "line") {
@@ -218,28 +244,41 @@ export function renderChatChartSvg(
     const x = PAD.left + i * band + band / 2;
     const short = label.length > 10 && labels.length > 5 ? `${label.slice(0, 8)}…` : label;
     parts.push(
-      `<text x="${x}" y="${VB_H - 16}" text-anchor="middle" fill="${theme.muted}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">${escapeXml(short)}</text>`,
+      `<text x="${x}" y="${VB_H - (xLabel ? 34 : 22)}" text-anchor="middle" fill="${theme.muted}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">${escapeXml(short)}</text>`,
     );
   });
 
-  // Legend
-  const legendItems = spec.series.filter((s) => s.name);
-  if (legendItems.length) {
-    let lx = PAD.left;
-    const ly = VB_H - 4;
-    legendItems.forEach((s, i) => {
-      const unit = seriesUnit(s, spec.unit);
-      const text = unit ? `${s.name} (${unit})` : s.name!;
-      parts.push(
-        `<rect x="${lx}" y="${ly - 18}" width="10" height="10" rx="2" fill="${s.color ?? "#38bdf8"}"/>`,
-      );
-      parts.push(
-        `<text x="${lx + 14}" y="${ly - 9}" fill="${theme.muted}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">${escapeXml(text)}</text>`,
-      );
-      lx += 14 + text.length * 6.6 + 16;
-      void i;
-    });
+  if (xLabel) {
+    parts.push(
+      `<text x="${PAD.left + plotW / 2}" y="${VB_H - 14}" text-anchor="middle" fill="${theme.muted}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" font-weight="600">${escapeXml(xLabel)}</text>`,
+    );
   }
+
+  // Series legend (bar vs line glyphs).
+  const legendY = 44;
+  let lx = PAD.left;
+  spec.series.forEach((s, i) => {
+    const name = s.name || `Series ${i + 1}`;
+    const unit = seriesUnit(s, spec.unit);
+    const text = unit ? `${name} (${unit})` : name;
+    const isLine = combo ? i > 0 : spec.type === "line";
+    if (isLine) {
+      parts.push(
+        `<line x1="${lx}" x2="${lx + 16}" y1="${legendY - 4}" y2="${legendY - 4}" stroke="${s.color ?? "#fbbf24"}" stroke-width="3"/>`,
+      );
+      parts.push(
+        `<circle cx="${lx + 8}" cy="${legendY - 4}" r="3.5" fill="${s.color ?? "#fbbf24"}"/>`,
+      );
+    } else {
+      parts.push(
+        `<rect x="${lx}" y="${legendY - 10}" width="12" height="10" rx="2" fill="${s.color ?? "#38bdf8"}"/>`,
+      );
+    }
+    parts.push(
+      `<text x="${lx + 18}" y="${legendY}" fill="${theme.muted}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">${escapeXml(text)}</text>`,
+    );
+    lx += 18 + text.length * 6.5 + 18;
+  });
 
   parts.push("</svg>");
   return parts.join("");
