@@ -11,7 +11,11 @@ import {
   MAX_ATTACHMENTS,
   type ChatAttachment,
 } from "./attachments";
-import { stripChatChartFences } from "./chat-chart";
+import {
+  extractChatChartsFromText,
+  stripChatChartFences,
+  type ChatChartSpec,
+} from "./chat-chart";
 import { clearChatHistory, getChatHistory, saveChatHistory } from "./chat-memory";
 import {
   downloadSlackFile,
@@ -24,6 +28,7 @@ import {
   slackAuthTest,
   slackTextToPlain,
   updateSlackMessage,
+  uploadSlackFile,
 } from "./slack";
 
 const MAX_BACKOFF_MS = 60_000;
@@ -323,8 +328,13 @@ async function handle(msg: Incoming): Promise<void> {
         ? `\n\n*Actions — reply with one:*\n${result.quickActions.map((a) => `• ${a.label}`).join("\n")}`
         : "";
     const fileNotes = problems.length ? `\n${problems.map((p) => `⚠️ ${p}`).join("\n")}` : "";
-    // Same ```chart fences as the AI tab; convert to Unicode bars for Slack.
-    const body = stripChatChartFences(`${result.reply}${footer}${quick}${fileNotes}`);
+    const raw = `${result.reply}${footer}${quick}${fileNotes}`;
+    const charts: ChatChartSpec[] = [
+      ...(result.charts ?? []),
+      ...extractChatChartsFromText(result.reply),
+    ].filter((c, i, arr) => arr.findIndex((x) => x.title === c.title) === i);
+    // Same ```chart payload as the AI tab — upload PNGs, strip fences from text.
+    const body = stripChatChartFences(raw, charts.length ? "remove" : "caption");
     if (result.pendingApproval) {
       const fallback = `${body}\n\n⏸ Review before writing — tap Approve / Deny (or reply *approve* / *deny*)`;
       await postSlackMessage({
@@ -337,7 +347,34 @@ async function handle(msg: Incoming): Promise<void> {
         ],
       });
     } else {
-      await reply(body);
+      await reply(body || " ");
+    }
+    if (charts.length) {
+      try {
+        const { renderChatChartPng } = await import("./chat-chart-png");
+        for (const [i, spec] of charts.entries()) {
+          const png = await renderChatChartPng(spec, { theme: "light" });
+          const slug = (spec.title || `chart-${i + 1}`)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .slice(0, 40);
+          await uploadSlackFile({
+            channel: msg.channel,
+            threadTs: msg.threadTs,
+            filename: `${slug || "chart"}.png`,
+            title: spec.title || `Chart ${i + 1}`,
+            data: png,
+            mimeType: "image/png",
+          });
+        }
+      } catch (e) {
+        const hint =
+          e instanceof Error && /missing_scope|not_allowed_token_type|invalid_auth/i.test(e.message)
+            ? " (add files:write to the Slack bot and reinstall the app)"
+            : "";
+        await reply(`_Couldn't attach chart images${hint}._`);
+      }
     }
     state.handled += 1;
   } catch (e) {
