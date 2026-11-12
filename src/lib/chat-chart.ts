@@ -208,13 +208,13 @@ export function chatChartFences(charts: ChatChartSpec[]): string {
 
 /**
  * Attach tool charts as ```chart fences (same for AI tab and Slack).
- * Skips when fences already exist or there is nothing to attach.
+ * Tool charts win: any model-authored ```chart fences are stripped and replaced
+ * so we always get combo bar+line specs with axis titles.
  */
 export function injectChatCharts(reply: string, charts: ChatChartSpec[]): string {
   if (!charts.length) return reply;
-  if (/```chart\b/i.test(reply)) return reply;
+  const base = stripChatChartFences(reply, "remove").trim();
   const fences = chatChartFences(charts);
-  const base = reply.trim();
   return base ? `${base}\n\n${fences}` : fences;
 }
 
@@ -225,8 +225,17 @@ export function chartsFromStravaSummary(
       distance_m: number;
       moving_time_s?: number;
       elevation_m?: number;
+      /** Relative Effort proxy (Strava suffer_score). */
+      suffer_score?: number;
+      count?: number;
     }>;
-    bySport?: Array<{ sport: string; distance_m: number; count?: number; moving_time_s?: number }>;
+    bySport?: Array<{
+      sport: string;
+      distance_m: number;
+      count?: number;
+      moving_time_s?: number;
+      suffer_score?: number;
+    }>;
   },
   opts: { unit?: "km" | "mi" } = {},
 ): ChatChartSpec[] {
@@ -240,68 +249,135 @@ export function chartsFromStravaSummary(
   const weeks = [...(summary.byWeek ?? [])].sort((a, b) =>
     a.weekStart.localeCompare(b.weekStart),
   );
+  const weekLabels = (w: { weekStart: string }) => w.weekStart.slice(5) || w.weekStart;
+  const hasWeeklyLoad = weeks.some((w) => (w.suffer_score ?? 0) > 0);
+
   if (weeks.length > 0) {
-    // Always combine related metrics: bars (distance) + line (time).
-    out.push({
-      type: "combo",
-      title: "Weekly distance vs moving time",
-      leftAxisLabel: `Distance (${unit})`,
-      rightAxisLabel: "Moving time (h)",
-      xAxisLabel: "Week starting",
-      series: [
-        {
-          name: "Distance",
-          unit,
-          color: DEFAULT_COLORS[0],
-          data: weeks.map((w) => ({
-            label: w.weekStart.slice(5) || w.weekStart,
-            value: toDist(w.distance_m || 0),
-          })),
-        },
-        {
-          name: "Moving time",
-          unit: "h",
-          color: DEFAULT_COLORS[2],
-          data: weeks.map((w) => ({
-            label: w.weekStart.slice(5) || w.weekStart,
-            value: toHours(w.moving_time_s || 0),
-          })),
-        },
-      ],
-    });
+    // Coaching-style primary chart (srothgan/strava-claude-skill): volume bars + load line.
+    // Relative Effort (suffer_score) is the best form/load proxy Strava list activities expose.
+    if (hasWeeklyLoad) {
+      out.push({
+        type: "combo",
+        title: "Weekly volume vs Relative Effort",
+        leftAxisLabel: `Distance (${unit})`,
+        rightAxisLabel: "Relative Effort",
+        xAxisLabel: "Week starting",
+        series: [
+          {
+            name: "Distance",
+            unit,
+            color: DEFAULT_COLORS[0],
+            data: weeks.map((w) => ({
+              label: weekLabels(w),
+              value: toDist(w.distance_m || 0),
+            })),
+          },
+          {
+            name: "Relative Effort",
+            unit: "RE",
+            color: DEFAULT_COLORS[2],
+            data: weeks.map((w) => ({
+              label: weekLabels(w),
+              value: Math.round((w.suffer_score || 0) * 10) / 10,
+            })),
+          },
+        ],
+      });
+    } else {
+      // No HR load → fall back to distance + time (still combo).
+      out.push({
+        type: "combo",
+        title: "Weekly distance vs moving time",
+        leftAxisLabel: `Distance (${unit})`,
+        rightAxisLabel: "Moving time (h)",
+        xAxisLabel: "Week starting",
+        series: [
+          {
+            name: "Distance",
+            unit,
+            color: DEFAULT_COLORS[0],
+            data: weeks.map((w) => ({
+              label: weekLabels(w),
+              value: toDist(w.distance_m || 0),
+            })),
+          },
+          {
+            name: "Moving time",
+            unit: "h",
+            color: DEFAULT_COLORS[2],
+            data: weeks.map((w) => ({
+              label: weekLabels(w),
+              value: toHours(w.moving_time_s || 0),
+            })),
+          },
+        ],
+      });
+    }
   }
+
   const sports = [...(summary.bySport ?? [])]
     .filter((s) => (s.distance_m || 0) > 0 || (s.count || 0) > 0)
     .sort((a, b) => b.distance_m - a.distance_m)
     .slice(0, 8);
+  const hasSportLoad = sports.some((s) => (s.suffer_score ?? 0) > 0);
   if (sports.length > 1) {
-    out.push({
-      type: "combo",
-      title: "Sport mix: distance vs sessions",
-      leftAxisLabel: `Distance (${unit})`,
-      rightAxisLabel: "Sessions (n)",
-      xAxisLabel: "Sport",
-      series: [
-        {
-          name: "Distance",
-          unit,
-          color: DEFAULT_COLORS[1],
-          data: sports.map((s) => ({
-            label: s.sport.slice(0, 16),
-            value: toDist(s.distance_m || 0),
-          })),
-        },
-        {
-          name: "Sessions",
-          unit: "n",
-          color: DEFAULT_COLORS[3],
-          data: sports.map((s) => ({
-            label: s.sport.slice(0, 16),
-            value: s.count ?? 0,
-          })),
-        },
-      ],
-    });
+    if (hasSportLoad) {
+      out.push({
+        type: "combo",
+        title: "Sport mix: distance vs Relative Effort",
+        leftAxisLabel: `Distance (${unit})`,
+        rightAxisLabel: "Relative Effort",
+        xAxisLabel: "Sport",
+        series: [
+          {
+            name: "Distance",
+            unit,
+            color: DEFAULT_COLORS[1],
+            data: sports.map((s) => ({
+              label: s.sport.slice(0, 16),
+              value: toDist(s.distance_m || 0),
+            })),
+          },
+          {
+            name: "Relative Effort",
+            unit: "RE",
+            color: DEFAULT_COLORS[3],
+            data: sports.map((s) => ({
+              label: s.sport.slice(0, 16),
+              value: Math.round((s.suffer_score || 0) * 10) / 10,
+            })),
+          },
+        ],
+      });
+    } else {
+      out.push({
+        type: "combo",
+        title: "Sport mix: distance vs sessions",
+        leftAxisLabel: `Distance (${unit})`,
+        rightAxisLabel: "Sessions (n)",
+        xAxisLabel: "Sport",
+        series: [
+          {
+            name: "Distance",
+            unit,
+            color: DEFAULT_COLORS[1],
+            data: sports.map((s) => ({
+              label: s.sport.slice(0, 16),
+              value: toDist(s.distance_m || 0),
+            })),
+          },
+          {
+            name: "Sessions",
+            unit: "n",
+            color: DEFAULT_COLORS[3],
+            data: sports.map((s) => ({
+              label: s.sport.slice(0, 16),
+              value: s.count ?? 0,
+            })),
+          },
+        ],
+      });
+    }
   }
   return out;
 }
