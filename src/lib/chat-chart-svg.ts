@@ -1,7 +1,9 @@
 /**
  * Pure SVG renderer for chat charts (AI tab + Slack PNG).
  * Combo charts: first series = bars (left axis), second = line (right axis).
- * Axis titles are drawn as clear horizontal labels (not edge-clipped rotations).
+ *
+ * Text uses inline `style="fill:…"` (not only presentation attributes) so parent
+ * chat CSS like `text-slate-50` cannot turn labels white-on-white / white-on-light.
  */
 import {
   formatChartValue,
@@ -21,24 +23,32 @@ type ThemeColors = {
   bg: string;
   grid: string;
   axis: string;
+  /** High-contrast axis *title* color (stronger than tick labels). */
+  axisTitle: string;
   title: string;
   muted: string;
+  /** Halo behind text so it stays readable on any bg. */
+  textHalo: string;
 };
 
 const THEMES: Record<ChartTheme, ThemeColors> = {
   dark: {
     bg: "#0f172a",
-    grid: "#1e293b",
-    axis: "#cbd5e1",
-    title: "#f8fafc",
-    muted: "#94a3b8",
+    grid: "#334155",
+    axis: "#e2e8f0",
+    axisTitle: "#f8fafc",
+    title: "#ffffff",
+    muted: "#cbd5e1",
+    textHalo: "#0f172a",
   },
   light: {
     bg: "#ffffff",
-    grid: "#e2e8f0",
-    axis: "#334155",
-    title: "#0f172a",
-    muted: "#475569",
+    grid: "#cbd5e1",
+    axis: "#1e293b",
+    axisTitle: "#0f172a",
+    title: "#020617",
+    muted: "#334155",
+    textHalo: "#ffffff",
   },
 };
 
@@ -48,6 +58,25 @@ function escapeXml(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/** Text locked against CSS color inheritance from the chat surface. */
+function svgText(opts: {
+  x: number | string;
+  y: number | string;
+  fill: string;
+  halo: string;
+  size: number;
+  weight?: number;
+  anchor?: "start" | "middle" | "end";
+  transform?: string;
+  content: string;
+}): string {
+  const anchor = opts.anchor ? ` text-anchor="${opts.anchor}"` : "";
+  const transform = opts.transform ? ` transform="${opts.transform}"` : "";
+  const weight = opts.weight ?? 500;
+  // style= beats presentation attrs; paint-order halo keeps contrast on any bg.
+  return `<text x="${opts.x}" y="${opts.y}"${anchor}${transform} fill="${opts.fill}" stroke="${opts.halo}" stroke-width="3.5" paint-order="stroke fill" style="fill:${opts.fill};stroke:${opts.halo}" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="${opts.size}" font-weight="${weight}">${escapeXml(opts.content)}</text>`;
 }
 
 function niceDomain(values: number[]): { min: number; max: number } {
@@ -100,7 +129,7 @@ function axisLegend(
   return series.name || unit || "";
 }
 
-/** Two+ series → always combo (bar + line), including type "line" with multiple series. */
+/** Two+ series → always combo (bar + line). */
 function isCombo(spec: ChatChartSpec): boolean {
   return spec.series.length >= 2;
 }
@@ -142,14 +171,23 @@ export function renderChatChartSvg(
     (labels.length ? "Category" : "");
 
   const parts: string[] = [];
+  // color on root helps if any child falls back to currentColor.
   parts.push(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${VB_W}" height="${VB_H}" viewBox="0 0 ${VB_W} ${VB_H}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${VB_W}" height="${VB_H}" viewBox="0 0 ${VB_W} ${VB_H}" style="color:${theme.axisTitle};background:${theme.bg}">`,
   );
-  parts.push(`<rect width="100%" height="100%" fill="${theme.bg}" rx="12"/>`);
+  parts.push(`<rect width="100%" height="100%" fill="${theme.bg}" style="fill:${theme.bg}" rx="12"/>`);
 
   if (spec.title) {
     parts.push(
-      `<text x="${PAD.left}" y="22" fill="${theme.title}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="16" font-weight="700">${escapeXml(spec.title)}</text>`,
+      svgText({
+        x: PAD.left,
+        y: 22,
+        fill: theme.title,
+        halo: theme.textHalo,
+        size: 16,
+        weight: 700,
+        content: spec.title,
+      }),
     );
   }
 
@@ -166,15 +204,22 @@ export function renderChatChartSvg(
         `<line x1="${lx}" x2="${lx + 18}" y1="${legendY - 4}" y2="${legendY - 4}" stroke="${s.color ?? "#fbbf24"}" stroke-width="3.5"/>`,
       );
       parts.push(
-        `<circle cx="${lx + 9}" cy="${legendY - 4}" r="3.5" fill="${s.color ?? "#fbbf24"}"/>`,
+        `<circle cx="${lx + 9}" cy="${legendY - 4}" r="3.5" fill="${s.color ?? "#fbbf24"}" style="fill:${s.color ?? "#fbbf24"}"/>`,
       );
     } else {
       parts.push(
-        `<rect x="${lx}" y="${legendY - 10}" width="12" height="10" rx="2" fill="${s.color ?? "#38bdf8"}"/>`,
+        `<rect x="${lx}" y="${legendY - 10}" width="12" height="10" rx="2" fill="${s.color ?? "#38bdf8"}" style="fill:${s.color ?? "#38bdf8"}"/>`,
       );
     }
     parts.push(
-      `<text x="${lx + 20}" y="${legendY}" fill="${theme.muted}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">${escapeXml(text)}</text>`,
+      svgText({
+        x: lx + 20,
+        y: legendY,
+        fill: theme.muted,
+        halo: theme.textHalo,
+        size: 11,
+        content: text,
+      }),
     );
     lx += 20 + text.length * 6.6 + 16;
   });
@@ -182,22 +227,60 @@ export function renderChatChartSvg(
   // Axis titles: horizontal caps above each Y scale + rotated titles along the spines.
   if (leftLabel) {
     parts.push(
-      `<text x="${PAD.left}" y="${PAD.top - 12}" text-anchor="start" fill="${theme.axis}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="700">${escapeXml(leftLabel)}</text>`,
+      svgText({
+        x: PAD.left,
+        y: PAD.top - 12,
+        fill: theme.axisTitle,
+        halo: theme.textHalo,
+        size: 13,
+        weight: 700,
+        anchor: "start",
+        content: leftLabel,
+      }),
     );
     const cx = 18;
     const cy = PAD.top + plotH / 2;
     parts.push(
-      `<text x="${cx}" y="${cy}" fill="${theme.axis}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" font-weight="700" text-anchor="middle" transform="rotate(-90 ${cx} ${cy})">${escapeXml(leftLabel)}</text>`,
+      svgText({
+        x: cx,
+        y: cy,
+        fill: theme.axisTitle,
+        halo: theme.textHalo,
+        size: 12,
+        weight: 700,
+        anchor: "middle",
+        transform: `rotate(-90 ${cx} ${cy})`,
+        content: leftLabel,
+      }),
     );
   }
   if (rightLabel) {
     parts.push(
-      `<text x="${VB_W - PAD.right}" y="${PAD.top - 12}" text-anchor="end" fill="${theme.axis}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="700">${escapeXml(rightLabel)}</text>`,
+      svgText({
+        x: VB_W - PAD.right,
+        y: PAD.top - 12,
+        fill: theme.axisTitle,
+        halo: theme.textHalo,
+        size: 13,
+        weight: 700,
+        anchor: "end",
+        content: rightLabel,
+      }),
     );
     const cx = VB_W - 18;
     const cy = PAD.top + plotH / 2;
     parts.push(
-      `<text x="${cx}" y="${cy}" fill="${theme.axis}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" font-weight="700" text-anchor="middle" transform="rotate(90 ${cx} ${cy})">${escapeXml(rightLabel)}</text>`,
+      svgText({
+        x: cx,
+        y: cy,
+        fill: theme.axisTitle,
+        halo: theme.textHalo,
+        size: 12,
+        weight: 700,
+        anchor: "middle",
+        transform: `rotate(90 ${cx} ${cy})`,
+        content: rightLabel,
+      }),
     );
   }
 
@@ -208,7 +291,15 @@ export function renderChatChartSvg(
       `<line x1="${PAD.left}" x2="${VB_W - PAD.right}" y1="${y}" y2="${y}" stroke="${theme.grid}" stroke-width="1"/>`,
     );
     parts.push(
-      `<text x="${PAD.left - 8}" y="${y + 4}" text-anchor="end" fill="${theme.axis}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">${escapeXml(formatChartValue(t))}</text>`,
+      svgText({
+        x: PAD.left - 8,
+        y: y + 4,
+        fill: theme.axis,
+        halo: theme.textHalo,
+        size: 11,
+        anchor: "end",
+        content: formatChartValue(t),
+      }),
     );
   }
 
@@ -216,22 +307,30 @@ export function renderChatChartSvg(
     for (const t of rightTicks) {
       const y = yRight(t);
       parts.push(
-        `<text x="${VB_W - PAD.right + 8}" y="${y + 4}" text-anchor="start" fill="${theme.axis}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">${escapeXml(formatChartValue(t))}</text>`,
+        svgText({
+          x: VB_W - PAD.right + 8,
+          y: y + 4,
+          fill: theme.axis,
+          halo: theme.textHalo,
+          size: 11,
+          anchor: "start",
+          content: formatChartValue(t),
+        }),
       );
     }
   }
 
   // Left / right axis spines so the titles clearly belong to an axis.
   parts.push(
-    `<line x1="${PAD.left}" x2="${PAD.left}" y1="${PAD.top}" y2="${PAD.top + plotH}" stroke="${theme.axis}" stroke-width="1.5" opacity="0.55"/>`,
+    `<line x1="${PAD.left}" x2="${PAD.left}" y1="${PAD.top}" y2="${PAD.top + plotH}" stroke="${theme.axis}" stroke-width="1.5" opacity="0.7"/>`,
   );
   if (combo) {
     parts.push(
-      `<line x1="${VB_W - PAD.right}" x2="${VB_W - PAD.right}" y1="${PAD.top}" y2="${PAD.top + plotH}" stroke="${theme.axis}" stroke-width="1.5" opacity="0.55"/>`,
+      `<line x1="${VB_W - PAD.right}" x2="${VB_W - PAD.right}" y1="${PAD.top}" y2="${PAD.top + plotH}" stroke="${theme.axis}" stroke-width="1.5" opacity="0.7"/>`,
     );
   }
   parts.push(
-    `<line x1="${PAD.left}" x2="${VB_W - PAD.right}" y1="${PAD.top + plotH}" y2="${PAD.top + plotH}" stroke="${theme.axis}" stroke-width="1.5" opacity="0.55"/>`,
+    `<line x1="${PAD.left}" x2="${VB_W - PAD.right}" y1="${PAD.top + plotH}" y2="${PAD.top + plotH}" stroke="${theme.axis}" stroke-width="1.5" opacity="0.7"/>`,
   );
 
   const drawBars = (seriesList: ChatChartSeries[], yScale: (v: number) => number) => {
@@ -246,8 +345,9 @@ export function renderChatChartSvg(
         const y1 = yScale(p.value);
         const top = Math.min(y0, y1);
         const h = Math.max(2, Math.abs(y0 - y1));
+        const color = series.color ?? "#38bdf8";
         parts.push(
-          `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${series.color ?? "#38bdf8"}" opacity="0.88"/>`,
+          `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${color}" style="fill:${color}" opacity="0.92"/>`,
         );
       }
     });
@@ -255,6 +355,7 @@ export function renderChatChartSvg(
 
   const drawLines = (seriesList: ChatChartSeries[], yScale: (v: number) => number) => {
     seriesList.forEach((series) => {
+      const color = series.color ?? "#f59e0b";
       const pts = labels
         .map((label, i) => {
           const v = valueFor(series.data, label);
@@ -266,7 +367,6 @@ export function renderChatChartSvg(
         })
         .filter((p): p is { x: number; y: number } => Boolean(p));
       if (!pts.length) return;
-      // Soft area under the line so a flat/near-bar line still reads as a second series.
       if (pts.length >= 2) {
         const baseY = PAD.top + plotH;
         const area = [
@@ -275,19 +375,17 @@ export function renderChatChartSvg(
           `L${pts[pts.length - 1].x.toFixed(1)},${baseY.toFixed(1)}`,
           "Z",
         ].join(" ");
-        parts.push(
-          `<path d="${area}" fill="${series.color ?? "#fbbf24"}" opacity="0.12"/>`,
-        );
+        parts.push(`<path d="${area}" fill="${color}" style="fill:${color}" opacity="0.14"/>`);
       }
       const d = pts
         .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
         .join(" ");
       parts.push(
-        `<path d="${d}" fill="none" stroke="${series.color ?? "#fbbf24"}" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>`,
+        `<path d="${d}" fill="none" stroke="${color}" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>`,
       );
       for (const p of pts) {
         parts.push(
-          `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="5" fill="${series.color ?? "#fbbf24"}" stroke="${theme.bg}" stroke-width="2"/>`,
+          `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="5" fill="${color}" style="fill:${color}" stroke="${theme.bg}" stroke-width="2"/>`,
         );
       }
     });
@@ -306,13 +404,30 @@ export function renderChatChartSvg(
     const x = PAD.left + i * band + band / 2;
     const short = label.length > 10 && labels.length > 5 ? `${label.slice(0, 8)}…` : label;
     parts.push(
-      `<text x="${x}" y="${VB_H - (xLabel ? 38 : 24)}" text-anchor="middle" fill="${theme.muted}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">${escapeXml(short)}</text>`,
+      svgText({
+        x,
+        y: VB_H - (xLabel ? 38 : 24),
+        fill: theme.muted,
+        halo: theme.textHalo,
+        size: 11,
+        anchor: "middle",
+        content: short,
+      }),
     );
   });
 
   if (xLabel) {
     parts.push(
-      `<text x="${PAD.left + plotW / 2}" y="${VB_H - 14}" text-anchor="middle" fill="${theme.axis}" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" font-weight="700">${escapeXml(xLabel)}</text>`,
+      svgText({
+        x: PAD.left + plotW / 2,
+        y: VB_H - 14,
+        fill: theme.axisTitle,
+        halo: theme.textHalo,
+        size: 13,
+        weight: 700,
+        anchor: "middle",
+        content: xLabel,
+      }),
     );
   }
 

@@ -142,6 +142,7 @@ test("combo SVG includes left and right axis legends", async () => {
     if (!/Moving time \\(h\\)/.test(svg)) throw new Error("missing right axis");
     if (!/Week starting/.test(svg)) throw new Error("missing x axis");
     if (!svg.includes('font-weight="700"')) throw new Error("axis titles should be bold");
+    if (!/style="fill:/.test(svg)) throw new Error("text fill must be inline style (CSS-safe)");
     if (!/<rect /.test(svg)) throw new Error("missing bars");
     if (!/<path d="M/.test(svg)) throw new Error("missing line path");
     if (!/<circle /.test(svg)) throw new Error("missing markers");
