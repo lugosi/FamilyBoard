@@ -1,18 +1,21 @@
-/** Free-tier friendly default (AI Studio free accounts). Override with GEMINI_MODEL. */
-const DEFAULT_MODEL = "gemini-3.5-flash-lite";
+/** Gemini 4 Hydrogen — free + paid AI Studio / Gemini API. Override with GEMINI_MODEL. */
+const DEFAULT_MODEL = "gemini-4-hydrogen";
 /**
  * Prefer models that still offer Google Search grounding when the key allows them.
- * 2.5 Flash is gated/deprecated for many free keys; 3.x Search needs billing.
- * If none work, searchWebWithGemini falls back to DuckDuckGo (+ ESPN for scores).
+ * Gemini 4+ Search grounding needs billing; free keys fall back to DuckDuckGo (+ ESPN).
  */
 const DEFAULT_SEARCH_MODELS = [
-  "gemini-2.5-flash",
-  "gemini-3.5-flash-lite",
-  "gemini-3.6-flash",
+  "gemini-4-hydrogen",
   "gemini-3.8-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-2.5-flash",
 ];
 const DEFAULT_API_BASE = "https://generativelanguage.googleapis.com";
 const MAX_RETRY_DELAY_MS = 12_000;
+
+/** Hydrogen thinking levels (GenerateContent uses UPPERCASE). */
+const THINKING_LEVELS = new Set(["LOW", "MEDIUM", "HIGH", "XHIGH"]);
 
 export function getGeminiApiKey(): string | null {
   return process.env.GEMINI_API_KEY?.trim() || null;
@@ -30,6 +33,17 @@ export function getGeminiSearchModels(): string[] {
   const explicit = process.env.GEMINI_SEARCH_MODEL?.trim();
   if (explicit) return [explicit, ...DEFAULT_SEARCH_MODELS.filter((m) => m !== explicit)];
   return DEFAULT_SEARCH_MODELS;
+}
+
+/**
+ * Optional GEMINI_THINKING_LEVEL override (low|medium|high|xhigh).
+ * When unset, the API default applies (HIGH on gemini-4-hydrogen).
+ */
+export function getGeminiThinkingLevel(): string | undefined {
+  const raw = process.env.GEMINI_THINKING_LEVEL?.trim();
+  if (!raw) return undefined;
+  const level = raw.toUpperCase();
+  return THINKING_LEVELS.has(level) ? level : undefined;
 }
 
 function getGeminiApiBase(): string {
@@ -58,7 +72,7 @@ export type GeminiFunctionCall = {
   args?: Record<string, unknown>;
 };
 
-/** Parts are passed back verbatim so Gemini 3 thought signatures survive tool loops. */
+/** Parts are passed back verbatim so Gemini thought signatures survive tool loops. */
 export type GeminiPart = {
   text?: string;
   inlineData?: { mimeType: string; data: string };
@@ -152,6 +166,11 @@ export async function generateGeminiContent(input: {
   googleSearch?: boolean;
   /** Override GEMINI_MODEL for this call. */
   model?: string;
+  /** application/json (+ optional schema) for structured extraction. */
+  responseMimeType?: string;
+  responseSchema?: Record<string, unknown>;
+  /** Override thinking level for this call (LOW|MEDIUM|HIGH|XHIGH). */
+  thinkingLevel?: string;
   signal?: AbortSignal;
 }): Promise<GeminiGenerateResult> {
   const key = getGeminiApiKey();
@@ -176,6 +195,28 @@ export async function generateGeminiContent(input: {
       body.toolConfig = { functionCallingConfig: { mode: input.toolMode } };
     }
   }
+
+  // Hydrogen rejects temperature/topP/topK customization; use thinkingLevel instead.
+  // Chat history is often rebuilt from text-only turns (no thought signatures), so DROP
+  // prefix mismatches rather than 400 on multi-turn / compacted histories.
+  const thinkingConfig: Record<string, unknown> = {
+    prefixMismatchBehavior: "DROP",
+  };
+  const thinkingLevel =
+    input.thinkingLevel?.trim().toUpperCase() || getGeminiThinkingLevel();
+  if (thinkingLevel && THINKING_LEVELS.has(thinkingLevel)) {
+    thinkingConfig.thinkingLevel = thinkingLevel;
+  }
+  const generationConfig: Record<string, unknown> = {
+    thinkingConfig,
+  };
+  if (input.responseMimeType?.trim()) {
+    generationConfig.responseMimeType = input.responseMimeType.trim();
+  }
+  if (input.responseSchema) {
+    generationConfig.responseSchema = input.responseSchema;
+  }
+  body.generationConfig = generationConfig;
 
   const maxAttempts = 4;
   let lastError: Error | null = null;
@@ -245,7 +286,7 @@ function isSearchModelUnavailable(message: string): boolean {
 /**
  * Look up live public info (scores, news, hours).
  * Tries Gemini Google Search grounding, then a free DuckDuckGo (+ ESPN scoreboard) fallback
- * summarized by the main chat model — so free-tier keys still work without 2.5 Flash.
+ * summarized by the main chat model — so free-tier keys still work without Search billing.
  */
 export async function searchWebWithGemini(
   query: string,
@@ -260,6 +301,7 @@ export async function searchWebWithGemini(
       const result = await generateGeminiContent({
         model,
         googleSearch: true,
+        thinkingLevel: "LOW",
         system:
           "You look things up with Google Search for a family home assistant. Be brief and factual. For sports, include the score, teams, and when the game is/was (with timezone if known). If results conflict, say so. Do not invent scores.",
         contents: [{ role: "user", parts: [{ text: q }] }],
@@ -288,7 +330,7 @@ export async function searchWebWithGemini(
     throw (
       lastError ??
       new Error(
-        "Web search isn't available right now (Gemini Search needs a billed key or a still-enabled 2.5 Flash model).",
+        "Web search isn't available right now (Gemini Search needs a billed key; free tier uses DuckDuckGo fallback).",
       )
     );
   }
@@ -304,6 +346,7 @@ export async function searchWebWithGemini(
     .join("\n\n");
   const summarized = await generateGeminiContent({
     model: getGeminiModel(),
+    thinkingLevel: "LOW",
     system:
       "You are a family home assistant. Answer ONLY from the provided search/scoreboard excerpts. Be brief. For sports, give the score and status. If the excerpts don't contain the answer, say you couldn't find it — never invent scores.",
     contents: [
@@ -331,11 +374,17 @@ export async function generateGeminiText(input: {
   system?: string;
   messages: GeminiMessage[];
   signal?: AbortSignal;
+  responseMimeType?: string;
+  responseSchema?: Record<string, unknown>;
+  thinkingLevel?: string;
 }): Promise<string> {
   const content = await generateGeminiContent({
     system: input.system,
     contents: toGeminiContents(input.messages),
     signal: input.signal,
+    responseMimeType: input.responseMimeType,
+    responseSchema: input.responseSchema,
+    thinkingLevel: input.thinkingLevel,
   });
   const text = textFromParts(content.parts);
   if (!text) throw new Error("Gemini returned empty response");

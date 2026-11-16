@@ -1,6 +1,6 @@
 /**
  * Free web lookup fallback when Gemini Google Search grounding isn't available
- * (Gemini 3 free tier has no Search; 2.5 Flash is gated/deprecated for many keys).
+ * (Gemini 4 Hydrogen Search grounding is paid-tier only).
  */
 
 export type WebHit = { title: string; uri: string; snippet: string };

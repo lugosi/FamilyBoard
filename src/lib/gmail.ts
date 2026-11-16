@@ -205,19 +205,55 @@ export async function scanInboxToTodos(
   const tz = getDefaultTimeZone();
   const today = todayDateKey(tz);
   const raw = await generateGeminiText({
+    thinkingLevel: "LOW",
+    responseMimeType: "application/json",
+    responseSchema: {
+      type: "OBJECT",
+      properties: {
+        todos: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: {
+              title: { type: "STRING" },
+              notes: { type: "STRING" },
+              dueHint: { type: "STRING" },
+              sourceMessageId: { type: "STRING" },
+            },
+            required: ["title", "sourceMessageId"],
+          },
+        },
+        events: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: {
+              summary: { type: "STRING" },
+              start: { type: "STRING" },
+              end: { type: "STRING" },
+              allDay: { type: "BOOLEAN" },
+              startDate: { type: "STRING" },
+              endDate: { type: "STRING" },
+              location: { type: "STRING" },
+              notes: { type: "STRING" },
+              sourceMessageId: { type: "STRING" },
+            },
+            required: ["summary", "sourceMessageId"],
+          },
+        },
+      },
+      required: ["todos", "events"],
+    },
     system: `You triage emails forwarded to a family household inbox into todos and calendar events.
 Today is ${today}; the family's timezone is ${tz}.
-Return ONLY valid JSON:
-{"todos":[{"title":"...","notes":"...","dueHint":"...","sourceMessageId":"..."}],
- "events":[{"summary":"...","start":"YYYY-MM-DDTHH:MM","end":"YYYY-MM-DDTHH:MM","allDay":false,"startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD","location":"...","notes":"...","sourceMessageId":"..."}]}
 Rules:
-- events: only for a concrete appointment, reservation, class, game, flight, or school date with a known day. Use local wall-clock times in ${tz} with no offset.
+- events: only for a concrete appointment, reservation, class, game, flight, or school date with a known day. Use local wall-clock times in ${tz} with no offset (YYYY-MM-DDTHH:MM).
 - timed events need start and end; if no end is given assume 1 hour. Day-only events use allDay true with startDate (endDate exclusive, optional).
 - skip events in the past and anything with an ambiguous date.
 - todos: short actionable tasks (e.g. "Pay field trip fee"). Do not duplicate an event as a todo unless there is a separate task (e.g. "RSVP").
 - sourceMessageId must match an email messageId from the input.
 - skip newsletters, receipts with no action, and marketing.
-- if nothing applies, return {"todos":[],"events":[]}`,
+- if nothing applies, return empty todos and events arrays.`,
     messages: [
       {
         role: "user",
