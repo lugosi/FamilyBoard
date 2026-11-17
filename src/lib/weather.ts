@@ -121,6 +121,117 @@ export function getWeatherCoordinates(): { lat: number; lon: number } | null {
   return { lat, lon };
 }
 
+const DEFAULT_WEATHER_API_BASE = "https://api.open-meteo.com";
+const DEFAULT_GEOCODING_API_BASE = "https://geocoding-api.open-meteo.com";
+const WEATHER_FETCH_ATTEMPTS = 3;
+const WEATHER_FETCH_RETRY_MS = 400;
+
+/** True when CI/local wants canned weather (no Open-Meteo network). */
+export function isWeatherFixtureEnabled(): boolean {
+  const raw = process.env.WEATHER_FIXTURE?.trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
+function getWeatherApiBase(): string {
+  return (process.env.WEATHER_API_BASE_URL?.trim() || DEFAULT_WEATHER_API_BASE).replace(
+    /\/+$/,
+    "",
+  );
+}
+
+function getGeocodingApiBase(): string {
+  return (
+    process.env.WEATHER_GEOCODING_API_BASE_URL?.trim() || DEFAULT_GEOCODING_API_BASE
+  ).replace(/\/+$/, "");
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableWeatherStatus(status: number): boolean {
+  return status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+/** Fetch with short retries for transient Open-Meteo / network blips. */
+async function fetchWeatherUrl(
+  url: string,
+  init?: RequestInit,
+): Promise<Response> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < WEATHER_FETCH_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, init);
+      if (res.ok || !isRetryableWeatherStatus(res.status) || attempt === WEATHER_FETCH_ATTEMPTS - 1) {
+        return res;
+      }
+      lastError = new Error(`Weather request failed (${res.status})`);
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      if (attempt === WEATHER_FETCH_ATTEMPTS - 1) throw lastError;
+    }
+    await sleep(WEATHER_FETCH_RETRY_MS * 2 ** attempt);
+  }
+  throw lastError ?? new Error("Weather request failed");
+}
+
+/** Deterministic snapshot for CI / offline smoke (WEATHER_FIXTURE=1). */
+function fixtureWeatherSnapshot(coords: {
+  lat: number;
+  lon: number;
+}): WeatherSnapshot {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const dateKey = (d: Date) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const hourIso = (d: Date) =>
+    `${dateKey(d)}T${pad(d.getHours())}:00`;
+
+  const daily: DailyForecast[] = [];
+  const sunByDate: Record<string, SunTimes> = {};
+  for (let i = 0; i < WEATHER_FORECAST_DAYS; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + i);
+    const date = dateKey(d);
+    daily.push({ date, maxF: 68 + (i % 5), minF: 52 + (i % 3), code: i % 3 === 0 ? 61 : 2 });
+    sunByDate[date] = {
+      sunrise: `${date}T06:45`,
+      sunset: `${date}T19:30`,
+    };
+  }
+
+  const hourlyNext18: WeatherSnapshot["hourlyNext18"] = [];
+  const hourStart = new Date(now);
+  hourStart.setMinutes(0, 0, 0);
+  for (let i = 0; i < HOURLY_FORECAST_HOURS; i++) {
+    const t = new Date(hourStart);
+    t.setHours(t.getHours() + i);
+    hourlyNext18.push({
+      time: hourIso(t),
+      temperatureF: 60 + (i % 8),
+      code: i % 4 === 0 ? 3 : 1,
+    });
+  }
+
+  const today = dateKey(now);
+  return {
+    latitude: coords.lat,
+    longitude: coords.lon,
+    timezone: process.env.WEATHER_TIMEZONE?.trim() || "America/Los_Angeles",
+    current: {
+      temperatureF: 64,
+      humidity: 55,
+      code: 2,
+      windMph: 8,
+    },
+    daily,
+    hourlyNext18,
+    sunriseToday: sunByDate[today]?.sunrise,
+    sunsetToday: sunByDate[today]?.sunset,
+    sunByDate,
+  };
+}
+
 /** Rain, snow, freezing precip, or thunderstorm WMO codes. */
 export function isPrecipOrStormWeatherCode(code: number): boolean {
   return (
@@ -234,10 +345,15 @@ export async function geocodeOpenMeteo(query: string): Promise<GeocodedPlace | n
       language: "en",
       format: "json",
     });
-    const res = await fetch(
-      `https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`,
-      { next: { revalidate: 3600 } },
-    );
+    let res: Response;
+    try {
+      res = await fetchWeatherUrl(
+        `${getGeocodingApiBase()}/v1/search?${params.toString()}`,
+        { next: { revalidate: 3600 } },
+      );
+    } catch {
+      continue;
+    }
     if (!res.ok) continue;
     const data = (await res.json()) as {
       results?: Array<{
@@ -273,6 +389,10 @@ export async function fetchOpenMeteoAt(
   coords: { lat: number; lon: number },
   opts?: { forecastDays?: number },
 ): Promise<WeatherSnapshot | null> {
+  if (isWeatherFixtureEnabled()) {
+    return fixtureWeatherSnapshot(coords);
+  }
+
   const forecastDays = opts?.forecastDays ?? WEATHER_FORECAST_DAYS;
   const params = new URLSearchParams({
     latitude: String(coords.lat),
@@ -291,8 +411,8 @@ export async function fetchOpenMeteoAt(
     forecast_days: String(forecastDays),
   });
 
-  const res = await fetch(
-    `https://api.open-meteo.com/v1/forecast?${params.toString()}`,
+  const res = await fetchWeatherUrl(
+    `${getWeatherApiBase()}/v1/forecast?${params.toString()}`,
     { next: { revalidate: 300 } },
   );
   if (!res.ok) {

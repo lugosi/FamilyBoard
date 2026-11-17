@@ -15,7 +15,8 @@ export async function GET() {
     }
     return NextResponse.json(snapshot);
   } catch (e) {
+    // Upstream Open-Meteo / network failures — not an app bug.
     const message = e instanceof Error ? e.message : "weather_error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }
