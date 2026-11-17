@@ -16,6 +16,8 @@ jobs:
     env:
       WEATHER_LAT: "37.77"
       WEATHER_LON: "-122.42"
+      # Deterministic weather for smoke — do not call live Open-Meteo from CI.
+      WEATHER_FIXTURE: "1"
       DATA_DIR: ${{ github.workspace }}/data
       PORT: "3000"
       HOSTNAME: "127.0.0.1"

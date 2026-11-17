@@ -65,6 +65,9 @@ Env: `CATLINK_PHONE`, `CATLINK_PASSWORD`, `CATLINK_PHONE_IAC`, `CATLINK_API_BASE
 ## Weather (`src/lib/weather.ts`)
 
 - Open-Meteo; `WEATHER_LAT` / `WEATHER_LON`; optional `WEATHER_TIMEZONE`.
+- Retries transient upstream failures; optional `WEATHER_API_BASE_URL` / `WEATHER_GEOCODING_API_BASE_URL` for mocks.
+- CI sets `WEATHER_FIXTURE=1` for a canned snapshot (no live Open-Meteo). Leave unset on TrueNAS.
+- Upstream fetch failures → **502** from `/api/weather`.
 - `hourlyNext18` rolling from current hour; `sunByDate` for per-day sunrise/sunset.
 - Chart: `WeatherHourlyChart.tsx` — `smoothLinePath`, icon only on condition change via `weatherIconKey`.
 - Greyscale vs icon night: see SKILL.md table.

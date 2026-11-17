@@ -44,7 +44,7 @@ These `.feature` files are **agent specs**, not an executable Cucumber suite. In
 | Route | Accept |
 |-------|--------|
 | `/api/auth/status` | 200 |
-| `/api/weather` | 200 if weather configured, else 501 |
+| `/api/weather` | 200 if weather configured (CI uses `WEATHER_FIXTURE=1`), else 501 |
 | Calendar / CatLink / Nest / Hue / Spotify | Status-aware per `auth/status` flags (see smoke script) |
 
 Unexpected **5xx**, **401 Locked** (gate on without cookie), or connection errors = fail.
