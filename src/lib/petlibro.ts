@@ -557,7 +557,7 @@ export async function fetchPetlibroSnapshot(): Promise<PetlibroSnapshot> {
       totalWaterTimesToday += f.todayDrinkTimes ?? 0;
     }
 
-    return {
+    const snapshot: PetlibroSnapshot = {
       email: cfg.email,
       devices,
       totalFoodPortionsToday: feeders.length ? totalFoodPortionsToday : undefined,
@@ -567,5 +567,14 @@ export async function fetchPetlibroSnapshot(): Promise<PetlibroSnapshot> {
       totalWaterTimesToday: fountains.length ? totalWaterTimesToday : undefined,
       updatedAt: new Date().toISOString(),
     };
+
+    try {
+      const { recordPetlibroDietSample } = await import("./cat-diet-history");
+      await recordPetlibroDietSample(snapshot);
+    } catch {
+      /* history is best-effort */
+    }
+
+    return snapshot;
   });
 }

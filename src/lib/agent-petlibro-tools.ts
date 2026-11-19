@@ -1,6 +1,11 @@
 import type { AgentTool } from "./agent";
 import { fetchCatlinkSnapshot, getCatlinkConfig } from "./catlink";
 import {
+  chartsFromCatDietHistory,
+  listCatDietHistory,
+  summarizeCatDietHistory,
+} from "./cat-diet-history";
+import {
   fetchPetlibroSnapshot,
   getPetlibroConfig,
   type PetlibroSnapshot,
@@ -32,7 +37,11 @@ async function optionalCatlinkContext(): Promise<{
   }
 }
 
-function dietHints(snapshot: PetlibroSnapshot, catWeightKg?: number): string[] {
+function dietHints(
+  snapshot: PetlibroSnapshot,
+  catWeightKg: number | undefined,
+  history: ReturnType<typeof summarizeCatDietHistory>,
+): string[] {
   const hints: string[] = [];
   const food = snapshot.totalFoodAmountToday;
   const unit = snapshot.totalFoodUnit || "cups";
@@ -44,12 +53,36 @@ function dietHints(snapshot: PetlibroSnapshot, catWeightKg?: number): string[] {
   if (typeof waterMl === "number") {
     hints.push(`Water recorded today: ${Math.round(waterMl)} ml.`);
     if (waterMl < 50) {
-      hints.push("Water intake looks low vs typical adult-cat guidance (~50–70+ ml/kg/day). Confirm fountain reporting and wet-food moisture.");
+      hints.push(
+        "Water intake looks low vs typical adult-cat guidance (~50–70+ ml/kg/day). Confirm fountain reporting and wet-food moisture.",
+      );
     }
   }
   if (typeof catWeightKg === "number" && catWeightKg > 0 && typeof waterMl === "number") {
     const mlPerKg = waterMl / catWeightKg;
-    hints.push(`Approx ${mlPerKg.toFixed(0)} ml water per kg body weight today (fountain only).`);
+    hints.push(
+      `Approx ${mlPerKg.toFixed(0)} ml water per kg body weight today (fountain only).`,
+    );
+  }
+  if (history.dayCount >= 2) {
+    if (history.averages.foodAmount != null) {
+      hints.push(
+        `${history.dayCount}-day avg food: ${history.averages.foodAmount} ${history.averages.foodUnit || unit}.`,
+      );
+    }
+    if (history.averages.waterMl != null) {
+      hints.push(`${history.dayCount}-day avg water: ${history.averages.waterMl} ml.`);
+    }
+    if (history.deltas.weightKg != null) {
+      const sign = history.deltas.weightKg > 0 ? "+" : "";
+      hints.push(
+        `Weight change over stored days: ${sign}${history.deltas.weightKg} kg.`,
+      );
+    }
+  } else {
+    hints.push(
+      "History is still short — FamilyBoard stores up to 30 local days as the board/agent polls (plus an hourly background sync).",
+    );
   }
   hints.push(
     "This is household device data, not a vet diagnosis. Adjust for multiple pets, free-feeding leftovers, and wet food water content.",
@@ -69,7 +102,7 @@ export function buildPetlibroTools(ready: boolean): AgentTool[] {
       declaration: {
         name: "petlibro_consumption",
         description:
-          "Fetch today's Petlibro feeder food and fountain water consumption (and optional CatLink weight/toilet context) to advise on cat diet and hydration. Use when someone asks how much the cat ate/drank, diet advice, portions, or water intake.",
+          "Fetch today's Petlibro food/water plus CatLink weight when linked, update the local 30-day diet history, and return averages/deltas for diet advice. Use for ate/drank, portions, hydration, weight trends, or adjusting diet.",
         parameters: { type: "object", properties: {} },
       },
       async run() {
@@ -77,14 +110,20 @@ export function buildPetlibroTools(ready: boolean): AgentTool[] {
           fetchPetlibroSnapshot(),
           optionalCatlinkContext(),
         ]);
-        const hints = dietHints(snapshot, catlink.catWeightKg);
+        const byDay = await listCatDietHistory();
+        const history = summarizeCatDietHistory(byDay);
+        const charts = chartsFromCatDietHistory(byDay);
+        const hints = dietHints(snapshot, catlink.catWeightKg, history);
         return {
           response: {
             petlibro: snapshot,
             catlink: catlink.linked ? catlink : { linked: false },
+            history,
             adviceHints: hints,
+            chartHints: charts.map((c) => c.title).filter(Boolean),
           },
-          label: "Petlibro consumption",
+          label: "Petlibro consumption + history",
+          charts,
         };
       },
     },
