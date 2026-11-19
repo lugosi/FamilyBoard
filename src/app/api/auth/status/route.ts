@@ -9,6 +9,7 @@ import { isWikilmGithubConfigured } from "@/lib/wikilm-github";
 import { isSlackConfigured } from "@/lib/slack";
 import { getInboxAutoScanMinutes } from "@/lib/background";
 import { getConfiguredPublicAppUrl } from "@/lib/app-url";
+import { getDailyBriefStatus } from "@/lib/daily-brief";
 import { getStravaRedirectUri, isStravaConfigured, listStravaAccounts } from "@/lib/strava";
 import { stravaTrainingSkillPresentInWiki } from "@/lib/wiki-skill-seeds";
 
@@ -47,6 +48,13 @@ export async function GET(request: Request) {
     }
   }
 
+  let dailyBrief: Awaited<ReturnType<typeof getDailyBriefStatus>> | null = null;
+  try {
+    dailyBrief = await getDailyBriefStatus();
+  } catch {
+    dailyBrief = null;
+  }
+
   return NextResponse.json({
     googleLinked,
     googleConfigured: Boolean(
@@ -73,6 +81,20 @@ export async function GET(request: Request) {
     stravaRedirectUri,
     stravaCallbackDomain,
     stravaTrainingSkillInWiki,
+    dailyBrief: dailyBrief
+      ? {
+          enabled: dailyBrief.enabled,
+          webAgent: dailyBrief.webAgent,
+          hour: dailyBrief.hour,
+          minute: dailyBrief.minute,
+          timeZone: dailyBrief.timeZone,
+          lastSentDateKey: dailyBrief.lastSentDateKey,
+          lastSentAt: dailyBrief.lastSentAt,
+          lastError: dailyBrief.lastError,
+          slackSubscriberCount: dailyBrief.slackUserIds.length,
+          dueSoon: dailyBrief.dueSoon,
+        }
+      : null,
     publicAppUrl: getConfiguredPublicAppUrl(),
   });
 }

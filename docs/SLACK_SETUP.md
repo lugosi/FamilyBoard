@@ -75,6 +75,7 @@ Restart FamilyBoard. The log shows `[slack] Socket Mode bot starting`, and the A
 - The bot puts 👀 on your message while it works, then replies, with a ✅ line for each change it made.
 - Calendar / wiki writes need a quick review: the bot shows **Approve** and **Deny** buttons (you can still reply `approve` / `deny`).
 - It remembers the last 30 minutes of a DM or channel thread, so "make it 4pm instead" works. Send `reset` to start over.
+- **Morning brief (7:00 Pacific by default):** anyone who DMs the bot is registered. Each day FamilyBoard DMs calendar + weather + todos (and creates an AI-tab chat). Say `morning off` / `morning on` to opt out or back in. Seed users with `DAILY_BRIEF_SLACK_USER_IDS`, or use AI → Tools → Morning brief.
 
 ## Troubleshooting
 

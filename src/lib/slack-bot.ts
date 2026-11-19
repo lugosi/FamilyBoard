@@ -52,6 +52,18 @@ const READ_ONLY_TOOLS = new Set([
   "strava_training_summary",
 ]);
 const LINK_STRAVA_WORDS = new Set(["link strava", "/strava", "connect strava"]);
+const MORNING_ON_WORDS = new Set([
+  "morning on",
+  "subscribe morning",
+  "morning brief on",
+  "/morning on",
+]);
+const MORNING_OFF_WORDS = new Set([
+  "morning off",
+  "unsubscribe morning",
+  "morning brief off",
+  "/morning off",
+]);
 
 export type SlackBotState = {
   running: boolean;
@@ -243,6 +255,24 @@ async function handle(msg: Incoming): Promise<void> {
     return;
   }
 
+  {
+    const word = msg.text.trim().toLowerCase();
+    if (MORNING_ON_WORDS.has(word) || MORNING_OFF_WORDS.has(word)) {
+      const { setSlackDailyBriefOptIn } = await import("./daily-brief-store");
+      const on = MORNING_ON_WORDS.has(word);
+      const store = await setSlackDailyBriefOptIn(msg.user, on);
+      const hh = String(store.hour).padStart(2, "0");
+      const mm = String(store.minute).padStart(2, "0");
+      await reply(
+        on
+          ? `You're on the morning brief list (${hh}:${mm} ${store.timeZone}). I'll DM you calendar + weather + todos.`
+          : `Okay — no more morning brief DMs. Say *morning on* anytime to opt back in.`,
+      );
+      state.handled += 1;
+      return;
+    }
+  }
+
   // Resolve a staged calendar/wiki review without calling the model.
   const decisionWord = msg.text.trim().toLowerCase();
   if (APPROVE_WORDS.has(decisionWord) || REJECT_WORDS.has(decisionWord)) {
@@ -281,6 +311,11 @@ async function handle(msg: Incoming): Promise<void> {
 
   await setSlackReaction({ channel: msg.channel, ts: msg.ts, name: WORKING_REACTION, on: true });
   try {
+    // Anyone who DMs the bot is registered for the 7am Pacific morning brief (unless opted out).
+    if (!msg.threadTs) {
+      const { registerSlackDailyBriefUser } = await import("./daily-brief-store");
+      await registerSlackDailyBriefUser(msg.user);
+    }
     const { attachments, problems } = await readSlackFiles(msg.files);
     if (!msg.text && !attachments.length) {
       await reply(problems.join("\n") || "I couldn't read that file.");
