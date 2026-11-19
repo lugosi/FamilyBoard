@@ -13,7 +13,7 @@ Read this when editing CatLink, Spotify, Hue, Nest, Google Calendar, Weather, or
 | `hue.json` | Hue bridge username |
 | `catlink-session.json` | CatLink token, phone, phoneIac, apiBase |
 | `petlibro-session.json` | Petlibro email, password, token, region, apiBase |
-| `cat-diet-history.json` | Rolling ~30 local days of cat weight + food + water |
+| `cat-diet-history.json` | Rolling ~180 local days of cat weight + food + water |
 | `nest-climate-history.json` | Indoor climate samples |
 | `todos.json` | Legacy local todos only when wiki is not configured; with wiki, tasks live in `todos/list.md` |
 | `chat-conversations.json` | Slack bot short-term memory per DM / channel thread (30 min TTL) |
@@ -77,9 +77,9 @@ Unofficial cloud API (same as HA `jjjonesjr33/petlibro`): email + **MD5** passwo
 ### Snapshot fields
 - Feeders (`PLAF*`): `grainStatus.todayFeedingQuantity` (portions) → cups/oz/g/ml via `unitType`; feed times; food-low from `surplusGrain`
 - Fountains (`PLWF*`): `todayDrinkData.todayTotalMl` / `todayTotalTimes`; reservoir `%` from `realInfo.weightPercent`
-- History: board/agent fetches + hourly background sync upsert `DATA_DIR/cat-diet-history.json` (one row per local day; CatLink weight/toilet when linked)
-- Cloud backfill (not just today): water via `POST /data/deviceDrinkWater/history` (`dimension: month`, ~170 days retained on Petlibro servers); food via `workRecord/list` feed events (~90 days); CatLink weight via `summarySimple?date=` per past day. Live `todayDrinkData` is still only today+yesterday.
-- Agent tool: `petlibro_consumption` returns today + `history` averages/deltas + food/water (and weight) charts
+- History: board/agent fetches + hourly background sync upsert `DATA_DIR/cat-diet-history.json` (**~180 local days**; CatLink weight/toilet when linked)
+- Cloud backfill: water via `POST /data/deviceDrinkWater/history` (`dimension: month`, up to **6 months** / ~170 days retained); food via `workRecord/list` (~90 days); CatLink weight via `summarySimple?date=` (up to **90** past days). Live `todayDrinkData` is still only today+yesterday.
+- Agent tool: `petlibro_consumption` returns today + `history` averages/deltas + food/water (and weight) charts (weekly avg when series is long)
 
 ### Routes
 - `GET /api/petlibro` → snapshot

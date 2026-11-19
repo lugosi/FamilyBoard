@@ -81,7 +81,7 @@ function dietHints(
     }
   } else {
     hints.push(
-      "History is still short — FamilyBoard stores up to 30 local days as the board/agent polls (plus an hourly background sync).",
+      "History is still short — FamilyBoard stores up to ~180 local days and backfills from Petlibro/CatLink cloud history on sync.",
     );
   }
   hints.push(
@@ -102,7 +102,7 @@ export function buildPetlibroTools(ready: boolean): AgentTool[] {
       declaration: {
         name: "petlibro_consumption",
         description:
-          "Fetch today's Petlibro food/water plus CatLink weight when linked, update the local 30-day diet history, and return averages/deltas for diet advice. Use for ate/drank, portions, hydration, weight trends, or adjusting diet.",
+          "Fetch today's Petlibro food/water plus CatLink weight when linked, update the local ~180-day diet history (cloud backfill when thin), and return averages/deltas for diet advice. Use for ate/drank, portions, hydration, weight trends, or adjusting diet.",
         parameters: { type: "object", properties: {} },
       },
       async run() {

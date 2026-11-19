@@ -569,12 +569,17 @@ export async function backfillPetlibroDietHistory(options?: {
   const cfg = await getPetlibroConfig();
   if (!cfg) return { waterDays: 0, foodDays: 0 };
 
-  const months = Math.max(1, Math.min(options?.months ?? 2, 6));
-  const { upsertCatDietDay, listCatDietHistory, localDateKey } = await import(
-    "./cat-diet-history"
-  );
+  const months = Math.max(1, Math.min(options?.months ?? 6, 6));
+  const {
+    upsertCatDietDay,
+    listCatDietHistory,
+    localDateKey,
+    CAT_DIET_HISTORY_DAYS,
+  } = await import("./cat-diet-history");
   const existing = new Map(
-    (await listCatDietHistory(30)).map((d) => [d.dateKey, d] as const),
+    (await listCatDietHistory(CAT_DIET_HISTORY_DAYS)).map(
+      (d) => [d.dateKey, d] as const,
+    ),
   );
   const today = localDateKey(new Date(), cfg.timeZone);
   let waterDays = 0;
@@ -656,7 +661,7 @@ export async function backfillPetlibroDietHistory(options?: {
       }
       try {
         const endTime = Date.now();
-        const startTime = endTime - 30 * 24 * 60 * 60 * 1000;
+        const startTime = endTime - 90 * 24 * 60 * 60 * 1000;
         const workRecord = await apiData(cfg, token, "/device/workRecord/list", {
           deviceSn,
           startTime,

@@ -556,12 +556,13 @@ export async function backfillCatlinkDietHistory(options?: {
 }): Promise<number> {
   const cfg = await getCatlinkConfig();
   if (!cfg) return 0;
-  const daysBack = Math.max(1, Math.min(options?.days ?? 14, 30));
-  const { upsertCatDietDay, listCatDietHistory, localDateKey } = await import(
-    "./cat-diet-history"
-  );
+  const daysBack = Math.max(1, Math.min(options?.days ?? 90, 180));
+  const { upsertCatDietDay, listCatDietHistory, localDateKey, CAT_DIET_HISTORY_DAYS } =
+    await import("./cat-diet-history");
   const existing = new Map(
-    (await listCatDietHistory()).map((d) => [d.dateKey, d] as const),
+    (await listCatDietHistory(CAT_DIET_HISTORY_DAYS)).map(
+      (d) => [d.dateKey, d] as const,
+    ),
   );
   const timezoneId = getBoardTimezone();
   const today = localDateKey(new Date(), timezoneId);

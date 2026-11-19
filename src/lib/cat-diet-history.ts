@@ -5,8 +5,14 @@ import { getDataDir } from "./data-dir";
 import { getDefaultTimeZone } from "./google";
 
 const HISTORY_FILE = "cat-diet-history.json";
-/** Keep a month of daily rows for diet trends. */
-const HISTORY_DAYS = 30;
+/**
+ * Keep ~6 months of daily rows. Petlibro cloud water history retains ~170 days;
+ * our file is the durable archive beyond that rolling window.
+ */
+export const CAT_DIET_HISTORY_DAYS = 180;
+const HISTORY_DAYS = CAT_DIET_HISTORY_DAYS;
+/** Chart renderer caps series length; bucket to weeks when longer. */
+const CHART_MAX_POINTS = 24;
 
 export type CatDietDaySample = {
   /** Local calendar day YYYY-MM-DD in DEFAULT_TIMEZONE. */
@@ -294,31 +300,68 @@ export async function recordCatlinkDietSample(snapshot: {
 
 const BACKFILL_MARKER = "cat-diet-backfill.json";
 
+type BackfillMarker = {
+  petlibroAt?: string;
+  catlinkAt?: string;
+  petlibroVersion?: number;
+};
+
+/** Bump when backfill window widens so existing installs re-pull. */
+const BACKFILL_VERSION = 2;
+
+async function readBackfillMarker(): Promise<BackfillMarker> {
+  try {
+    const raw = await fs.readFile(path.join(getDataDir(), BACKFILL_MARKER), "utf-8");
+    return JSON.parse(raw) as BackfillMarker;
+  } catch {
+    return {};
+  }
+}
+
+async function writeBackfillMarker(patch: BackfillMarker): Promise<void> {
+  await fs.mkdir(getDataDir(), { recursive: true });
+  const prev = await readBackfillMarker();
+  await fs.writeFile(
+    path.join(getDataDir(), BACKFILL_MARKER),
+    JSON.stringify({ ...prev, ...patch }, null, 2),
+    "utf-8",
+  );
+}
+
 async function shouldRunPetlibroBackfill(): Promise<boolean> {
+  const marker = await readBackfillMarker();
+  if (marker.petlibroVersion === BACKFILL_VERSION && marker.petlibroAt) {
+    if (Date.now() - Date.parse(marker.petlibroAt) < 12 * 60 * 60 * 1000) {
+      return false;
+    }
+  }
   const days = await listCatDietHistory();
   const withWaterOrFood = days.filter(
     (d) => d.waterMl != null || d.foodAmount != null || d.foodPortions != null,
   );
-  if (withWaterOrFood.length >= 7) return false;
-  try {
-    const raw = await fs.readFile(path.join(getDataDir(), BACKFILL_MARKER), "utf-8");
-    const parsed = JSON.parse(raw) as { at?: string };
-    if (parsed.at && Date.now() - Date.parse(parsed.at) < 12 * 60 * 60 * 1000) {
-      return false;
-    }
-  } catch {
-    /* no marker yet */
+  // Re-backfill until we have a healthy multi-month series (or version bumps).
+  if (
+    marker.petlibroVersion === BACKFILL_VERSION &&
+    withWaterOrFood.length >= 60
+  ) {
+    return false;
   }
   return true;
 }
 
-async function markPetlibroBackfill(): Promise<void> {
-  await fs.mkdir(getDataDir(), { recursive: true });
-  await fs.writeFile(
-    path.join(getDataDir(), BACKFILL_MARKER),
-    JSON.stringify({ at: new Date().toISOString() }, null, 2),
-    "utf-8",
-  );
+async function shouldRunCatlinkBackfill(): Promise<boolean> {
+  const marker = await readBackfillMarker();
+  if (marker.petlibroVersion === BACKFILL_VERSION && marker.catlinkAt) {
+    if (Date.now() - Date.parse(marker.catlinkAt) < 12 * 60 * 60 * 1000) {
+      return false;
+    }
+  }
+  const days = await listCatDietHistory();
+  const withWeight = days.filter((d) => d.catWeightKg != null);
+  if (marker.petlibroVersion === BACKFILL_VERSION && withWeight.length >= 45) {
+    return false;
+  }
+  return true;
 }
 
 /** Pull live Petlibro + CatLink (when linked) and persist today's diet row. */
@@ -333,8 +376,11 @@ export async function syncCatDietHistory(): Promise<CatDietDaySample | null> {
     try {
       await fetchPetlibroSnapshot();
       if (await shouldRunPetlibroBackfill()) {
-        await backfillPetlibroDietHistory({ months: 2 });
-        await markPetlibroBackfill();
+        await backfillPetlibroDietHistory({ months: 6 });
+        await writeBackfillMarker({
+          petlibroAt: new Date().toISOString(),
+          petlibroVersion: BACKFILL_VERSION,
+        });
       }
       wrote = (await listCatDietHistory()).at(-1) ?? null;
     } catch {
@@ -345,7 +391,13 @@ export async function syncCatDietHistory(): Promise<CatDietDaySample | null> {
     try {
       await fetchCatlinkSnapshot();
       try {
-        await backfillCatlinkDietHistory({ days: 14 });
+        if (await shouldRunCatlinkBackfill()) {
+          await backfillCatlinkDietHistory({ days: 90 });
+          await writeBackfillMarker({
+            catlinkAt: new Date().toISOString(),
+            petlibroVersion: BACKFILL_VERSION,
+          });
+        }
       } catch {
         /* weight backfill is best-effort */
       }
@@ -357,23 +409,93 @@ export async function syncCatDietHistory(): Promise<CatDietDaySample | null> {
   return wrote;
 }
 
+function mondayWeekKey(dateKey: string): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = dt.getUTCDay(); // 0 Sun
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  dt.setUTCDate(dt.getUTCDate() + mondayOffset);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(dt);
+}
+
+function downsampleForChart(
+  byDay: CatDietDaySample[],
+): { points: CatDietDaySample[]; grain: "day" | "week" } {
+  if (byDay.length <= CHART_MAX_POINTS) {
+    return { points: byDay, grain: "day" };
+  }
+  const weeks = new Map<string, CatDietDaySample[]>();
+  for (const row of byDay) {
+    const key = mondayWeekKey(row.dateKey);
+    const list = weeks.get(key) || [];
+    list.push(row);
+    weeks.set(key, list);
+  }
+  const points: CatDietDaySample[] = [];
+  for (const [weekKey, rows] of [...weeks.entries()].sort((a, b) =>
+    a[0].localeCompare(b[0]),
+  )) {
+    const foodVals = rows
+      .map((r) => r.foodAmount)
+      .filter((n): n is number => typeof n === "number");
+    const waterVals = rows
+      .map((r) => r.waterMl)
+      .filter((n): n is number => typeof n === "number");
+    const weightVals = rows
+      .map((r) => r.catWeightKg)
+      .filter((n): n is number => typeof n === "number");
+    const foodUnit = [...rows].reverse().find((r) => r.foodUnit)?.foodUnit;
+    points.push({
+      dateKey: weekKey,
+      foodAmount: foodVals.length
+        ? Math.round((foodVals.reduce((a, b) => a + b, 0) / foodVals.length) * 1000) /
+          1000
+        : undefined,
+      foodUnit,
+      waterMl: waterVals.length
+        ? Math.round(waterVals.reduce((a, b) => a + b, 0) / waterVals.length)
+        : undefined,
+      catWeightKg: weightVals.length
+        ? Math.round(
+            (weightVals.reduce((a, b) => a + b, 0) / weightVals.length) * 1000,
+          ) / 1000
+        : undefined,
+      updatedAt: rows[rows.length - 1]?.updatedAt || new Date().toISOString(),
+    });
+  }
+  return {
+    points: points.slice(-CHART_MAX_POINTS),
+    grain: "week",
+  };
+}
+
 export function chartsFromCatDietHistory(
   byDay: CatDietDaySample[],
 ): ChatChartSpec[] {
   if (byDay.length < 2) return [];
-  const labels = byDay.map((d) => shortDayLabel(d.dateKey));
+  const { points, grain } = downsampleForChart(byDay);
+  const labels = points.map((d) => shortDayLabel(d.dateKey));
   const foodUnit =
-    [...byDay].reverse().find((d) => d.foodUnit)?.foodUnit || "cups";
+    [...points].reverse().find((d) => d.foodUnit)?.foodUnit ||
+    [...byDay].reverse().find((d) => d.foodUnit)?.foodUnit ||
+    "cups";
+  const xLabel = grain === "week" ? "Week (Mon)" : "Day";
+  const titleSuffix = grain === "week" ? "weekly avg" : "daily";
 
-  const foodSeries = byDay.map((d, i) => ({
+  const foodSeries = points.map((d, i) => ({
     label: labels[i],
     value: typeof d.foodAmount === "number" ? d.foodAmount : 0,
   }));
-  const waterSeries = byDay.map((d, i) => ({
+  const waterSeries = points.map((d, i) => ({
     label: labels[i],
     value: typeof d.waterMl === "number" ? d.waterMl : 0,
   }));
-  const weightPoints = byDay
+  const weightPoints = points
     .map((d, i) =>
       typeof d.catWeightKg === "number"
         ? { label: labels[i], value: d.catWeightKg }
@@ -384,10 +506,10 @@ export function chartsFromCatDietHistory(
   const charts: ChatChartSpec[] = [
     {
       type: "combo",
-      title: "Cat food & water (daily)",
+      title: `Cat food & water (${titleSuffix})`,
       leftAxisLabel: `Food (${foodUnit})`,
       rightAxisLabel: "Water (ml)",
-      xAxisLabel: "Day",
+      xAxisLabel: xLabel,
       series: [
         { name: "Food", unit: foodUnit, color: "#fbbf24", data: foodSeries },
         { name: "Water", unit: "ml", color: "#38bdf8", data: waterSeries },
@@ -398,9 +520,9 @@ export function chartsFromCatDietHistory(
   if (weightPoints.length >= 2) {
     charts.push({
       type: "line",
-      title: "Cat weight (kg)",
+      title: `Cat weight (${titleSuffix}, kg)`,
       leftAxisLabel: "Weight (kg)",
-      xAxisLabel: "Day",
+      xAxisLabel: xLabel,
       unit: "kg",
       series: [{ name: "Weight", unit: "kg", color: "#34d399", data: weightPoints }],
     });
