@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import { CompactCalendarGrid } from "@/components/calendar/CompactCalendarGrid";
 import { EventDateTimePicker } from "@/components/calendar/EventDateTimePicker";
@@ -36,6 +43,16 @@ import {
 } from "@/lib/weather";
 import { IndoorClimateCharts } from "@/components/IndoorClimateCharts";
 import type { ClimateHistorySample } from "@/lib/nest-climate-history";
+import {
+  BOARD_WIDGET_META,
+  boardColumnKeys,
+  defaultBoardWidgetLayout,
+  moveBoardWidget,
+  normalizeBoardWidgetLayout,
+  setBoardWidgetEnabled,
+  type BoardWidgetKey,
+  type BoardWidgetLayout,
+} from "@/lib/board-widget-layout";
 
 type HueArea = {
   id: string;
@@ -188,14 +205,7 @@ const HUE_THEME_OPTIONS: Array<{ key: HueThemeKey; label: string }> = [
   { key: "nightlight", label: "Nightlight" },
 ];
 
-type RightWidgetKey =
-  | "clock"
-  | "weather"
-  | "catlink"
-  | "petlibro"
-  | "nest"
-  | "hue"
-  | "spotify";
+type RightWidgetKey = BoardWidgetKey;
 type SpotifyResultTab = "recent" | "featured" | "results";
 
 type SpotifyWebPlaybackPlayer = {
@@ -485,7 +495,7 @@ function clearCalendarExplicitChoice() {
   }
 }
 
-export function Board() {
+export function Board({ variant = "board" }: { variant?: "board" | "widgets" } = {}) {
   const search = useSearchParams();
   const [status, setStatus] = useState<Status | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -641,6 +651,11 @@ export function Board() {
     hue: false,
     spotify: false,
   });
+  const [widgetLayout, setWidgetLayout] = useState<BoardWidgetLayout>(() =>
+    defaultBoardWidgetLayout(),
+  );
+  const [widgetArrangeMode, setWidgetArrangeMode] = useState(false);
+  const [widgetsPage, setWidgetsPage] = useState(0);
 
   const sunriseToday =
     typeof weather?.sunriseToday === "string" ? weather.sunriseToday : undefined;
@@ -666,6 +681,32 @@ export function Board() {
 
   function toggleWidgetCollapse(key: RightWidgetKey) {
     setCollapsedWidgets((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  async function persistWidgetLayout(next: BoardWidgetLayout) {
+    setWidgetLayout(next);
+    try {
+      const res = await fetch("/api/board/widgets", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      if (res.ok) {
+        setWidgetLayout(normalizeBoardWidgetLayout(await res.json()));
+      }
+    } catch {
+      /* keep optimistic local layout */
+    }
+  }
+
+  function toggleWidgetEnabled(key: BoardWidgetKey) {
+    void persistWidgetLayout(
+      setBoardWidgetEnabled(widgetLayout, key, !widgetLayout.enabled[key]),
+    );
+  }
+
+  function moveWidget(key: BoardWidgetKey, direction: "up" | "down") {
+    void persistWidgetLayout(moveBoardWidget(widgetLayout, key, direction));
   }
 
   const urlBanner = useMemo(() => {
@@ -744,6 +785,16 @@ export function Board() {
       const s = (await sRes.json()) as Status;
       if (signal?.aborted) return;
       setStatus(s);
+
+      try {
+        const layoutRes = await fetch("/api/board/widgets", { signal });
+        if (!signal?.aborted && layoutRes.ok) {
+          const layoutJson = (await layoutRes.json()) as unknown;
+          setWidgetLayout(normalizeBoardWidgetLayout(layoutJson));
+        }
+      } catch {
+        /* keep defaults */
+      }
 
       if (s.googleLinked) {
         let activeCalendarId = selectedCalendarId;
@@ -2276,7 +2327,14 @@ export function Board() {
           </div>
         ) : null}
 
-        <div className="board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-x-hidden overflow-y-auto sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
+        <div
+          className={
+            variant === "widgets"
+              ? "board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-x-hidden overflow-y-auto sm:gap-4 lg:h-full lg:overflow-hidden"
+              : "board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-x-hidden overflow-y-auto sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]"
+          }
+        >
+          {variant === "board" ? (
           <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
             <div className="mb-3 flex min-w-0 shrink-0 items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-3 sm:mb-4 sm:gap-4 sm:px-4 sm:py-3.5">
               <span className="shrink-0 pt-1 text-lg font-bold tracking-tight text-white sm:text-xl">
@@ -2475,1396 +2533,1524 @@ export function Board() {
               </>
             ) : null}
           </section>
+          ) : null}
 
           <div className="board-scrollbar flex h-full max-h-full min-h-0 min-w-0 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-y-contain pb-2 sm:gap-4">
-            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  {collapsedWidgets.clock ? (
-                    <ClockTimeTitleIcon time={clockTime} />
-                  ) : null}
-                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Clock</h2>
-                </div>
-                <button
-                  type="button"
-                  className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                  onClick={() => toggleWidgetCollapse("clock")}
-                  aria-label={collapsedWidgets.clock ? "Expand clock" : "Collapse clock"}
-                  title={collapsedWidgets.clock ? "Expand clock" : "Collapse clock"}
-                >
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    {collapsedWidgets.clock ? (
-                      <path d="M6 15l6-6 6 6" />
-                    ) : (
-                      <path d="M6 9l6 6 6-6" />
-                    )}
-                  </svg>
-                </button>
-              </div>
-              {!collapsedWidgets.clock ? (
-                <div className="mt-3 flex min-h-[2.75rem] items-center justify-between gap-4 sm:min-h-[3rem]">
-                  <p className="shrink-0 text-3xl font-semibold leading-none tabular-nums text-white sm:text-4xl">
-                    {clockTime}
-                  </p>
-                  <div className="flex min-w-0 flex-col items-end justify-center gap-1 text-right leading-tight">
-                    <p className="truncate text-sm uppercase tracking-wide text-slate-300 sm:text-base">
-                      {clockDate}
-                    </p>
-                    <div className="flex items-center justify-end gap-3 tabular-nums text-sm font-medium text-slate-200 sm:gap-4 sm:text-base">
-                      <span className="inline-flex items-center gap-1.5" title="Sunrise">
-                        <svg
-                          aria-hidden
-                          viewBox="0 0 24 24"
-                          className="h-4 w-4 shrink-0 text-amber-300 sm:h-5 sm:w-5"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M12 3v4M4.2 10.2l2.8 2.8M19.8 10.2l-2.8 2.8M3 17h18M8 21h8" />
-                          <circle cx="12" cy="14" r="4" />
-                        </svg>
-                        {clockSunrise}
-                      </span>
-                      <span className="inline-flex items-center gap-1.5" title="Sunset">
-                        <svg
-                          aria-hidden
-                          viewBox="0 0 24 24"
-                          className="h-4 w-4 shrink-0 text-indigo-300 sm:h-5 sm:w-5"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M17 18H7M12 9V3M4.2 15.8l2.8-2.8M19.8 15.8l-2.8-2.8" />
-                          <path d="M6 21h12" />
-                        </svg>
-                        {clockSunset}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </section>
-            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  {collapsedWidgets.weather ? (
-                    current ? (
-                      <WeatherIcon
-                        code={Number(current.code ?? 0)}
-                        isNight={weatherIconIsNight}
-                        className={`${WIDGET_TITLE_ICON} text-sky-300`}
-                      />
-                    ) : (
-                      <div
-                        className={`${WIDGET_TITLE_ICON} rounded-lg border border-slate-700/80 bg-slate-950/50`}
-                        aria-hidden
-                      />
-                    )
-                  ) : null}
-                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Weather</h2>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => void fetchBoard()}
-                    aria-label="Refresh weather"
-                    title="Refresh weather"
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                      <path d="M21 3v6h-6" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => toggleWidgetCollapse("weather")}
-                    aria-label={collapsedWidgets.weather ? "Expand weather" : "Collapse weather"}
-                    title={collapsedWidgets.weather ? "Expand weather" : "Collapse weather"}
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      {collapsedWidgets.weather ? (
-                        <path d="M6 15l6-6 6 6" />
-                      ) : (
-                        <path d="M6 9l6 6 6-6" />
-                      )}
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              {collapsedWidgets.weather ? null : !status?.weatherConfigured ? (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">
-                  Set{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    WEATHER_LAT
-                  </code>{" "}
-                  and{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    WEATHER_LON
-                  </code>
-                  .
-                </p>
-              ) : current ? (
-                <div className="mt-2 space-y-2.5">
-                  <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <p className="text-4xl font-semibold leading-none text-white sm:text-5xl">
-                        {Math.round(current.temperatureF ?? 0)}°
-                        <span className="text-base text-slate-400 sm:text-lg">F</span>
-                      </p>
-                      <WeatherIcon
-                        code={Number(current.code ?? 0)}
-                        isNight={weatherIconIsNight}
-                        className="h-9 w-9 shrink-0 sm:h-10 sm:w-10"
-                      />
-                    </div>
-                    <div className="flex flex-col items-end gap-1.5 text-sm text-slate-300 sm:text-base">
-                      {todayForecast &&
-                      typeof todayForecast.minF === "number" &&
-                      typeof todayForecast.maxF === "number" ? (
-                        <span
-                          className="whitespace-nowrap text-xs tabular-nums text-slate-400 sm:text-sm"
-                          title="Today's forecast high / low"
-                        >
-                          <span className="font-semibold text-slate-100">
-                            {Math.round(todayForecast.maxF)}°
-                          </span>
-                          <span className="mx-1 text-slate-500">/</span>
-                          <span className="text-slate-300">
-                            {Math.round(todayForecast.minF)}°
-                          </span>
-                        </span>
+            <div className="sticky top-0 z-10 flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/95 p-2 shadow-lg shadow-slate-950/40 backdrop-blur sm:p-2.5">
+              <p className="min-w-0 flex-1 truncate text-sm font-medium text-slate-300 sm:text-base">
+                {variant === "widgets" ? "All widgets" : "Board widgets"}
+              </p>
+              <button
+                type="button"
+                className={`rounded-md px-2.5 py-1.5 text-sm font-medium sm:text-base ${
+                  widgetArrangeMode
+                    ? "bg-sky-600 text-white hover:bg-sky-500"
+                    : "border border-slate-700 text-slate-200 hover:border-slate-500"
+                }`}
+                onClick={() => setWidgetArrangeMode((v) => !v)}
+              >
+                {widgetArrangeMode ? "Done" : "Arrange"}
+              </button>
+            </div>
+            {(() => {
+              const widgetNodes: Record<BoardWidgetKey, ReactNode> = {
+              clock: (
+                <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      {collapsedWidgets.clock ? (
+                        <ClockTimeTitleIcon time={clockTime} />
                       ) : null}
-                      <div className="flex items-center gap-3">
-                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                          <svg
-                            aria-hidden="true"
-                            viewBox="0 0 24 24"
-                            className="h-4 w-4 text-sky-300"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M12 3C12 3 6 10 6 14a6 6 0 0 0 12 0c0-4-6-11-6-11z" />
-                          </svg>
-                          {Math.round(current.humidity ?? 0)}%
-                        </span>
-                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                          <svg
-                            aria-hidden="true"
-                            viewBox="0 0 24 24"
-                            className="h-4 w-4 text-slate-300"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M3 9h10a3 3 0 1 0-3-3" />
-                            <path d="M3 15h14a3 3 0 1 1-3 3" />
-                          </svg>
-                          {Math.round(current.windMph ?? 0)} mph
-                        </span>
-                      </div>
+                      <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Clock</h2>
                     </div>
-                  </div>
-                  {hourlyNext18 && hourlyNext18.length > 0 ? (
-                    <WeatherHourlyChart
-                      hours={hourlyNext18}
-                      sunByDate={weatherSunByDate}
-                      className="h-32 shrink-0 sm:h-36"
-                    />
-                  ) : null}
-                </div>
-              ) : (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading weather…</p>
-              )}
-            </section>
-
-            <section
-              className={`min-w-0 shrink-0 overflow-hidden rounded-xl border bg-slate-900/60 p-3 shadow-lg sm:rounded-2xl sm:p-4 ${
-                catlinkWasteBinFull
-                  ? "catlink-alert-ring border-red-500/80 shadow-red-950/40"
-                  : "border-slate-800 shadow-slate-950/40"
-              }`}
-              aria-live={catlinkWasteBinFull ? "assertive" : undefined}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  {collapsedWidgets.catlink ? (
-                    <span
-                      className={`${WIDGET_TITLE_ICON} relative flex items-center justify-center rounded-lg border text-xs font-semibold tabular-nums ${
-                        catlinkWasteBinFull
-                          ? "border-red-500/80 bg-red-950/70 text-red-100"
-                          : "border-slate-700 bg-slate-950/70 text-white"
-                      }`}
-                    >
-                      {catlinkWasteBinFull ? (
-                        <span
-                          className="catlink-alert-light absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500"
-                          aria-hidden
-                        />
-                      ) : null}
-                      {catlinkWasteBinFull
-                        ? "!"
-                        : catlinkCatWeightKg !== null
-                          ? `${catlinkCatWeightKg.toFixed(1)}`
-                          : "CAT"}
-                    </span>
-                  ) : null}
-                  <h2 className="flex min-w-0 items-center gap-2 truncate text-xl font-medium text-white sm:text-2xl">
-                    Catlink
-                    {catlinkWasteBinFull && !collapsedWidgets.catlink ? (
-                      <span
-                        className="catlink-alert-light inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-red-500"
-                        title="Waste bin full — change bag"
-                        aria-label="Waste bin full"
-                      />
-                    ) : null}
-                  </h2>
-                </div>
-                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => void fetchBoard()}
-                    aria-label="Refresh catlink"
-                    title="Refresh catlink"
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                      <path d="M21 3v6h-6" />
-                    </svg>
-                  </button>
-                  {status?.catlinkLinked ? (
                     <button
                       type="button"
-                      disabled={busy === "catlink-unlink"}
-                      className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-rose-200 disabled:opacity-50"
-                      onClick={() => void unlinkCatlink()}
-                      aria-label="Unlink Catlink"
-                      title="Unlink Catlink"
+                      className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                      onClick={() => toggleWidgetCollapse("clock")}
+                      aria-label={collapsedWidgets.clock ? "Expand clock" : "Collapse clock"}
+                      title={collapsedWidgets.clock ? "Expand clock" : "Collapse clock"}
                     >
                       <svg
                         aria-hidden="true"
                         viewBox="0 0 24 24"
-                        className={`h-5 w-5 ${busy === "catlink-unlink" ? "animate-pulse" : ""}`}
+                        className="h-5 w-5"
                         fill="none"
                         stroke="currentColor"
                         strokeWidth="1.8"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       >
-                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                        <path d="M16 17l5-5-5-5" />
-                        <path d="M21 12H9" />
-                      </svg>
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => toggleWidgetCollapse("catlink")}
-                    aria-label={collapsedWidgets.catlink ? "Expand catlink" : "Collapse catlink"}
-                    title={collapsedWidgets.catlink ? "Expand catlink" : "Collapse catlink"}
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      {collapsedWidgets.catlink ? (
-                        <path d="M6 15l6-6 6 6" />
-                      ) : (
-                        <path d="M6 9l6 6 6-6" />
-                      )}
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              {collapsedWidgets.catlink ? null : !status?.catlinkConfigured ? (
-                <div className="mt-3 space-y-3">
-                  <p className="text-base text-slate-300 sm:text-lg">
-                    FamilyBoard uses CatLink&apos;s password API (same as Home Assistant). SMS
-                    codes from the app cannot be used here.
-                  </p>
-                  <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-400 sm:text-base">
-                    <li>In the CatLink app: Account → Security → set a short password (8–12 letters/numbers).</li>
-                    <li>Log out, then log back in with phone + password (not SMS) to confirm it works.</li>
-                    <li>Log out again, then link below (CatLink allows only one active session).</li>
-                  </ol>
-                  <div className="space-y-2">
-                    <input
-                      type="tel"
-                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500"
-                      placeholder="Phone (4244420566 or +1 424 442 0566)"
-                      aria-label="Catlink phone number"
-                      value={catlinkLinkPhone}
-                      onChange={(e) => setCatlinkLinkPhone(e.currentTarget.value)}
-                    />
-                    <input
-                      type="password"
-                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500"
-                      placeholder="CatLink app password"
-                      aria-label="Catlink password"
-                      value={catlinkLinkPassword}
-                      onChange={(e) => setCatlinkLinkPassword(e.currentTarget.value)}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    disabled={busy === "catlink-link"}
-                    className="inline-flex rounded-md bg-sky-600 px-4 py-2 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
-                    onClick={() => void linkCatlink()}
-                  >
-                    {busy === "catlink-link" ? "Linking…" : "Link Catlink"}
-                  </button>
-                  <p className="text-xs text-slate-500 sm:text-sm">
-                    Or set{" "}
-                    <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">
-                      CATLINK_PHONE
-                    </code>{" "}
-                    and{" "}
-                    <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">
-                      CATLINK_PASSWORD
-                    </code>{" "}
-                    in env for automatic login.
-                  </p>
-                </div>
-              ) : catlink ? (
-                <div className="mt-3 space-y-3">
-                  {catlinkCatName ? (
-                    <p className="text-sm text-slate-400 sm:text-base">{catlinkCatName}</p>
-                  ) : null}
-                  <div
-                    className={`rounded-lg border px-3 py-2 text-sm sm:text-base ${
-                      catlinkWasteBinFull
-                        ? "border-red-500/70 bg-red-950/40"
-                        : "border-slate-800 bg-slate-950/40"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Waste bin</p>
-                      {catlinkWasteBinFull ? (
-                        <span
-                          className="catlink-alert-light h-3 w-3 shrink-0 rounded-full bg-red-500"
-                          aria-hidden
-                        />
-                      ) : null}
-                    </div>
-                    <p
-                      className={`mt-1 font-medium ${
-                        catlinkWasteBinFull ? "text-red-100" : "text-slate-100"
-                      }`}
-                    >
-                      {catlinkWasteBinStatusLabel ?? "—"}
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-sm sm:text-base">
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Weight</p>
-                      <p className="mt-1 font-medium tabular-nums text-slate-100">
-                        {catlinkCatWeightKg !== null
-                          ? `${catlinkCatWeightKg.toFixed(1)} kg`
-                          : "—"}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Pee</p>
-                      <p className="mt-1 font-medium tabular-nums text-slate-100">
-                        {catlinkPeeToday !== null ? catlinkPeeToday : "—"}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Poop</p>
-                      <p className="mt-1 font-medium tabular-nums text-slate-100">
-                        {catlinkPoopToday !== null ? catlinkPoopToday : "—"}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
-                      disabled={busy === "catlink-clean_now"}
-                      onClick={() => void catlinkControl("clean_now")}
-                    >
-                      {busy === "catlink-clean_now" ? "Working…" : "Clean"}
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
-                      disabled={busy === "catlink-refill_litter"}
-                      onClick={() => void catlinkControl("refill_litter")}
-                    >
-                      {busy === "catlink-refill_litter" ? "Working…" : "Refill"}
-                    </button>
-                    <button
-                      type="button"
-                      className={`rounded-md border px-2.5 py-2 text-sm disabled:opacity-50 ${
-                        catlinkWasteBinFull
-                          ? "border-red-500/80 bg-red-600/90 font-semibold text-white hover:bg-red-500"
-                          : "border-slate-700 text-slate-100 hover:border-slate-500"
-                      }`}
-                      disabled={busy === "catlink-change_bag"}
-                      onClick={() => void catlinkControl("change_bag")}
-                    >
-                      {busy === "catlink-change_bag" ? "Working…" : "Change bag"}
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
-                      disabled={busy === "catlink-reset_bin"}
-                      onClick={() => void catlinkControl("reset_bin")}
-                    >
-                      {busy === "catlink-reset_bin" ? "Working…" : "Reset"}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading catlink…</p>
-              )}
-            </section>
-
-            <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  {collapsedWidgets.petlibro ? (
-                    <span
-                      className={`${WIDGET_TITLE_ICON} flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950/70 text-xs font-semibold tabular-nums text-white`}
-                    >
-                      {petlibroCollapsedLabel}
-                    </span>
-                  ) : null}
-                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">
-                    Petlibro
-                  </h2>
-                </div>
-                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => void fetchBoard()}
-                    aria-label="Refresh petlibro"
-                    title="Refresh petlibro"
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                      <path d="M21 3v6h-6" />
-                    </svg>
-                  </button>
-                  {status?.petlibroLinked ? (
-                    <button
-                      type="button"
-                      disabled={busy === "petlibro-unlink"}
-                      className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-rose-200 disabled:opacity-50"
-                      onClick={() => void unlinkPetlibro()}
-                      aria-label="Unlink Petlibro"
-                      title="Unlink Petlibro"
-                    >
-                      <svg
-                        aria-hidden="true"
-                        viewBox="0 0 24 24"
-                        className={`h-5 w-5 ${busy === "petlibro-unlink" ? "animate-pulse" : ""}`}
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                        <path d="M16 17l5-5-5-5" />
-                        <path d="M21 12H9" />
-                      </svg>
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => toggleWidgetCollapse("petlibro")}
-                    aria-label={
-                      collapsedWidgets.petlibro ? "Expand petlibro" : "Collapse petlibro"
-                    }
-                    title={
-                      collapsedWidgets.petlibro ? "Expand petlibro" : "Collapse petlibro"
-                    }
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      {collapsedWidgets.petlibro ? (
-                        <path d="M6 15l6-6 6 6" />
-                      ) : (
-                        <path d="M6 9l6 6 6-6" />
-                      )}
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              {collapsedWidgets.petlibro ? null : !status?.petlibroConfigured ? (
-                <div className="mt-3 space-y-3">
-                  <p className="text-base text-slate-300 sm:text-lg">
-                    Link Petlibro to show today&apos;s food and water for cat diet advice.
-                  </p>
-                  <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-400 sm:text-base">
-                    <li>
-                      Use an email + password account created in the Petlibro app (not Google
-                      Sign-In, not website-only signup).
-                    </li>
-                    <li>
-                      Prefer a second shared account so the phone app keeps its own session.
-                    </li>
-                    <li>Link below, then ask the AI tab about diet, portions, or hydration.</li>
-                  </ol>
-                  <div className="space-y-2">
-                    <input
-                      type="email"
-                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500"
-                      placeholder="Petlibro email"
-                      aria-label="Petlibro email"
-                      value={petlibroLinkEmail}
-                      onChange={(e) => setPetlibroLinkEmail(e.currentTarget.value)}
-                    />
-                    <input
-                      type="password"
-                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500"
-                      placeholder="Petlibro password"
-                      aria-label="Petlibro password"
-                      value={petlibroLinkPassword}
-                      onChange={(e) => setPetlibroLinkPassword(e.currentTarget.value)}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    disabled={busy === "petlibro-link"}
-                    className="inline-flex rounded-md bg-sky-600 px-4 py-2 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
-                    onClick={() => void linkPetlibro()}
-                  >
-                    {busy === "petlibro-link" ? "Linking…" : "Link Petlibro"}
-                  </button>
-                  <p className="text-xs text-slate-500 sm:text-sm">
-                    Or set{" "}
-                    <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">
-                      PETLIBRO_EMAIL
-                    </code>{" "}
-                    and{" "}
-                    <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">
-                      PETLIBRO_PASSWORD
-                    </code>{" "}
-                    in env.
-                  </p>
-                </div>
-              ) : petlibro?.error ? (
-                <p className="mt-3 text-base text-rose-300 sm:text-lg">{petlibro.error}</p>
-              ) : petlibro ? (
-                <div className="mt-3 space-y-3">
-                  <div className="grid grid-cols-2 gap-2 text-sm sm:text-base">
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Food today</p>
-                      <p className="mt-1 font-medium tabular-nums text-slate-100">
-                        {petlibroFoodAmount !== null
-                          ? `${petlibroFoodAmount} ${petlibroFoodUnit}`
-                          : "—"}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Water today</p>
-                      <p className="mt-1 font-medium tabular-nums text-slate-100">
-                        {petlibroWaterMl !== null
-                          ? `${Math.round(petlibroWaterMl)} ml${
-                              petlibroWaterTimes !== null ? ` · ${petlibroWaterTimes}×` : ""
-                            }`
-                          : "—"}
-                      </p>
-                    </div>
-                  </div>
-                  {petlibroDevices.length ? (
-                    <ul className="space-y-2 text-sm text-slate-300 sm:text-base">
-                      {petlibroDevices.map((d) => (
-                        <li
-                          key={d.deviceSn || d.name}
-                          className="rounded-lg border border-slate-800 bg-slate-950/30 px-3 py-2"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="truncate font-medium text-slate-100">{d.name}</p>
-                            <p className="shrink-0 text-xs uppercase tracking-wide text-slate-500">
-                              {d.kind}
-                              {d.online === false ? " · offline" : ""}
-                            </p>
-                          </div>
-                          {d.kind === "feeder" && d.feeder ? (
-                            <p className="mt-1 tabular-nums text-slate-400">
-                              {typeof d.feeder.todayFeedingAmount === "number"
-                                ? `${d.feeder.todayFeedingAmount} ${d.feeder.todayFeedingUnit || "cups"}`
-                                : "—"}
-                              {typeof d.feeder.todayFeedingTimes === "number"
-                                ? ` · ${d.feeder.todayFeedingTimes} feeds`
-                                : ""}
-                              {d.feeder.foodLow ? " · food low" : ""}
-                            </p>
-                          ) : null}
-                          {d.kind === "fountain" && d.fountain ? (
-                            <p className="mt-1 tabular-nums text-slate-400">
-                              {typeof d.fountain.todayDrinkMl === "number"
-                                ? `${Math.round(d.fountain.todayDrinkMl)} ml`
-                                : "—"}
-                              {typeof d.fountain.todayDrinkTimes === "number"
-                                ? ` · ${d.fountain.todayDrinkTimes}×`
-                                : ""}
-                              {typeof d.fountain.waterLevelPercent === "number"
-                                ? ` · ${Math.round(d.fountain.waterLevelPercent)}% full`
-                                : ""}
-                            </p>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-slate-400 sm:text-base">
-                      No feeders or fountains on this account yet.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading petlibro…</p>
-              )}
-            </section>
-
-            <section
-              className={`min-w-0 shrink-0 overflow-hidden rounded-xl border p-3 shadow-lg transition-colors duration-500 sm:rounded-2xl sm:p-4 ${
-                spotifyIsPlaying
-                  ? "border-[#1db954]/50 bg-[#1db954]/30 shadow-[#1db954]/20"
-                  : "border-slate-800 bg-slate-900/60 shadow-slate-950/40"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  {collapsedWidgets.spotify ? (
-                    <SpotifyAlbumTitleIcon coverUrl={spotifyCover} />
-                  ) : null}
-                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Spotify</h2>
-                </div>
-                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => void fetchBoard()}
-                    aria-label="Refresh spotify"
-                    title="Refresh spotify"
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                      <path d="M21 3v6h-6" />
-                    </svg>
-                  </button>
-                  {status?.spotifyConfigured && status.spotifyLinked ? (
-                    <button
-                      type="button"
-                      disabled={busy === "spotify-disconnect"}
-                      className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-rose-200 disabled:opacity-50"
-                      onClick={() => void disconnectSpotify()}
-                      aria-label="Log out of Spotify"
-                      title="Log out"
-                    >
-                      <svg
-                        aria-hidden="true"
-                        viewBox="0 0 24 24"
-                        className={`h-5 w-5 ${busy === "spotify-disconnect" ? "animate-pulse" : ""}`}
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                        <path d="M16 17l5-5-5-5" />
-                        <path d="M21 12H9" />
-                      </svg>
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => toggleWidgetCollapse("spotify")}
-                    aria-label={collapsedWidgets.spotify ? "Expand spotify" : "Collapse spotify"}
-                    title={collapsedWidgets.spotify ? "Expand spotify" : "Collapse spotify"}
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      {collapsedWidgets.spotify ? (
-                        <path d="M6 15l6-6 6 6" />
-                      ) : (
-                        <path d="M6 9l6 6 6-6" />
-                      )}
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              {collapsedWidgets.spotify ? null : !status?.spotifyConfigured ? (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">
-                  Set{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    SPOTIFY_CLIENT_ID
-                  </code>{" "}
-                  and{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    SPOTIFY_CLIENT_SECRET
-                  </code>
-                  .
-                </p>
-              ) : !status.spotifyLinked ? (
-                <div className="mt-3 space-y-3">
-                  <p className="text-base text-slate-300 sm:text-lg">
-                    Link Spotify to show now-playing and control playback.
-                  </p>
-                  <a
-                    className="inline-flex rounded-md bg-green-500 px-4 py-2 text-base font-medium text-slate-950 hover:bg-green-400 sm:text-lg"
-                    href="/api/auth/spotify"
-                  >
-                    Link Spotify
-                  </a>
-                </div>
-              ) : (
-                <div className="mt-3 min-w-0 space-y-3 overflow-hidden">
-                  {spotifyNotice ? (
-                    <p className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 sm:text-base">
-                      {spotifyNotice}
-                    </p>
-                  ) : null}
-                  <div className="flex min-w-0 items-start gap-3">
-                    <div className="min-w-0 flex-1 space-y-2.5">
-                      <div className="min-h-[6.75rem] rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
-                        <div className="flex items-center gap-3">
-                          {spotifyCover ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={spotifyCover}
-                              alt=""
-                              className="h-14 w-14 shrink-0 rounded-md object-cover"
-                            />
-                          ) : (
-                            <div className="h-14 w-14 shrink-0 rounded-md border border-slate-700 bg-slate-900/70" />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            {spotifyTrack ? (
-                              <>
-                                <p className="truncate text-base font-semibold text-white sm:text-lg">
-                                  {spotifyTrack.name ?? "Unknown track"}
-                                </p>
-                                <p className="truncate text-sm text-slate-400 sm:text-base">
-                                  {spotifyArtist || "Unknown artist"}
-                                </p>
-                                <p className="truncate text-xs uppercase tracking-wide text-slate-500 sm:text-sm">
-                                  {spotifyTrack.album?.name ?? "Unknown album"}
-                                </p>
-                              </>
-                            ) : (
-                              <>
-                                <p className="truncate text-base font-semibold text-slate-300 sm:text-lg">
-                                  Nothing is currently playing
-                                </p>
-                                <p className="truncate text-sm text-slate-500 sm:text-base">
-                                  Pick something from Search to start music.
-                                </p>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        {spotifyTrack && spotifyDurationMs > 0 ? (
-                          <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400 sm:text-xs">
-                            <span className="w-10 shrink-0 text-right tabular-nums">
-                              {formatMsClock(spotifyProgressMs)}
-                            </span>
-                            <input
-                              type="range"
-                              min={0}
-                              max={spotifyDurationMs}
-                              step={1000}
-                              value={spotifyProgressMs}
-                              className="min-w-0 flex-1 accent-sky-500"
-                              onChange={(e) =>
-                                setSpotifySeekDraft(Number(e.currentTarget.value))
-                              }
-                              onMouseUp={() => void commitSpotifySeek()}
-                              onTouchEnd={() => void commitSpotifySeek()}
-                            />
-                            <span className="w-10 shrink-0 tabular-nums">
-                              {formatMsClock(spotifyDurationMs)}
-                            </span>
-                          </div>
+                        {collapsedWidgets.clock ? (
+                          <path d="M6 15l6-6 6 6" />
                         ) : (
-                          <div className="mt-2 h-[1.125rem]" aria-hidden />
+                          <path d="M6 9l6 6 6-6" />
                         )}
-                      </div>
-
-                      <div className="flex min-w-0 items-center gap-2">
-                        <select
-                          className="max-w-full min-w-0 flex-1 truncate rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-sky-500 sm:px-3 sm:text-base"
-                          aria-label="Playback device"
-                          value={spotifyEffectiveDeviceId}
-                          onChange={(e) => {
-                            const nextDeviceId = e.target.value;
-                            if (
-                              nextDeviceId === spotifySdkDeviceId ||
-                              spotifyLiveDeviceIds.has(nextDeviceId)
-                            ) {
-                              setSpotifySelectedDeviceId(nextDeviceId);
-                              void spotifyControl("set_device", { deviceId: nextDeviceId });
-                            } else {
-                              setSpotifyNotice(
-                                "Selected device is last seen only. Open Spotify on that device first, then refresh devices.",
-                              );
-                            }
-                          }}
-                        >
-                          {spotifySdkDeviceId && !spotifySdkInDeviceList ? (
-                            <option value={spotifySdkDeviceId}>
-                              FamilyBoard Web Player{" "}
-                              {spotifyActiveDevice?.id === spotifySdkDeviceId ? "• active" : ""}
-                            </option>
-                          ) : null}
-                          {spotifyDeviceOptions.length === 0 ? (
-                            <option value="">No devices found</option>
-                          ) : (
-                            spotifyDeviceOptions.map((d) => (
-                              <option key={d.id} value={d.id}>
-                                {d.name ?? "Unknown"}{" "}
-                                {d.is_active
-                                  ? "• active"
-                                  : spotifyDevices.some((live) => live.id === d.id)
-                                    ? ""
-                                    : "• last seen"}
-                              </option>
-                            ))
-                          )}
-                        </select>
-                        <button
-                          type="button"
-                          disabled={busy === "spotify-refresh-devices"}
-                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-600 text-slate-100 hover:border-slate-400 disabled:opacity-50"
-                          onClick={() => void refreshSpotifyDevices()}
-                          aria-label="Refresh devices"
-                          title="Refresh devices"
-                        >
-                          <svg
-                            aria-hidden="true"
-                            viewBox="0 0 24 24"
-                            className={`h-4 w-4 ${busy === "spotify-refresh-devices" ? "animate-spin" : ""}`}
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                            <path d="M21 3v6h-6" />
-                          </svg>
-                        </button>
-                      </div>
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            disabled={busy === "spotify-previous"}
-                            className="rounded-md border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
-                            onClick={() => void spotifyControl("previous")}
-                          >
-                            Prev
-                          </button>
-                          {spotifyPlayback?.is_playing ? (
-                            <button
-                              type="button"
-                              disabled={busy === "spotify-pause"}
-                              className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
-                              onClick={() => void spotifyControl("pause")}
-                            >
-                              Pause
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled={busy === "spotify-play"}
-                              className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
-                              onClick={() =>
-                                void spotifyControl("play", {
-                                  deviceId: spotifyEffectiveDeviceId || undefined,
-                                })
-                              }
-                            >
-                              Play
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            disabled={busy === "spotify-next"}
-                            className="rounded-md border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
-                            onClick={() => void spotifyControl("next")}
-                          >
-                            Next
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-md border border-slate-600 p-2 text-slate-100 hover:border-slate-400"
-                            onClick={() => setSpotifyPickOpen(true)}
-                            aria-label="Search music"
-                            title="Search music"
-                          >
+                      </svg>
+                    </button>
+                  </div>
+                  {!collapsedWidgets.clock ? (
+                    <div className="mt-3 flex min-h-[2.75rem] items-center justify-between gap-4 sm:min-h-[3rem]">
+                      <p className="shrink-0 text-3xl font-semibold leading-none tabular-nums text-white sm:text-4xl">
+                        {clockTime}
+                      </p>
+                      <div className="flex min-w-0 flex-col items-end justify-center gap-1 text-right leading-tight">
+                        <p className="truncate text-sm uppercase tracking-wide text-slate-300 sm:text-base">
+                          {clockDate}
+                        </p>
+                        <div className="flex items-center justify-end gap-3 tabular-nums text-sm font-medium text-slate-200 sm:gap-4 sm:text-base">
+                          <span className="inline-flex items-center gap-1.5" title="Sunrise">
                             <svg
+                              aria-hidden
                               viewBox="0 0 24 24"
-                              className="h-4 w-4"
+                              className="h-4 w-4 shrink-0 text-amber-300 sm:h-5 sm:w-5"
                               fill="none"
                               stroke="currentColor"
-                              strokeWidth="1.8"
+                              strokeWidth="2"
                               strokeLinecap="round"
                               strokeLinejoin="round"
                             >
-                              <circle cx="11" cy="11" r="7" />
-                              <path d="M20 20l-3.5-3.5" />
+                              <path d="M12 3v4M4.2 10.2l2.8 2.8M19.8 10.2l-2.8 2.8M3 17h18M8 21h8" />
+                              <circle cx="12" cy="14" r="4" />
                             </svg>
-                          </button>
+                            {clockSunrise}
+                          </span>
+                          <span className="inline-flex items-center gap-1.5" title="Sunset">
+                            <svg
+                              aria-hidden
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4 shrink-0 text-indigo-300 sm:h-5 sm:w-5"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M17 18H7M12 9V3M4.2 15.8l2.8-2.8M19.8 15.8l-2.8-2.8" />
+                              <path d="M6 21h12" />
+                            </svg>
+                            {clockSunset}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <div
-                      className="flex w-[4.75rem] shrink-0 flex-col items-center gap-1.5 self-start rounded-lg border border-slate-800 bg-slate-950/35 px-2 pb-2 pt-2.5"
-                      aria-label="Volume"
-                    >
+                  ) : null}
+                </section>
+              ),
+              weather: (
+                <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      {collapsedWidgets.weather ? (
+                        current ? (
+                          <WeatherIcon
+                            code={Number(current.code ?? 0)}
+                            isNight={weatherIconIsNight}
+                            className={`${WIDGET_TITLE_ICON} text-sky-300`}
+                          />
+                        ) : (
+                          <div
+                            className={`${WIDGET_TITLE_ICON} rounded-lg border border-slate-700/80 bg-slate-950/50`}
+                            aria-hidden
+                          />
+                        )
+                      ) : null}
+                      <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Weather</h2>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
                       <button
                         type="button"
-                        disabled={
-                          !spotifyActiveDevice ||
-                          spotifyVolumeBusy ||
-                          spotifyVolumeDisplay >= 100
-                        }
-                        className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-600 text-3xl leading-none text-slate-100 hover:border-sky-500 hover:bg-slate-800/80 disabled:opacity-40 sm:h-14 sm:w-14"
-                        aria-label="Volume up"
-                        onClick={() => void adjustSpotifyVolume(SPOTIFY_VOLUME_STEP)}
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                        onClick={() => void fetchBoard()}
+                        aria-label="Refresh weather"
+                        title="Refresh weather"
                       >
-                        +
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                          <path d="M21 3v6h-6" />
+                        </svg>
                       </button>
-                      <span
-                        className={`min-h-[2.25rem] tabular-nums text-2xl font-semibold leading-none transition-colors sm:text-3xl ${
-                          spotifyVolumeIsPending ? "text-slate-500" : "text-white"
-                        }`}
-                      >
-                        {spotifyVolumeDisplay}
-                      </span>
                       <button
                         type="button"
-                        disabled={
-                          !spotifyActiveDevice ||
-                          spotifyVolumeBusy ||
-                          spotifyVolumeDisplay <= 0
-                        }
-                        className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-600 text-3xl leading-none text-slate-100 hover:border-sky-500 hover:bg-slate-800/80 disabled:opacity-40 sm:h-14 sm:w-14"
-                        aria-label="Volume down"
-                        onClick={() => void adjustSpotifyVolume(-SPOTIFY_VOLUME_STEP)}
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                        onClick={() => toggleWidgetCollapse("weather")}
+                        aria-label={collapsedWidgets.weather ? "Expand weather" : "Collapse weather"}
+                        title={collapsedWidgets.weather ? "Expand weather" : "Collapse weather"}
                       >
-                        −
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          {collapsedWidgets.weather ? (
+                            <path d="M6 15l6-6 6 6" />
+                          ) : (
+                            <path d="M6 9l6 6 6-6" />
+                          )}
+                        </svg>
                       </button>
                     </div>
                   </div>
-                </div>
-              )}
-            </section>
-            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  {collapsedWidgets.hue ? <HueBulbTitleIcon on={hueAnyOn} /> : null}
-                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Hue</h2>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => void fetchBoard()}
-                    aria-label="Refresh hue"
-                    title="Refresh hue"
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                      <path d="M21 3v6h-6" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => toggleWidgetCollapse("hue")}
-                    aria-label={collapsedWidgets.hue ? "Expand hue" : "Collapse hue"}
-                    title={collapsedWidgets.hue ? "Expand hue" : "Collapse hue"}
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      {collapsedWidgets.hue ? (
-                        <path d="M6 15l6-6 6 6" />
-                      ) : (
-                        <path d="M6 9l6 6 6-6" />
-                      )}
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              {collapsedWidgets.hue ? null : !status?.hueBridgeIp ? (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">
-                  Set{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    HUE_BRIDGE_IP
-                  </code>{" "}
-                  on the server.
-                </p>
-              ) : !status.huePaired ? (
-                <div className="mt-3 space-y-3 text-base text-slate-300 sm:text-lg">
-                  <p>
-                    Press the{" "}
-                    <span className="font-medium text-white">link</span> button on
-                    the bridge, then pair within about 30 seconds.
-                  </p>
-                  <button
-                    type="button"
-                    disabled={busy === "pair"}
-                    onClick={() => void pairHue()}
-                    className="w-full rounded-md bg-amber-500 px-4 py-2.5 text-base font-medium text-slate-950 hover:bg-amber-400 disabled:opacity-50 sm:text-lg"
-                  >
-                    {busy === "pair" ? "Pairing…" : "Pair bridge"}
-                  </button>
-                </div>
-              ) : areas.length === 0 ? (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">
-                  No rooms or zones found.
-                </p>
-              ) : (
-                <div className="mt-2.5 space-y-2.5">
-                  <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                    {pinnedHueAreas.map((area) => (
-                      <li
-                        key={area.id}
-                        className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
-                      >
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <p className="min-w-0 truncate text-xs font-medium text-slate-200 sm:text-sm">
-                            {area.name}
+                  {collapsedWidgets.weather ? null : !status?.weatherConfigured ? (
+                    <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                      Set{" "}
+                      <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                        WEATHER_LAT
+                      </code>{" "}
+                      and{" "}
+                      <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                        WEATHER_LON
+                      </code>
+                      .
+                    </p>
+                  ) : current ? (
+                    <div className="mt-2 space-y-2.5">
+                      <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <p className="text-4xl font-semibold leading-none text-white sm:text-5xl">
+                            {Math.round(current.temperatureF ?? 0)}°
+                            <span className="text-base text-slate-400 sm:text-lg">F</span>
                           </p>
-                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">
-                            {area.type}
-                          </span>
+                          <WeatherIcon
+                            code={Number(current.code ?? 0)}
+                            isNight={weatherIconIsNight}
+                            className="h-9 w-9 shrink-0 sm:h-10 sm:w-10"
+                          />
                         </div>
-                        <div className="flex items-center gap-2">
-                          <select
-                            className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
-                            value={hueThemeByArea[area.id] ?? "relax"}
-                            onChange={(e) => {
-                              const theme = e.target.value as HueThemeKey;
-                              setHueThemeByArea((prev) => ({
-                                ...prev,
-                                [area.id]: theme,
-                              }));
-                              void applyHueTheme(area.id, theme);
-                            }}
-                            disabled={busy === `hue-theme-${area.id}`}
-                          >
-                            {HUE_THEME_OPTIONS.map((opt) => (
-                              <option key={opt.key} value={opt.key}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            disabled={busy === `hue-${area.id}`}
-                            onClick={() => void toggleArea(area.id, !area.on)}
-                            className={`rounded-md px-3 py-1.5 text-sm font-medium sm:text-base ${
-                              area.on
-                                ? "border border-amber-500/70 bg-amber-500/20 text-amber-100"
-                                : "border border-slate-700 bg-slate-800 text-slate-200"
-                            } disabled:opacity-40`}
-                          >
-                            {area.on ? "On" : "Off"}
-                          </button>
+                        <div className="flex flex-col items-end gap-1.5 text-sm text-slate-300 sm:text-base">
+                          {todayForecast &&
+                          typeof todayForecast.minF === "number" &&
+                          typeof todayForecast.maxF === "number" ? (
+                            <span
+                              className="whitespace-nowrap text-xs tabular-nums text-slate-400 sm:text-sm"
+                              title="Today's forecast high / low"
+                            >
+                              <span className="font-semibold text-slate-100">
+                                {Math.round(todayForecast.maxF)}°
+                              </span>
+                              <span className="mx-1 text-slate-500">/</span>
+                              <span className="text-slate-300">
+                                {Math.round(todayForecast.minF)}°
+                              </span>
+                            </span>
+                          ) : null}
+                          <div className="flex items-center gap-3">
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                              <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4 text-sky-300"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M12 3C12 3 6 10 6 14a6 6 0 0 0 12 0c0-4-6-11-6-11z" />
+                              </svg>
+                              {Math.round(current.humidity ?? 0)}%
+                            </span>
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                              <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4 text-slate-300"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M3 9h10a3 3 0 1 0-3-3" />
+                                <path d="M3 15h14a3 3 0 1 1-3 3" />
+                              </svg>
+                              {Math.round(current.windMph ?? 0)} mph
+                            </span>
+                          </div>
                         </div>
-                      </li>
-                    ))}
-                  </ul>
-                  {otherHueAreas.length > 0 ? (
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/20">
+                      </div>
+                      {hourlyNext18 && hourlyNext18.length > 0 ? (
+                        <WeatherHourlyChart
+                          hours={hourlyNext18}
+                          sunByDate={weatherSunByDate}
+                          className="h-32 shrink-0 sm:h-36"
+                        />
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading weather…</p>
+                  )}
+                </section>
+              ),
+              catlink: (
+                <section
+                  className={`min-w-0 shrink-0 overflow-hidden rounded-xl border bg-slate-900/60 p-3 shadow-lg sm:rounded-2xl sm:p-4 ${
+                    catlinkWasteBinFull
+                      ? "catlink-alert-ring border-red-500/80 shadow-red-950/40"
+                      : "border-slate-800 shadow-slate-950/40"
+                  }`}
+                  aria-live={catlinkWasteBinFull ? "assertive" : undefined}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      {collapsedWidgets.catlink ? (
+                        <span
+                          className={`${WIDGET_TITLE_ICON} relative flex items-center justify-center rounded-lg border text-xs font-semibold tabular-nums ${
+                            catlinkWasteBinFull
+                              ? "border-red-500/80 bg-red-950/70 text-red-100"
+                              : "border-slate-700 bg-slate-950/70 text-white"
+                          }`}
+                        >
+                          {catlinkWasteBinFull ? (
+                            <span
+                              className="catlink-alert-light absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500"
+                              aria-hidden
+                            />
+                          ) : null}
+                          {catlinkWasteBinFull
+                            ? "!"
+                            : catlinkCatWeightKg !== null
+                              ? `${catlinkCatWeightKg.toFixed(1)}`
+                              : "CAT"}
+                        </span>
+                      ) : null}
+                      <h2 className="flex min-w-0 items-center gap-2 truncate text-xl font-medium text-white sm:text-2xl">
+                        Catlink
+                        {catlinkWasteBinFull && !collapsedWidgets.catlink ? (
+                          <span
+                            className="catlink-alert-light inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-red-500"
+                            title="Waste bin full — change bag"
+                            aria-label="Waste bin full"
+                          />
+                        ) : null}
+                      </h2>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2 sm:gap-3">
                       <button
                         type="button"
-                        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-slate-300 hover:text-white sm:text-base"
-                        onClick={() => setShowOtherHueAreas((v) => !v)}
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                        onClick={() => void fetchBoard()}
+                        aria-label="Refresh catlink"
+                        title="Refresh catlink"
                       >
-                        <span>Other rooms and zones ({otherHueAreas.length})</span>
-                        <span className="text-xs text-slate-500">
-                          {showOtherHueAreas ? "Hide" : "Show"}
-                        </span>
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                          <path d="M21 3v6h-6" />
+                        </svg>
                       </button>
-                      {showOtherHueAreas ? (
-                        <ul className="grid grid-cols-1 gap-1.5 border-t border-slate-800 p-2 sm:grid-cols-2">
-                          {otherHueAreas.map((area) => (
+                      {status?.catlinkLinked ? (
+                        <button
+                          type="button"
+                          disabled={busy === "catlink-unlink"}
+                          className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-rose-200 disabled:opacity-50"
+                          onClick={() => void unlinkCatlink()}
+                          aria-label="Unlink Catlink"
+                          title="Unlink Catlink"
+                        >
+                          <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                            className={`h-5 w-5 ${busy === "catlink-unlink" ? "animate-pulse" : ""}`}
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                            <path d="M16 17l5-5-5-5" />
+                            <path d="M21 12H9" />
+                          </svg>
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                        onClick={() => toggleWidgetCollapse("catlink")}
+                        aria-label={collapsedWidgets.catlink ? "Expand catlink" : "Collapse catlink"}
+                        title={collapsedWidgets.catlink ? "Expand catlink" : "Collapse catlink"}
+                      >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          {collapsedWidgets.catlink ? (
+                            <path d="M6 15l6-6 6 6" />
+                          ) : (
+                            <path d="M6 9l6 6 6-6" />
+                          )}
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  {collapsedWidgets.catlink ? null : !status?.catlinkConfigured ? (
+                    <div className="mt-3 space-y-3">
+                      <p className="text-base text-slate-300 sm:text-lg">
+                        FamilyBoard uses CatLink&apos;s password API (same as Home Assistant). SMS
+                        codes from the app cannot be used here.
+                      </p>
+                      <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-400 sm:text-base">
+                        <li>In the CatLink app: Account → Security → set a short password (8–12 letters/numbers).</li>
+                        <li>Log out, then log back in with phone + password (not SMS) to confirm it works.</li>
+                        <li>Log out again, then link below (CatLink allows only one active session).</li>
+                      </ol>
+                      <div className="space-y-2">
+                        <input
+                          type="tel"
+                          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500"
+                          placeholder="Phone (4244420566 or +1 424 442 0566)"
+                          aria-label="Catlink phone number"
+                          value={catlinkLinkPhone}
+                          onChange={(e) => setCatlinkLinkPhone(e.currentTarget.value)}
+                        />
+                        <input
+                          type="password"
+                          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500"
+                          placeholder="CatLink app password"
+                          aria-label="Catlink password"
+                          value={catlinkLinkPassword}
+                          onChange={(e) => setCatlinkLinkPassword(e.currentTarget.value)}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        disabled={busy === "catlink-link"}
+                        className="inline-flex rounded-md bg-sky-600 px-4 py-2 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
+                        onClick={() => void linkCatlink()}
+                      >
+                        {busy === "catlink-link" ? "Linking…" : "Link Catlink"}
+                      </button>
+                      <p className="text-xs text-slate-500 sm:text-sm">
+                        Or set{" "}
+                        <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">
+                          CATLINK_PHONE
+                        </code>{" "}
+                        and{" "}
+                        <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">
+                          CATLINK_PASSWORD
+                        </code>{" "}
+                        in env for automatic login.
+                      </p>
+                    </div>
+                  ) : catlink ? (
+                    <div className="mt-3 space-y-3">
+                      {catlinkCatName ? (
+                        <p className="text-sm text-slate-400 sm:text-base">{catlinkCatName}</p>
+                      ) : null}
+                      <div
+                        className={`rounded-lg border px-3 py-2 text-sm sm:text-base ${
+                          catlinkWasteBinFull
+                            ? "border-red-500/70 bg-red-950/40"
+                            : "border-slate-800 bg-slate-950/40"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Waste bin</p>
+                          {catlinkWasteBinFull ? (
+                            <span
+                              className="catlink-alert-light h-3 w-3 shrink-0 rounded-full bg-red-500"
+                              aria-hidden
+                            />
+                          ) : null}
+                        </div>
+                        <p
+                          className={`mt-1 font-medium ${
+                            catlinkWasteBinFull ? "text-red-100" : "text-slate-100"
+                          }`}
+                        >
+                          {catlinkWasteBinStatusLabel ?? "—"}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-sm sm:text-base">
+                        <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Weight</p>
+                          <p className="mt-1 font-medium tabular-nums text-slate-100">
+                            {catlinkCatWeightKg !== null
+                              ? `${catlinkCatWeightKg.toFixed(1)} kg`
+                              : "—"}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Pee</p>
+                          <p className="mt-1 font-medium tabular-nums text-slate-100">
+                            {catlinkPeeToday !== null ? catlinkPeeToday : "—"}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Poop</p>
+                          <p className="mt-1 font-medium tabular-nums text-slate-100">
+                            {catlinkPoopToday !== null ? catlinkPoopToday : "—"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
+                          disabled={busy === "catlink-clean_now"}
+                          onClick={() => void catlinkControl("clean_now")}
+                        >
+                          {busy === "catlink-clean_now" ? "Working…" : "Clean"}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
+                          disabled={busy === "catlink-refill_litter"}
+                          onClick={() => void catlinkControl("refill_litter")}
+                        >
+                          {busy === "catlink-refill_litter" ? "Working…" : "Refill"}
+                        </button>
+                        <button
+                          type="button"
+                          className={`rounded-md border px-2.5 py-2 text-sm disabled:opacity-50 ${
+                            catlinkWasteBinFull
+                              ? "border-red-500/80 bg-red-600/90 font-semibold text-white hover:bg-red-500"
+                              : "border-slate-700 text-slate-100 hover:border-slate-500"
+                          }`}
+                          disabled={busy === "catlink-change_bag"}
+                          onClick={() => void catlinkControl("change_bag")}
+                        >
+                          {busy === "catlink-change_bag" ? "Working…" : "Change bag"}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-700 px-2.5 py-2 text-sm text-slate-100 hover:border-slate-500 disabled:opacity-50"
+                          disabled={busy === "catlink-reset_bin"}
+                          onClick={() => void catlinkControl("reset_bin")}
+                        >
+                          {busy === "catlink-reset_bin" ? "Working…" : "Reset"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading catlink…</p>
+                  )}
+                </section>
+              ),
+              petlibro: (
+                <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      {collapsedWidgets.petlibro ? (
+                        <span
+                          className={`${WIDGET_TITLE_ICON} flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950/70 text-xs font-semibold tabular-nums text-white`}
+                        >
+                          {petlibroCollapsedLabel}
+                        </span>
+                      ) : null}
+                      <h2 className="truncate text-xl font-medium text-white sm:text-2xl">
+                        Petlibro
+                      </h2>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                      <button
+                        type="button"
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                        onClick={() => void fetchBoard()}
+                        aria-label="Refresh petlibro"
+                        title="Refresh petlibro"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                          <path d="M21 3v6h-6" />
+                        </svg>
+                      </button>
+                      {status?.petlibroLinked ? (
+                        <button
+                          type="button"
+                          disabled={busy === "petlibro-unlink"}
+                          className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-rose-200 disabled:opacity-50"
+                          onClick={() => void unlinkPetlibro()}
+                          aria-label="Unlink Petlibro"
+                          title="Unlink Petlibro"
+                        >
+                          <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                            className={`h-5 w-5 ${busy === "petlibro-unlink" ? "animate-pulse" : ""}`}
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                            <path d="M16 17l5-5-5-5" />
+                            <path d="M21 12H9" />
+                          </svg>
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                        onClick={() => toggleWidgetCollapse("petlibro")}
+                        aria-label={
+                          collapsedWidgets.petlibro ? "Expand petlibro" : "Collapse petlibro"
+                        }
+                        title={
+                          collapsedWidgets.petlibro ? "Expand petlibro" : "Collapse petlibro"
+                        }
+                      >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          {collapsedWidgets.petlibro ? (
+                            <path d="M6 15l6-6 6 6" />
+                          ) : (
+                            <path d="M6 9l6 6 6-6" />
+                          )}
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  {collapsedWidgets.petlibro ? null : !status?.petlibroConfigured ? (
+                    <div className="mt-3 space-y-3">
+                      <p className="text-base text-slate-300 sm:text-lg">
+                        Link Petlibro to show today&apos;s food and water for cat diet advice.
+                      </p>
+                      <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-400 sm:text-base">
+                        <li>
+                          Use an email + password account created in the Petlibro app (not Google
+                          Sign-In, not website-only signup).
+                        </li>
+                        <li>
+                          Prefer a second shared account so the phone app keeps its own session.
+                        </li>
+                        <li>Link below, then ask the AI tab about diet, portions, or hydration.</li>
+                      </ol>
+                      <div className="space-y-2">
+                        <input
+                          type="email"
+                          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500"
+                          placeholder="Petlibro email"
+                          aria-label="Petlibro email"
+                          value={petlibroLinkEmail}
+                          onChange={(e) => setPetlibroLinkEmail(e.currentTarget.value)}
+                        />
+                        <input
+                          type="password"
+                          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500"
+                          placeholder="Petlibro password"
+                          aria-label="Petlibro password"
+                          value={petlibroLinkPassword}
+                          onChange={(e) => setPetlibroLinkPassword(e.currentTarget.value)}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        disabled={busy === "petlibro-link"}
+                        className="inline-flex rounded-md bg-sky-600 px-4 py-2 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
+                        onClick={() => void linkPetlibro()}
+                      >
+                        {busy === "petlibro-link" ? "Linking…" : "Link Petlibro"}
+                      </button>
+                      <p className="text-xs text-slate-500 sm:text-sm">
+                        Or set{" "}
+                        <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">
+                          PETLIBRO_EMAIL
+                        </code>{" "}
+                        and{" "}
+                        <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">
+                          PETLIBRO_PASSWORD
+                        </code>{" "}
+                        in env.
+                      </p>
+                    </div>
+                  ) : petlibro?.error ? (
+                    <p className="mt-3 text-base text-rose-300 sm:text-lg">{petlibro.error}</p>
+                  ) : petlibro ? (
+                    <div className="mt-3 space-y-3">
+                      <div className="grid grid-cols-2 gap-2 text-sm sm:text-base">
+                        <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Food today</p>
+                          <p className="mt-1 font-medium tabular-nums text-slate-100">
+                            {petlibroFoodAmount !== null
+                              ? `${petlibroFoodAmount} ${petlibroFoodUnit}`
+                              : "—"}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Water today</p>
+                          <p className="mt-1 font-medium tabular-nums text-slate-100">
+                            {petlibroWaterMl !== null
+                              ? `${Math.round(petlibroWaterMl)} ml${
+                                  petlibroWaterTimes !== null ? ` · ${petlibroWaterTimes}×` : ""
+                                }`
+                              : "—"}
+                          </p>
+                        </div>
+                      </div>
+                      {petlibroDevices.length ? (
+                        <ul className="space-y-2 text-sm text-slate-300 sm:text-base">
+                          {petlibroDevices.map((d) => (
                             <li
-                              key={area.id}
-                              className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
+                              key={d.deviceSn || d.name}
+                              className="rounded-lg border border-slate-800 bg-slate-950/30 px-3 py-2"
                             >
-                              <div className="mb-1 flex items-center justify-between gap-2">
-                                <p className="min-w-0 truncate text-xs font-medium text-slate-200 sm:text-sm">
-                                  {area.name}
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="truncate font-medium text-slate-100">{d.name}</p>
+                                <p className="shrink-0 text-xs uppercase tracking-wide text-slate-500">
+                                  {d.kind}
+                                  {d.online === false ? " · offline" : ""}
                                 </p>
-                                <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">
-                                  {area.type}
-                                </span>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <select
-                                  className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
-                                  value={hueThemeByArea[area.id] ?? "relax"}
-                                  onChange={(e) => {
-                                    const theme = e.target.value as HueThemeKey;
-                                    setHueThemeByArea((prev) => ({
-                                      ...prev,
-                                      [area.id]: theme,
-                                    }));
-                                    void applyHueTheme(area.id, theme);
-                                  }}
-                                  disabled={busy === `hue-theme-${area.id}`}
-                                >
-                                  {HUE_THEME_OPTIONS.map((opt) => (
-                                    <option key={opt.key} value={opt.key}>
-                                      {opt.label}
-                                    </option>
-                                  ))}
-                                </select>
-                                <button
-                                  type="button"
-                                  disabled={busy === `hue-${area.id}`}
-                                  onClick={() => void toggleArea(area.id, !area.on)}
-                                  className={`rounded-md px-3 py-1.5 text-sm font-medium sm:text-base ${
-                                    area.on
-                                      ? "border border-amber-500/70 bg-amber-500/20 text-amber-100"
-                                      : "bg-slate-800 text-slate-200"
-                                  } disabled:opacity-40`}
-                                >
-                                  {area.on ? "On" : "Off"}
-                                </button>
-                              </div>
+                              {d.kind === "feeder" && d.feeder ? (
+                                <p className="mt-1 tabular-nums text-slate-400">
+                                  {typeof d.feeder.todayFeedingAmount === "number"
+                                    ? `${d.feeder.todayFeedingAmount} ${d.feeder.todayFeedingUnit || "cups"}`
+                                    : "—"}
+                                  {typeof d.feeder.todayFeedingTimes === "number"
+                                    ? ` · ${d.feeder.todayFeedingTimes} feeds`
+                                    : ""}
+                                  {d.feeder.foodLow ? " · food low" : ""}
+                                </p>
+                              ) : null}
+                              {d.kind === "fountain" && d.fountain ? (
+                                <p className="mt-1 tabular-nums text-slate-400">
+                                  {typeof d.fountain.todayDrinkMl === "number"
+                                    ? `${Math.round(d.fountain.todayDrinkMl)} ml`
+                                    : "—"}
+                                  {typeof d.fountain.todayDrinkTimes === "number"
+                                    ? ` · ${d.fountain.todayDrinkTimes}×`
+                                    : ""}
+                                  {typeof d.fountain.waterLevelPercent === "number"
+                                    ? ` · ${Math.round(d.fountain.waterLevelPercent)}% full`
+                                    : ""}
+                                </p>
+                              ) : null}
                             </li>
                           ))}
                         </ul>
+                      ) : (
+                        <p className="text-sm text-slate-400 sm:text-base">
+                          No feeders or fountains on this account yet.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading petlibro…</p>
+                  )}
+                </section>
+              ),
+              spotify: (
+                <section
+                  className={`min-w-0 shrink-0 overflow-hidden rounded-xl border p-3 shadow-lg transition-colors duration-500 sm:rounded-2xl sm:p-4 ${
+                    spotifyIsPlaying
+                      ? "border-[#1db954]/50 bg-[#1db954]/30 shadow-[#1db954]/20"
+                      : "border-slate-800 bg-slate-900/60 shadow-slate-950/40"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      {collapsedWidgets.spotify ? (
+                        <SpotifyAlbumTitleIcon coverUrl={spotifyCover} />
+                      ) : null}
+                      <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Spotify</h2>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                      <button
+                        type="button"
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                        onClick={() => void fetchBoard()}
+                        aria-label="Refresh spotify"
+                        title="Refresh spotify"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                          <path d="M21 3v6h-6" />
+                        </svg>
+                      </button>
+                      {status?.spotifyConfigured && status.spotifyLinked ? (
+                        <button
+                          type="button"
+                          disabled={busy === "spotify-disconnect"}
+                          className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-rose-200 disabled:opacity-50"
+                          onClick={() => void disconnectSpotify()}
+                          aria-label="Log out of Spotify"
+                          title="Log out"
+                        >
+                          <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                            className={`h-5 w-5 ${busy === "spotify-disconnect" ? "animate-pulse" : ""}`}
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                            <path d="M16 17l5-5-5-5" />
+                            <path d="M21 12H9" />
+                          </svg>
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                        onClick={() => toggleWidgetCollapse("spotify")}
+                        aria-label={collapsedWidgets.spotify ? "Expand spotify" : "Collapse spotify"}
+                        title={collapsedWidgets.spotify ? "Expand spotify" : "Collapse spotify"}
+                      >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          {collapsedWidgets.spotify ? (
+                            <path d="M6 15l6-6 6 6" />
+                          ) : (
+                            <path d="M6 9l6 6 6-6" />
+                          )}
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  {collapsedWidgets.spotify ? null : !status?.spotifyConfigured ? (
+                    <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                      Set{" "}
+                      <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                        SPOTIFY_CLIENT_ID
+                      </code>{" "}
+                      and{" "}
+                      <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                        SPOTIFY_CLIENT_SECRET
+                      </code>
+                      .
+                    </p>
+                  ) : !status.spotifyLinked ? (
+                    <div className="mt-3 space-y-3">
+                      <p className="text-base text-slate-300 sm:text-lg">
+                        Link Spotify to show now-playing and control playback.
+                      </p>
+                      <a
+                        className="inline-flex rounded-md bg-green-500 px-4 py-2 text-base font-medium text-slate-950 hover:bg-green-400 sm:text-lg"
+                        href="/api/auth/spotify"
+                      >
+                        Link Spotify
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="mt-3 min-w-0 space-y-3 overflow-hidden">
+                      {spotifyNotice ? (
+                        <p className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 sm:text-base">
+                          {spotifyNotice}
+                        </p>
+                      ) : null}
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div className="min-w-0 flex-1 space-y-2.5">
+                          <div className="min-h-[6.75rem] rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
+                            <div className="flex items-center gap-3">
+                              {spotifyCover ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={spotifyCover}
+                                  alt=""
+                                  className="h-14 w-14 shrink-0 rounded-md object-cover"
+                                />
+                              ) : (
+                                <div className="h-14 w-14 shrink-0 rounded-md border border-slate-700 bg-slate-900/70" />
+                              )}
+                              <div className="min-w-0 flex-1">
+                                {spotifyTrack ? (
+                                  <>
+                                    <p className="truncate text-base font-semibold text-white sm:text-lg">
+                                      {spotifyTrack.name ?? "Unknown track"}
+                                    </p>
+                                    <p className="truncate text-sm text-slate-400 sm:text-base">
+                                      {spotifyArtist || "Unknown artist"}
+                                    </p>
+                                    <p className="truncate text-xs uppercase tracking-wide text-slate-500 sm:text-sm">
+                                      {spotifyTrack.album?.name ?? "Unknown album"}
+                                    </p>
+                                  </>
+                                ) : (
+                                  <>
+                                    <p className="truncate text-base font-semibold text-slate-300 sm:text-lg">
+                                      Nothing is currently playing
+                                    </p>
+                                    <p className="truncate text-sm text-slate-500 sm:text-base">
+                                      Pick something from Search to start music.
+                                    </p>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            {spotifyTrack && spotifyDurationMs > 0 ? (
+                              <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400 sm:text-xs">
+                                <span className="w-10 shrink-0 text-right tabular-nums">
+                                  {formatMsClock(spotifyProgressMs)}
+                                </span>
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={spotifyDurationMs}
+                                  step={1000}
+                                  value={spotifyProgressMs}
+                                  className="min-w-0 flex-1 accent-sky-500"
+                                  onChange={(e) =>
+                                    setSpotifySeekDraft(Number(e.currentTarget.value))
+                                  }
+                                  onMouseUp={() => void commitSpotifySeek()}
+                                  onTouchEnd={() => void commitSpotifySeek()}
+                                />
+                                <span className="w-10 shrink-0 tabular-nums">
+                                  {formatMsClock(spotifyDurationMs)}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="mt-2 h-[1.125rem]" aria-hidden />
+                            )}
+                          </div>
+
+                          <div className="flex min-w-0 items-center gap-2">
+                            <select
+                              className="max-w-full min-w-0 flex-1 truncate rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white outline-none focus:border-sky-500 sm:px-3 sm:text-base"
+                              aria-label="Playback device"
+                              value={spotifyEffectiveDeviceId}
+                              onChange={(e) => {
+                                const nextDeviceId = e.target.value;
+                                if (
+                                  nextDeviceId === spotifySdkDeviceId ||
+                                  spotifyLiveDeviceIds.has(nextDeviceId)
+                                ) {
+                                  setSpotifySelectedDeviceId(nextDeviceId);
+                                  void spotifyControl("set_device", { deviceId: nextDeviceId });
+                                } else {
+                                  setSpotifyNotice(
+                                    "Selected device is last seen only. Open Spotify on that device first, then refresh devices.",
+                                  );
+                                }
+                              }}
+                            >
+                              {spotifySdkDeviceId && !spotifySdkInDeviceList ? (
+                                <option value={spotifySdkDeviceId}>
+                                  FamilyBoard Web Player{" "}
+                                  {spotifyActiveDevice?.id === spotifySdkDeviceId ? "• active" : ""}
+                                </option>
+                              ) : null}
+                              {spotifyDeviceOptions.length === 0 ? (
+                                <option value="">No devices found</option>
+                              ) : (
+                                spotifyDeviceOptions.map((d) => (
+                                  <option key={d.id} value={d.id}>
+                                    {d.name ?? "Unknown"}{" "}
+                                    {d.is_active
+                                      ? "• active"
+                                      : spotifyDevices.some((live) => live.id === d.id)
+                                        ? ""
+                                        : "• last seen"}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                            <button
+                              type="button"
+                              disabled={busy === "spotify-refresh-devices"}
+                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-600 text-slate-100 hover:border-slate-400 disabled:opacity-50"
+                              onClick={() => void refreshSpotifyDevices()}
+                              aria-label="Refresh devices"
+                              title="Refresh devices"
+                            >
+                              <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                                className={`h-4 w-4 ${busy === "spotify-refresh-devices" ? "animate-spin" : ""}`}
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                                <path d="M21 3v6h-6" />
+                              </svg>
+                            </button>
+                          </div>
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={busy === "spotify-previous"}
+                                className="rounded-md border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
+                                onClick={() => void spotifyControl("previous")}
+                              >
+                                Prev
+                              </button>
+                              {spotifyPlayback?.is_playing ? (
+                                <button
+                                  type="button"
+                                  disabled={busy === "spotify-pause"}
+                                  className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
+                                  onClick={() => void spotifyControl("pause")}
+                                >
+                                  Pause
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={busy === "spotify-play"}
+                                  className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-base"
+                                  onClick={() =>
+                                    void spotifyControl("play", {
+                                      deviceId: spotifyEffectiveDeviceId || undefined,
+                                    })
+                                  }
+                                >
+                                  Play
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                disabled={busy === "spotify-next"}
+                                className="rounded-md border border-slate-600 px-3 py-1.5 text-sm text-slate-100 hover:border-slate-400 disabled:opacity-50 sm:text-base"
+                                onClick={() => void spotifyControl("next")}
+                              >
+                                Next
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-md border border-slate-600 p-2 text-slate-100 hover:border-slate-400"
+                                onClick={() => setSpotifyPickOpen(true)}
+                                aria-label="Search music"
+                                title="Search music"
+                              >
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  className="h-4 w-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="1.8"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <circle cx="11" cy="11" r="7" />
+                                  <path d="M20 20l-3.5-3.5" />
+                                </svg>
+                              </button>
+                          </div>
+                        </div>
+                        <div
+                          className="flex w-[4.75rem] shrink-0 flex-col items-center gap-1.5 self-start rounded-lg border border-slate-800 bg-slate-950/35 px-2 pb-2 pt-2.5"
+                          aria-label="Volume"
+                        >
+                          <button
+                            type="button"
+                            disabled={
+                              !spotifyActiveDevice ||
+                              spotifyVolumeBusy ||
+                              spotifyVolumeDisplay >= 100
+                            }
+                            className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-600 text-3xl leading-none text-slate-100 hover:border-sky-500 hover:bg-slate-800/80 disabled:opacity-40 sm:h-14 sm:w-14"
+                            aria-label="Volume up"
+                            onClick={() => void adjustSpotifyVolume(SPOTIFY_VOLUME_STEP)}
+                          >
+                            +
+                          </button>
+                          <span
+                            className={`min-h-[2.25rem] tabular-nums text-2xl font-semibold leading-none transition-colors sm:text-3xl ${
+                              spotifyVolumeIsPending ? "text-slate-500" : "text-white"
+                            }`}
+                          >
+                            {spotifyVolumeDisplay}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={
+                              !spotifyActiveDevice ||
+                              spotifyVolumeBusy ||
+                              spotifyVolumeDisplay <= 0
+                            }
+                            className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-600 text-3xl leading-none text-slate-100 hover:border-sky-500 hover:bg-slate-800/80 disabled:opacity-40 sm:h-14 sm:w-14"
+                            aria-label="Volume down"
+                            onClick={() => void adjustSpotifyVolume(-SPOTIFY_VOLUME_STEP)}
+                          >
+                            −
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              ),
+              hue: (
+                <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      {collapsedWidgets.hue ? <HueBulbTitleIcon on={hueAnyOn} /> : null}
+                      <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Hue</h2>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <button
+                        type="button"
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                        onClick={() => void fetchBoard()}
+                        aria-label="Refresh hue"
+                        title="Refresh hue"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                          <path d="M21 3v6h-6" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                        onClick={() => toggleWidgetCollapse("hue")}
+                        aria-label={collapsedWidgets.hue ? "Expand hue" : "Collapse hue"}
+                        title={collapsedWidgets.hue ? "Expand hue" : "Collapse hue"}
+                      >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          {collapsedWidgets.hue ? (
+                            <path d="M6 15l6-6 6 6" />
+                          ) : (
+                            <path d="M6 9l6 6 6-6" />
+                          )}
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  {collapsedWidgets.hue ? null : !status?.hueBridgeIp ? (
+                    <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                      Set{" "}
+                      <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                        HUE_BRIDGE_IP
+                      </code>{" "}
+                      on the server.
+                    </p>
+                  ) : !status.huePaired ? (
+                    <div className="mt-3 space-y-3 text-base text-slate-300 sm:text-lg">
+                      <p>
+                        Press the{" "}
+                        <span className="font-medium text-white">link</span> button on
+                        the bridge, then pair within about 30 seconds.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={busy === "pair"}
+                        onClick={() => void pairHue()}
+                        className="w-full rounded-md bg-amber-500 px-4 py-2.5 text-base font-medium text-slate-950 hover:bg-amber-400 disabled:opacity-50 sm:text-lg"
+                      >
+                        {busy === "pair" ? "Pairing…" : "Pair bridge"}
+                      </button>
+                    </div>
+                  ) : areas.length === 0 ? (
+                    <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                      No rooms or zones found.
+                    </p>
+                  ) : (
+                    <div className="mt-2.5 space-y-2.5">
+                      <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                        {pinnedHueAreas.map((area) => (
+                          <li
+                            key={area.id}
+                            className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
+                          >
+                            <div className="mb-1 flex items-center justify-between gap-2">
+                              <p className="min-w-0 truncate text-xs font-medium text-slate-200 sm:text-sm">
+                                {area.name}
+                              </p>
+                              <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">
+                                {area.type}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <select
+                                className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
+                                value={hueThemeByArea[area.id] ?? "relax"}
+                                onChange={(e) => {
+                                  const theme = e.target.value as HueThemeKey;
+                                  setHueThemeByArea((prev) => ({
+                                    ...prev,
+                                    [area.id]: theme,
+                                  }));
+                                  void applyHueTheme(area.id, theme);
+                                }}
+                                disabled={busy === `hue-theme-${area.id}`}
+                              >
+                                {HUE_THEME_OPTIONS.map((opt) => (
+                                  <option key={opt.key} value={opt.key}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                disabled={busy === `hue-${area.id}`}
+                                onClick={() => void toggleArea(area.id, !area.on)}
+                                className={`rounded-md px-3 py-1.5 text-sm font-medium sm:text-base ${
+                                  area.on
+                                    ? "border border-amber-500/70 bg-amber-500/20 text-amber-100"
+                                    : "border border-slate-700 bg-slate-800 text-slate-200"
+                                } disabled:opacity-40`}
+                              >
+                                {area.on ? "On" : "Off"}
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                      {otherHueAreas.length > 0 ? (
+                        <div className="rounded-lg border border-slate-800 bg-slate-950/20">
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-slate-300 hover:text-white sm:text-base"
+                            onClick={() => setShowOtherHueAreas((v) => !v)}
+                          >
+                            <span>Other rooms and zones ({otherHueAreas.length})</span>
+                            <span className="text-xs text-slate-500">
+                              {showOtherHueAreas ? "Hide" : "Show"}
+                            </span>
+                          </button>
+                          {showOtherHueAreas ? (
+                            <ul className="grid grid-cols-1 gap-1.5 border-t border-slate-800 p-2 sm:grid-cols-2">
+                              {otherHueAreas.map((area) => (
+                                <li
+                                  key={area.id}
+                                  className="rounded-lg border border-slate-800 bg-slate-950/30 px-2.5 py-1.5"
+                                >
+                                  <div className="mb-1 flex items-center justify-between gap-2">
+                                    <p className="min-w-0 truncate text-xs font-medium text-slate-200 sm:text-sm">
+                                      {area.name}
+                                    </p>
+                                    <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500 sm:text-xs">
+                                      {area.type}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <select
+                                      className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-sky-500 sm:text-sm"
+                                      value={hueThemeByArea[area.id] ?? "relax"}
+                                      onChange={(e) => {
+                                        const theme = e.target.value as HueThemeKey;
+                                        setHueThemeByArea((prev) => ({
+                                          ...prev,
+                                          [area.id]: theme,
+                                        }));
+                                        void applyHueTheme(area.id, theme);
+                                      }}
+                                      disabled={busy === `hue-theme-${area.id}`}
+                                    >
+                                      {HUE_THEME_OPTIONS.map((opt) => (
+                                        <option key={opt.key} value={opt.key}>
+                                          {opt.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      type="button"
+                                      disabled={busy === `hue-${area.id}`}
+                                      onClick={() => void toggleArea(area.id, !area.on)}
+                                      className={`rounded-md px-3 py-1.5 text-sm font-medium sm:text-base ${
+                                        area.on
+                                          ? "border border-amber-500/70 bg-amber-500/20 text-amber-100"
+                                          : "bg-slate-800 text-slate-200"
+                                      } disabled:opacity-40`}
+                                    >
+                                      {area.on ? "On" : "Off"}
+                                    </button>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {pinnedHueAreas.length === 0 ? (
+                        <p className="text-xs text-slate-500 sm:text-sm">
+                          Pinned rooms (TV, Living Room, Caro, Office) are not available on this bridge.
+                        </p>
                       ) : null}
                     </div>
-                  ) : null}
-                  {pinnedHueAreas.length === 0 ? (
-                    <p className="text-xs text-slate-500 sm:text-sm">
-                      Pinned rooms (TV, Living Room, Caro, Office) are not available on this bridge.
-                    </p>
-                  ) : null}
-                </div>
-              )}
-            </section>
-            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  {collapsedWidgets.nest ? (
-                    <IndoorTempTitleIcon tempF={indoorTitleTempF} />
-                  ) : null}
-                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Indoor</h2>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => void fetchBoard()}
-                    aria-label="Refresh indoor climate"
-                    title="Refresh indoor climate"
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                      <path d="M21 3v6h-6" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
-                    onClick={() => toggleWidgetCollapse("nest")}
-                    aria-label={collapsedWidgets.nest ? "Expand indoor" : "Collapse indoor"}
-                    title={collapsedWidgets.nest ? "Expand indoor" : "Collapse indoor"}
-                  >
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
+                  )}
+                </section>
+              ),
+              nest: (
+                <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
                       {collapsedWidgets.nest ? (
-                        <path d="M6 15l6-6 6 6" />
-                      ) : (
-                        <path d="M6 9l6 6 6-6" />
-                      )}
-                    </svg>
-                  </button>
+                        <IndoorTempTitleIcon tempF={indoorTitleTempF} />
+                      ) : null}
+                      <h2 className="truncate text-xl font-medium text-white sm:text-2xl">Indoor</h2>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <button
+                        type="button"
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                        onClick={() => void fetchBoard()}
+                        aria-label="Refresh indoor climate"
+                        title="Refresh indoor climate"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                          <path d="M21 3v6h-6" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                        onClick={() => toggleWidgetCollapse("nest")}
+                        aria-label={collapsedWidgets.nest ? "Expand indoor" : "Collapse indoor"}
+                        title={collapsedWidgets.nest ? "Expand indoor" : "Collapse indoor"}
+                      >
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          {collapsedWidgets.nest ? (
+                            <path d="M6 15l6-6 6 6" />
+                          ) : (
+                            <path d="M6 9l6 6 6-6" />
+                          )}
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  {collapsedWidgets.nest ? null : !status?.googleConfigured ? (
+                    <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                      Set{" "}
+                      <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                        GOOGLE_CLIENT_ID
+                      </code>{" "}
+                      and{" "}
+                      <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                        GOOGLE_CLIENT_SECRET
+                      </code>
+                      .
+                    </p>
+                  ) : !status.googleLinked ? (
+                    <div className="mt-3 space-y-3">
+                      <p className="text-base text-slate-300 sm:text-lg">
+                        Link Google to read Nest indoor climate.
+                      </p>
+                      <a
+                        className="inline-flex rounded-md bg-white px-4 py-2 text-base font-medium text-slate-900 hover:bg-slate-100 sm:text-lg"
+                        href="/api/auth/google"
+                      >
+                        Link Google
+                      </a>
+                    </div>
+                  ) : !status.nestConfigured ? (
+                    <p className="mt-3 text-base text-slate-400 sm:text-lg">
+                      Set{" "}
+                      <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
+                        GOOGLE_NEST_PROJECT_ID
+                      </code>{" "}
+                      to enable Nest indoor readings.
+                    </p>
+                  ) : indoorClimate?.hasData ? (
+                    <div className="mt-3">
+                      <IndoorClimateCharts history={indoorClimate.history ?? []} />
+                    </div>
+                  ) : indoorClimate?.error ? (
+                    <div className="mt-3 space-y-2">
+                      <p className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 sm:text-base">
+                        {indoorClimate.error}
+                      </p>
+                      <a
+                        className="inline-flex rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 sm:text-base"
+                        href="/api/auth/nest/pcm"
+                      >
+                        Authorize Nest devices
+                      </a>
+                      {indoorClimate.history && indoorClimate.history.length > 0 ? (
+                        <IndoorClimateCharts history={indoorClimate.history} />
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading indoor climate…</p>
+                  )}
+                </section>
+              ),
+              };
+
+              const arrangeChrome = (key: BoardWidgetKey) => {
+                if (!widgetArrangeMode) return null;
+                const idx = widgetLayout.order.indexOf(key);
+                return (
+                  <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-1.5">
+                    <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-200 sm:text-base">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-sky-500"
+                        checked={widgetLayout.enabled[key]}
+                        onChange={() => toggleWidgetEnabled(key)}
+                      />
+                      <span className="truncate font-medium">
+                        {BOARD_WIDGET_META[key].title}
+                        {variant === "board" && !widgetLayout.enabled[key]
+                          ? " (hidden on Board)"
+                          : ""}
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-700 px-2 py-1 text-sm text-slate-200 disabled:opacity-40"
+                      disabled={idx <= 0}
+                      onClick={() => moveWidget(key, "up")}
+                      aria-label={`Move ${BOARD_WIDGET_META[key].title} up`}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-700 px-2 py-1 text-sm text-slate-200 disabled:opacity-40"
+                      disabled={idx < 0 || idx >= widgetLayout.order.length - 1}
+                      onClick={() => moveWidget(key, "down")}
+                      aria-label={`Move ${BOARD_WIDGET_META[key].title} down`}
+                    >
+                      ↓
+                    </button>
+                  </div>
+                );
+              };
+
+              if (variant === "widgets") {
+                const perPage = 4;
+                const keys = widgetLayout.order;
+                const pageCount = Math.max(1, Math.ceil(keys.length / perPage));
+                const page = Math.min(widgetsPage, pageCount - 1);
+                const pageKeys = keys.slice(page * perPage, page * perPage + perPage);
+                return (
+                  <>
+                    <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2 sm:gap-4">
+                      {pageKeys.map((key) => (
+                        <div key={key} className="min-w-0">
+                          {arrangeChrome(key)}
+                          {widgetNodes[key]}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex shrink-0 items-center justify-center gap-3 pt-1">
+                      <button
+                        type="button"
+                        className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 disabled:opacity-40 sm:text-base"
+                        disabled={page <= 0}
+                        onClick={() => setWidgetsPage((p) => Math.max(0, p - 1))}
+                      >
+                        Prev
+                      </button>
+                      <p className="text-sm tabular-nums text-slate-400 sm:text-base">
+                        {page + 1} / {pageCount}
+                      </p>
+                      <button
+                        type="button"
+                        className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 disabled:opacity-40 sm:text-base"
+                        disabled={page >= pageCount - 1}
+                        onClick={() =>
+                          setWidgetsPage((p) => Math.min(pageCount - 1, p + 1))
+                        }
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </>
+                );
+              }
+
+              const keys = widgetArrangeMode
+                ? widgetLayout.order
+                : boardColumnKeys(widgetLayout);
+              return keys.map((key) => (
+                <div key={key} className="min-w-0 shrink-0">
+                  {arrangeChrome(key)}
+                  {widgetLayout.enabled[key] || widgetArrangeMode
+                    ? widgetNodes[key]
+                    : null}
                 </div>
-              </div>
-              {collapsedWidgets.nest ? null : !status?.googleConfigured ? (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">
-                  Set{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    GOOGLE_CLIENT_ID
-                  </code>{" "}
-                  and{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    GOOGLE_CLIENT_SECRET
-                  </code>
-                  .
-                </p>
-              ) : !status.googleLinked ? (
-                <div className="mt-3 space-y-3">
-                  <p className="text-base text-slate-300 sm:text-lg">
-                    Link Google to read Nest indoor climate.
-                  </p>
-                  <a
-                    className="inline-flex rounded-md bg-white px-4 py-2 text-base font-medium text-slate-900 hover:bg-slate-100 sm:text-lg"
-                    href="/api/auth/google"
-                  >
-                    Link Google
-                  </a>
-                </div>
-              ) : !status.nestConfigured ? (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">
-                  Set{" "}
-                  <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-200">
-                    GOOGLE_NEST_PROJECT_ID
-                  </code>{" "}
-                  to enable Nest indoor readings.
-                </p>
-              ) : indoorClimate?.hasData ? (
-                <div className="mt-3">
-                  <IndoorClimateCharts history={indoorClimate.history ?? []} />
-                </div>
-              ) : indoorClimate?.error ? (
-                <div className="mt-3 space-y-2">
-                  <p className="rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 sm:text-base">
-                    {indoorClimate.error}
-                  </p>
-                  <a
-                    className="inline-flex rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 sm:text-base"
-                    href="/api/auth/nest/pcm"
-                  >
-                    Authorize Nest devices
-                  </a>
-                  {indoorClimate.history && indoorClimate.history.length > 0 ? (
-                    <IndoorClimateCharts history={indoorClimate.history} />
-                  ) : null}
-                </div>
-              ) : (
-                <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading indoor climate…</p>
-              )}
-            </section>
+              ));
+            })()}
           </div>
         </div>
       </div>

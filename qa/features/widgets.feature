@@ -9,6 +9,10 @@ Feature: Right-column widgets
     And I open "/"
     # Each widget: <h2> title visible, or Expand/Collapse control present
 
+  Scenario: Board widgets can be arranged
+    Then I see an "Arrange" control for board widgets
+    And GET "/api/board/widgets" returns widget order and enabled flags
+
   Scenario: Clock widget renders
     Then the "Clock" widget section is present
 

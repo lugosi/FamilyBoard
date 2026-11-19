@@ -23,7 +23,8 @@ You are working on **FamilyBoard**: a Next.js 16 family dashboard (calendar + ri
 
 | Concern | Pattern |
 |---------|---------|
-| UI | Almost all dashboard UX lives in `src/components/Board.tsx` |
+| UI | Almost all dashboard UX lives in `src/components/Board.tsx` (AppShell tabs: Board / Widgets / AI) |
+| Widget layout | Client helpers in `board-widget-layout.ts`; persist via `board-widget-layout-store.ts` + `GET/PUT /api/board/widgets` — order + enabled; Arrange mode; Widgets tab paginates |
 | Logic | `src/lib/<integration>.ts` |
 | HTTP | Thin `src/app/api/**/route.ts` |
 | Secrets / tokens | Files under `getDataDir()` (`DATA_DIR` or `./data`) |
@@ -46,7 +47,7 @@ When adding or changing a right-column widget:
 3. Refresh → `void fetchBoard()`; collapse → `toggleWidgetCollapse(key)`
 4. Body: collapsed → null; not configured → setup copy; else live UI
 5. Mutations use `busy` string keys (`"catlink-clean_now"`); disable + “Working…”; then `fetchBoard()`
-6. Register key on `RightWidgetKey` and `collapsedWidgets` defaults
+6. Register key on `BOARD_WIDGET_KEYS` / `BOARD_WIDGET_META` in `board-widget-layout.ts`, `collapsedWidgets` defaults, and `widgetNodes` map
 7. Wire fetch into `fetchBoard` (respect `AbortSignal`, 60s poll)
 
 Design: slate-dark, dense home-display type, tabular nums. Widgets are interaction panels — keep chrome consistent with neighbors.

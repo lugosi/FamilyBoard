@@ -5,12 +5,12 @@ import { Board } from "@/components/Board";
 import { OnekoCat } from "@/components/OnekoCat";
 import { WikiLlm } from "@/components/WikiLlm";
 
-export type AppTab = "board" | "ai";
+export type AppTab = "board" | "widgets" | "ai";
 
 const TAB_STORAGE_KEY = "familyboard-tab";
 
 function parseTab(raw: string | null | undefined): AppTab | null {
-  if (raw === "board" || raw === "ai") return raw;
+  if (raw === "board" || raw === "widgets" || raw === "ai") return raw;
   return null;
 }
 
@@ -91,8 +91,10 @@ export function AppShell() {
   }, [boardChatOpen]);
 
   const showAiPage = tab === "ai";
-  const showAiOverlay = tab === "board" && boardChatOpen;
+  const showAiOverlay =
+    (tab === "board" || tab === "widgets") && boardChatOpen;
   const wikiActive = showAiPage || showAiOverlay;
+  const showBoardAsk = tab === "board" || tab === "widgets";
 
   return (
     <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-slate-950 text-slate-100">
@@ -104,6 +106,7 @@ export function AppShell() {
           {(
             [
               { id: "board" as const, label: "Board" },
+              { id: "widgets" as const, label: "Widgets" },
               { id: "ai" as const, label: "AI" },
             ] as const
           ).map(({ id, label }) => {
@@ -125,7 +128,7 @@ export function AppShell() {
             );
           })}
         </div>
-        {tab === "board" ? (
+        {showBoardAsk ? (
           <button
             type="button"
             className="ml-2 inline-flex items-center gap-2 rounded-md border border-slate-700 bg-slate-900/80 px-2.5 py-1.5 text-sm font-medium text-slate-200 hover:border-sky-500/60 hover:bg-slate-800 hover:text-white sm:ml-3 sm:px-3"
@@ -139,16 +142,16 @@ export function AppShell() {
         ) : null}
       </nav>
       <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-        {/* Keep both mounted so Board does not remount/blank on every tab switch */}
+        {/* One Board instance — switching Board/Widgets only changes layout variant */}
         <div
           className={
-            tab === "board"
+            tab === "board" || tab === "widgets"
               ? "h-full min-h-0"
               : "pointer-events-none invisible absolute inset-0 h-full min-h-0"
           }
-          aria-hidden={tab !== "board"}
+          aria-hidden={tab !== "board" && tab !== "widgets"}
         >
-          <Board />
+          <Board variant={tab === "widgets" ? "widgets" : "board"} />
         </div>
 
         <div
@@ -187,7 +190,7 @@ export function AppShell() {
           </div>
         </div>
 
-        {tab === "board" && !boardChatOpen ? (
+        {showBoardAsk && !boardChatOpen ? (
           <button
             type="button"
             className="absolute bottom-4 right-4 z-30 flex h-12 w-12 items-center justify-center rounded-md border border-slate-600 bg-sky-600 text-white shadow-lg shadow-sky-950/40 hover:bg-sky-500 sm:bottom-5 sm:right-5 sm:h-14 sm:w-14"
@@ -199,7 +202,7 @@ export function AppShell() {
           </button>
         ) : null}
       </div>
-      {/* Outside tab panels so the cat stays on Board and AI. */}
+      {/* Outside tab panels so the cat stays on Board, Widgets, and AI. */}
       <OnekoCat enabled />
     </div>
   );
