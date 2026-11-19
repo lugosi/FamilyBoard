@@ -523,16 +523,81 @@ async function listCats(cfg: CatlinkConfig): Promise<CatListItem[]> {
 async function fetchCatSummary(
   cfg: CatlinkConfig,
   petId: string,
+  dateKey?: string,
 ): Promise<Record<string, unknown>> {
   const timezoneId = getBoardTimezone();
   const rsp = await requestWithAuth(cfg, "token/pet/health/v3/summarySimple", "GET", {
     petId,
-    date: todayDateLocal(timezoneId),
+    date: dateKey || todayDateLocal(timezoneId),
     sport: 1,
     timezoneId,
   });
   if (rsp.returnCode !== 0) return {};
   return (rsp.data as Record<string, unknown>) ?? {};
+}
+
+function shiftLocalDateKey(dateKey: string, deltaDays: number): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + deltaDays));
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(dt);
+}
+
+/**
+ * Backfill recent CatLink weight/toilet days via summarySimple(date=…).
+ * One request per day; skips days that already have weight. Does not touch today.
+ */
+export async function backfillCatlinkDietHistory(options?: {
+  days?: number;
+}): Promise<number> {
+  const cfg = await getCatlinkConfig();
+  if (!cfg) return 0;
+  const daysBack = Math.max(1, Math.min(options?.days ?? 90, 180));
+  const { upsertCatDietDay, listCatDietHistory, localDateKey, CAT_DIET_HISTORY_DAYS } =
+    await import("./cat-diet-history");
+  const existing = new Map(
+    (await listCatDietHistory(CAT_DIET_HISTORY_DAYS)).map(
+      (d) => [d.dateKey, d] as const,
+    ),
+  );
+  const timezoneId = getBoardTimezone();
+  const today = localDateKey(new Date(), timezoneId);
+  const cats = await listCats(cfg);
+  const cat = pickCat(cats);
+  if (!cat?.id) return 0;
+
+  let wrote = 0;
+  for (let i = 1; i <= daysBack; i++) {
+    const dateKey = shiftLocalDateKey(today, -i);
+    const row = existing.get(dateKey);
+    if (row?.catWeightKg != null) continue;
+    try {
+      const summary = await fetchCatSummary(cfg, String(cat.id), dateKey);
+      const stats = parseCatStats(cat, summary);
+      if (
+        stats.catWeightKg == null &&
+        stats.peeCountToday == null &&
+        stats.poopCountToday == null
+      ) {
+        continue;
+      }
+      await upsertCatDietDay({
+        dateKey,
+        catName: stats.catName,
+        catWeightKg: stats.catWeightKg,
+        peeCount: stats.peeCountToday,
+        poopCount: stats.poopCountToday,
+      });
+      wrote += 1;
+    } catch {
+      /* skip day */
+    }
+  }
+  return wrote;
 }
 
 function parseCatStats(
