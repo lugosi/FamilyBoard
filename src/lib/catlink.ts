@@ -716,7 +716,7 @@ export async function fetchCatlinkSnapshot(): Promise<CatlinkSnapshot> {
     cat?.id != null ? parseCatStats(cat, await fetchCatSummary(cfg, cat.id)) : {};
   const wasteBin = parseWasteBinStatus(detail);
 
-  return {
+  const snapshot: CatlinkSnapshot = {
     deviceId: device.id ?? "",
     deviceName: device.deviceName ?? "Catlink",
     model: typeof device.model === "string" ? device.model : undefined,
@@ -726,6 +726,15 @@ export async function fetchCatlinkSnapshot(): Promise<CatlinkSnapshot> {
     ...wasteBin,
     updatedAt: new Date().toISOString(),
   };
+
+  try {
+    const { recordCatlinkDietSample } = await import("./cat-diet-history");
+    await recordCatlinkDietSample(snapshot);
+  } catch {
+    /* history is best-effort */
+  }
+
+  return snapshot;
 }
 
 async function runCleanNow(
