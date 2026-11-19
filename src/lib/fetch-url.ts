@@ -1,5 +1,5 @@
 /**
- * Safe public-URL fetch for the family agent (gym schedules, ICS, static pages).
+ * Safe public-URL fetch for the family agent (gym schedules, ICS, PDFs, static pages).
  * Pure enough for unit tests — no Gemini. Blocks private hosts (SSRF).
  */
 
@@ -191,7 +191,8 @@ export async function fetchPublicUrl(
         redirect: "manual",
         signal: ac.signal,
         headers: {
-          Accept: "text/html,application/xhtml+xml,text/plain,text/calendar,text/csv,application/json;q=0.9,*/*;q=0.5",
+          Accept:
+            "text/html,application/xhtml+xml,application/pdf,text/plain,text/calendar,text/csv,application/json;q=0.9,*/*;q=0.5",
           "User-Agent": "FamilyBoardBot/1.0 (+https://github.com/lugosi/FamilyBoard)",
         },
       });
@@ -224,15 +225,37 @@ export async function fetchPublicUrl(
 
     const contentType = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
     const buf = await readLimitedBody(res, FETCH_URL_MAX_BYTES);
-    const raw = buf.toString("utf8");
     let title: string | undefined;
     let text: string;
-    if (contentType.includes("html") || /^\s*</.test(raw)) {
-      const parsed = htmlToReadableText(raw);
-      title = parsed.title;
-      text = parsed.text;
+    let resolvedType = contentType || "text/plain";
+
+    const pathLooksPdf = current.pathname.toLowerCase().endsWith(".pdf");
+    const magicPdf = buf.subarray(0, 5).toString("latin1") === "%PDF-";
+    const typeLooksPdf =
+      contentType === "application/pdf" ||
+      contentType === "application/x-pdf" ||
+      contentType.includes("application/pdf");
+    if (typeLooksPdf || pathLooksPdf || magicPdf) {
+      try {
+        // Dynamic import (extensionless for Next; node --test covers extractPdfText directly).
+        const { extractPdfText } = await import("./pdf-text");
+        const pdf = await extractPdfText(buf);
+        text = pdf.text;
+        title = pdf.title;
+        resolvedType = "application/pdf";
+      } catch (e) {
+        const code = e instanceof Error ? e.message : "pdf_parse_failed";
+        return { ok: false, error: code, url: current.toString() };
+      }
     } else {
-      text = raw;
+      const raw = buf.toString("utf8");
+      if (contentType.includes("html") || /^\s*</.test(raw)) {
+        const parsed = htmlToReadableText(raw);
+        title = parsed.title;
+        text = parsed.text;
+      } else {
+        text = raw;
+      }
     }
     const truncated = text.length > maxChars;
     if (truncated) text = `${text.slice(0, maxChars)}\n\n[TRUNCATED]`;
@@ -241,7 +264,7 @@ export async function fetchPublicUrl(
       url: rawUrl.trim(),
       finalUrl: current.toString(),
       status: res.status,
-      contentType: contentType || "text/plain",
+      contentType: resolvedType,
       title,
       text,
       truncated,

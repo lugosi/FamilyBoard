@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   // Native/wasm bindings — must not be bundled by Turbopack (Slack chart PNGs).
-  serverExternalPackages: ["@resvg/resvg-js"],
+  serverExternalPackages: ["@resvg/resvg-js", "pdf-parse"],
   // Keep platform binaries + chart fonts in the standalone Docker image.
   outputFileTracingIncludes: {
     "/*": [
