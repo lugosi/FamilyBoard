@@ -30,17 +30,16 @@ import {
   type GEvent,
 } from "@/lib/calendar-layout";
 import { WeatherDailyStrip } from "@/components/WeatherDailyStrip";
-import {
-  WeatherHourlyStrip,
-  type WeatherHourlyStripPoint,
-} from "@/components/WeatherHourlyStrip";
+import { WeatherDayParts } from "@/components/WeatherDayParts";
 import { WeatherIcon } from "@/components/WeatherIcon";
 import {
   dailyForecastByDate,
   isNightForWeatherIcon,
   isNightGreyscaleActive,
+  summarizeWeatherDayParts,
   type DailyForecast,
   type SunTimes,
+  type WeatherHourlyPoint,
 } from "@/lib/weather";
 import { wmoLabel } from "@/lib/wmo";
 import { IndoorClimateCharts } from "@/components/IndoorClimateCharts";
@@ -2111,9 +2110,7 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
     () => dailyForecastByDate(daily),
     [daily],
   );
-  const hourlyNext18 = weather?.hourlyNext18 as
-    | WeatherHourlyStripPoint[]
-    | undefined;
+  const hourlyNext18 = weather?.hourlyNext18 as WeatherHourlyPoint[] | undefined;
   const weatherSunByDate = weather?.sunByDate as Record<string, SunTimes> | undefined;
   const weatherIconIsNight = useMemo(
     () => isNightForWeatherIcon(clockNow, weatherSunByDate),
@@ -2121,6 +2118,10 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
   );
   const todayForecast =
     calendarDailyForecast[todayDateKey] ?? daily?.[0];
+  const weatherDayParts = useMemo(
+    () => summarizeWeatherDayParts(hourlyNext18, clockNow, 3),
+    [hourlyNext18, clockNow],
+  );
   const upcomingDaily = useMemo(() => {
     if (!daily?.length) return [];
     const startIdx = daily.findIndex((d) => d.date >= todayDateKey);
@@ -2726,78 +2727,57 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
                       .
                     </p>
                   ) : current ? (
-                    <div className="mt-2 space-y-3">
-                      <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-5xl font-semibold leading-none tabular-nums text-white sm:text-6xl">
-                              {Math.round(current.temperatureF ?? 0)}°
-                            </p>
-                            <p className="mt-1.5 truncate text-base font-medium text-slate-200 sm:text-lg">
-                              {wmoLabel(Number(current.code ?? 0))}
-                            </p>
-                          </div>
-                          <WeatherIcon
-                            code={Number(current.code ?? 0)}
-                            isNight={weatherIconIsNight}
-                            className="h-12 w-12 shrink-0 text-sky-200 sm:h-14 sm:w-14"
-                          />
-                        </div>
-                        {todayForecast &&
-                        typeof todayForecast.minF === "number" &&
-                        typeof todayForecast.maxF === "number" ? (
-                          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm sm:text-base">
-                            <p className="tabular-nums text-slate-200">
+                    <div className="mt-2 space-y-2">
+                      <div className="flex items-center gap-2.5">
+                        <p className="text-4xl font-semibold leading-none tabular-nums text-white sm:text-5xl">
+                          {Math.round(current.temperatureF ?? 0)}°
+                        </p>
+                        <WeatherIcon
+                          code={Number(current.code ?? 0)}
+                          isNight={weatherIconIsNight}
+                          className="h-9 w-9 shrink-0 text-sky-200 sm:h-10 sm:w-10"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-200 sm:text-base">
+                            {wmoLabel(Number(current.code ?? 0))}
+                          </p>
+                          {todayForecast &&
+                          typeof todayForecast.minF === "number" &&
+                          typeof todayForecast.maxF === "number" ? (
+                            <p className="mt-0.5 truncate text-xs tabular-nums text-slate-400 sm:text-sm">
                               <span className="text-slate-500">H </span>
-                              <span className="font-semibold text-white">
+                              <span className="font-semibold text-slate-100">
                                 {Math.round(todayForecast.maxF)}°
                               </span>
-                              <span className="mx-1.5 text-slate-600">·</span>
+                              <span className="mx-1 text-slate-600">·</span>
                               <span className="text-slate-500">L </span>
-                              <span className="font-semibold text-slate-100">
+                              <span className="font-semibold text-slate-200">
                                 {Math.round(todayForecast.minF)}°
                               </span>
+                              {typeof todayForecast.precipChance === "number" ? (
+                                <>
+                                  <span className="mx-1 text-slate-600">·</span>
+                                  <span
+                                    className={
+                                      todayForecast.precipChance >= 30
+                                        ? "text-sky-300"
+                                        : undefined
+                                    }
+                                  >
+                                    {todayForecast.precipChance}%
+                                  </span>
+                                </>
+                              ) : null}
                             </p>
-                            {typeof todayForecast.precipChance === "number" ? (
-                              <p
-                                className={`tabular-nums ${
-                                  todayForecast.precipChance >= 30
-                                    ? "font-medium text-sky-300"
-                                    : "text-slate-400"
-                                }`}
-                              >
-                                Rain {todayForecast.precipChance}%
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : null}
-                        <div className="mt-2.5 grid grid-cols-2 gap-2">
-                          <div className="rounded-md bg-slate-900/70 px-2.5 py-1.5">
-                            <p className="text-[11px] uppercase tracking-wide text-slate-500 sm:text-xs">
-                              Humidity
-                            </p>
-                            <p className="text-base font-semibold tabular-nums text-slate-100 sm:text-lg">
-                              {Math.round(current.humidity ?? 0)}%
-                            </p>
-                          </div>
-                          <div className="rounded-md bg-slate-900/70 px-2.5 py-1.5">
-                            <p className="text-[11px] uppercase tracking-wide text-slate-500 sm:text-xs">
-                              Wind
-                            </p>
-                            <p className="text-base font-semibold tabular-nums text-slate-100 sm:text-lg">
-                              {Math.round(current.windMph ?? 0)}{" "}
-                              <span className="text-sm font-medium text-slate-400">
-                                mph
-                              </span>
-                            </p>
-                          </div>
+                          ) : null}
+                          <p className="mt-0.5 truncate text-[11px] tabular-nums text-slate-500 sm:text-xs">
+                            Humidity {Math.round(current.humidity ?? 0)}% · Wind{" "}
+                            {Math.round(current.windMph ?? 0)} mph
+                          </p>
                         </div>
                       </div>
-                      {hourlyNext18 && hourlyNext18.length > 0 ? (
-                        <WeatherHourlyStrip
-                          hours={hourlyNext18}
-                          sunByDate={weatherSunByDate}
-                        />
+                      {weatherDayParts.length > 0 ? (
+                        <WeatherDayParts parts={weatherDayParts} />
                       ) : null}
                       {upcomingDaily.length > 0 ? (
                         <WeatherDailyStrip

@@ -11,10 +11,28 @@ export type DailyForecast = {
 };
 
 export const HOURLY_FORECAST_HOURS = 18;
-/** Hours shown in the board weather strip (subset of hourlyNext18). */
-export const HOURLY_STRIP_HOURS = 12;
 /** Days shown in the board multi-day strip. */
-export const DAILY_STRIP_DAYS = 5;
+export const DAILY_STRIP_DAYS = 4;
+
+export type WeatherDayPartId = "morning" | "afternoon" | "night";
+
+export type WeatherHourlyPoint = {
+  time: string;
+  temperatureF: number;
+  code: number;
+  precipChance?: number;
+};
+
+export type WeatherDayPart = {
+  id: string;
+  part: WeatherDayPartId;
+  label: string;
+  date: string;
+  temperatureF: number;
+  code: number;
+  precipChance?: number;
+  isCurrent: boolean;
+};
 
 export type WeatherSnapshot = {
   latitude: number;
@@ -28,12 +46,7 @@ export type WeatherSnapshot = {
   };
   daily: DailyForecast[];
   /** Next 18 clock hours from the current hour (rolling on each refresh). */
-  hourlyNext18: Array<{
-    time: string;
-    temperatureF: number;
-    code: number;
-    precipChance?: number;
-  }>;
+  hourlyNext18: WeatherHourlyPoint[];
   /** Today's sunrise/sunset in local forecast timezone (ISO strings). */
   sunriseToday?: string;
   sunsetToday?: string;
@@ -625,4 +638,128 @@ export function dailyForecastByDate(
     if (row.date) out[row.date] = row;
   }
   return out;
+}
+
+const DAY_PART_META: Record<
+  WeatherDayPartId,
+  { label: string; startHour: number; endHour: number }
+> = {
+  morning: { label: "Morning", startHour: 6, endHour: 12 },
+  afternoon: { label: "Afternoon", startHour: 12, endHour: 18 },
+  night: { label: "Night", startHour: 18, endHour: 24 },
+};
+
+function dayPartForHour(hour: number): WeatherDayPartId {
+  if (hour >= 6 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 18) return "afternoon";
+  return "night";
+}
+
+/** Night 0–5 belongs with the previous calendar evening. */
+function dayPartAnchorDate(timeIso: string): { date: string; part: WeatherDayPartId } {
+  const hour = Number(timeIso.slice(11, 13));
+  const part = dayPartForHour(Number.isFinite(hour) ? hour : 12);
+  if (part === "night" && Number.isFinite(hour) && hour < 6) {
+    const d = new Date(`${timeIso.slice(0, 10)}T12:00:00`);
+    if (!Number.isNaN(d.getTime())) {
+      d.setDate(d.getDate() - 1);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return { date: `${y}-${m}-${day}`, part };
+    }
+  }
+  return { date: timeIso.slice(0, 10), part };
+}
+
+function currentDayPart(now: Date): { date: string; part: WeatherDayPartId } {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const hour = now.getHours();
+  const part = dayPartForHour(hour);
+  if (part === "night" && hour < 6) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 1);
+    const py = d.getFullYear();
+    const pm = String(d.getMonth() + 1).padStart(2, "0");
+    const pd = String(d.getDate()).padStart(2, "0");
+    return { date: `${py}-${pm}-${pd}`, part };
+  }
+  return { date: `${y}-${m}-${day}`, part };
+}
+
+/**
+ * Collapse hourly points into Morning / Afternoon / Night blocks.
+ * Returns upcoming parts (current first), typically 3 for the board widget.
+ */
+export function summarizeWeatherDayParts(
+  hours: WeatherHourlyPoint[] | undefined,
+  now: Date = new Date(),
+  limit = 3,
+): WeatherDayPart[] {
+  if (!hours?.length) return [];
+
+  type Agg = {
+    date: string;
+    part: WeatherDayPartId;
+    temps: number[];
+    codes: number[];
+    precip: number[];
+  };
+  const order: string[] = [];
+  const byKey = new Map<string, Agg>();
+
+  for (const h of hours) {
+    if (!h.time || !Number.isFinite(h.temperatureF)) continue;
+    const { date, part } = dayPartAnchorDate(h.time);
+    const key = `${date}:${part}`;
+    let agg = byKey.get(key);
+    if (!agg) {
+      agg = { date, part, temps: [], codes: [], precip: [] };
+      byKey.set(key, agg);
+      order.push(key);
+    }
+    agg.temps.push(h.temperatureF);
+    agg.codes.push(h.code);
+    if (typeof h.precipChance === "number" && Number.isFinite(h.precipChance)) {
+      agg.precip.push(h.precipChance);
+    }
+  }
+
+  const current = currentDayPart(now);
+  const currentKey = `${current.date}:${current.part}`;
+  const startIdx = Math.max(
+    0,
+    order.findIndex((k) => k === currentKey || k > currentKey),
+  );
+
+  const parts: WeatherDayPart[] = [];
+  for (const key of order.slice(startIdx)) {
+    const agg = byKey.get(key);
+    if (!agg || agg.temps.length === 0) continue;
+    const meta = DAY_PART_META[agg.part];
+    const temperatureF =
+      agg.part === "night"
+        ? Math.min(...agg.temps)
+        : Math.max(...agg.temps);
+    const wetCodes = agg.codes.filter(isPrecipOrStormWeatherCode);
+    const precipChance = agg.precip.length ? Math.max(...agg.precip) : undefined;
+    parts.push({
+      id: key,
+      part: agg.part,
+      label: meta.label,
+      date: agg.date,
+      temperatureF,
+      // Prefer precip/storm icons when the block has wet hours (or high rain %).
+      code:
+        wetCodes.length > 0 || (precipChance != null && precipChance >= 40)
+          ? Math.max(...(wetCodes.length ? wetCodes : agg.codes))
+          : representativeDaytimeWeatherCode(agg.codes),
+      precipChance,
+      isCurrent: key === currentKey,
+    });
+    if (parts.length >= limit) break;
+  }
+  return parts;
 }
