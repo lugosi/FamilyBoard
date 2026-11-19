@@ -95,7 +95,7 @@ Env: `PETLIBRO_EMAIL`, `PETLIBRO_PASSWORD`, optional `PETLIBRO_REGION`, `PETLIBR
 - CI sets `WEATHER_FIXTURE=1` for a canned snapshot (no live Open-Meteo). Leave unset on TrueNAS.
 - Upstream fetch failures → **502** from `/api/weather`.
 - `hourlyNext18` rolling from current hour; `sunByDate` for per-day sunrise/sunset.
-- Chart: `WeatherHourlyChart.tsx` — `smoothLinePath`, icon only on condition change via `weatherIconKey`.
+- Board widget: `WeatherDayParts` (morning/afternoon/night) + `WeatherDailyStrip` (precip % from Open-Meteo).
 - Greyscale vs icon night: see SKILL.md table.
 
 ## Google Calendar (`src/lib/google.ts`, `calendar-layout.ts`)

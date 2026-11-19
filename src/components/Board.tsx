@@ -29,18 +29,19 @@ import {
   type CalendarRangeKeys,
   type GEvent,
 } from "@/lib/calendar-layout";
-import {
-  WeatherHourlyChart,
-  type WeatherHourlyPoint,
-} from "@/components/WeatherHourlyChart";
+import { WeatherDailyStrip } from "@/components/WeatherDailyStrip";
+import { WeatherDayParts } from "@/components/WeatherDayParts";
 import { WeatherIcon } from "@/components/WeatherIcon";
 import {
   dailyForecastByDate,
   isNightForWeatherIcon,
   isNightGreyscaleActive,
+  summarizeWeatherDayParts,
   type DailyForecast,
   type SunTimes,
+  type WeatherHourlyPoint,
 } from "@/lib/weather";
+import { wmoLabel } from "@/lib/wmo";
 import { IndoorClimateCharts } from "@/components/IndoorClimateCharts";
 import type { ClimateHistorySample } from "@/lib/nest-climate-history";
 import {
@@ -1554,7 +1555,7 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
     [locationWeatherByQuery],
   );
 
-  const todayDateKey = dateKeyLocal(new Date());
+  const todayDateKey = dateKeyLocal(clockNow);
 
   async function saveEdit() {
     if (!editOpen?.id) return;
@@ -2116,7 +2117,16 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
     [clockNow, weatherSunByDate],
   );
   const todayForecast =
-    calendarDailyForecast[dateKeyLocal(clockNow)] ?? daily?.[0];
+    calendarDailyForecast[todayDateKey] ?? daily?.[0];
+  const weatherDayParts = useMemo(
+    () => summarizeWeatherDayParts(hourlyNext18, clockNow, 3),
+    [hourlyNext18, clockNow],
+  );
+  const upcomingDaily = useMemo(() => {
+    if (!daily?.length) return [];
+    const startIdx = daily.findIndex((d) => d.date >= todayDateKey);
+    return daily.slice(startIdx >= 0 ? startIdx : 0);
+  }, [daily, todayDateKey]);
   const catlinkCatName =
     typeof catlink?.catName === "string" && catlink.catName ? catlink.catName : null;
   const catlinkCatWeightKg =
@@ -2717,76 +2727,62 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
                       .
                     </p>
                   ) : current ? (
-                    <div className="mt-2 space-y-2.5">
-                      <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <p className="text-4xl font-semibold leading-none text-white sm:text-5xl">
-                            {Math.round(current.temperatureF ?? 0)}°
-                            <span className="text-base text-slate-400 sm:text-lg">F</span>
+                    <div className="mt-2 space-y-2">
+                      <div className="flex items-center gap-2.5">
+                        <p className="text-4xl font-semibold leading-none tabular-nums text-white sm:text-5xl">
+                          {Math.round(current.temperatureF ?? 0)}°
+                        </p>
+                        <WeatherIcon
+                          code={Number(current.code ?? 0)}
+                          isNight={weatherIconIsNight}
+                          className="h-9 w-9 shrink-0 text-sky-200 sm:h-10 sm:w-10"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-200 sm:text-base">
+                            {wmoLabel(Number(current.code ?? 0))}
                           </p>
-                          <WeatherIcon
-                            code={Number(current.code ?? 0)}
-                            isNight={weatherIconIsNight}
-                            className="h-9 w-9 shrink-0 sm:h-10 sm:w-10"
-                          />
-                        </div>
-                        <div className="flex flex-col items-end gap-1.5 text-sm text-slate-300 sm:text-base">
                           {todayForecast &&
                           typeof todayForecast.minF === "number" &&
                           typeof todayForecast.maxF === "number" ? (
-                            <span
-                              className="whitespace-nowrap text-xs tabular-nums text-slate-400 sm:text-sm"
-                              title="Today's forecast high / low"
-                            >
+                            <p className="mt-0.5 truncate text-xs tabular-nums text-slate-400 sm:text-sm">
+                              <span className="text-slate-500">H </span>
                               <span className="font-semibold text-slate-100">
                                 {Math.round(todayForecast.maxF)}°
                               </span>
-                              <span className="mx-1 text-slate-500">/</span>
-                              <span className="text-slate-300">
+                              <span className="mx-1 text-slate-600">·</span>
+                              <span className="text-slate-500">L </span>
+                              <span className="font-semibold text-slate-200">
                                 {Math.round(todayForecast.minF)}°
                               </span>
-                            </span>
+                              {typeof todayForecast.precipChance === "number" ? (
+                                <>
+                                  <span className="mx-1 text-slate-600">·</span>
+                                  <span
+                                    className={
+                                      todayForecast.precipChance >= 30
+                                        ? "text-sky-300"
+                                        : undefined
+                                    }
+                                  >
+                                    {todayForecast.precipChance}%
+                                  </span>
+                                </>
+                              ) : null}
+                            </p>
                           ) : null}
-                          <div className="flex items-center gap-3">
-                            <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                              <svg
-                                aria-hidden="true"
-                                viewBox="0 0 24 24"
-                                className="h-4 w-4 text-sky-300"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.8"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <path d="M12 3C12 3 6 10 6 14a6 6 0 0 0 12 0c0-4-6-11-6-11z" />
-                              </svg>
-                              {Math.round(current.humidity ?? 0)}%
-                            </span>
-                            <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                              <svg
-                                aria-hidden="true"
-                                viewBox="0 0 24 24"
-                                className="h-4 w-4 text-slate-300"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.8"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <path d="M3 9h10a3 3 0 1 0-3-3" />
-                                <path d="M3 15h14a3 3 0 1 1-3 3" />
-                              </svg>
-                              {Math.round(current.windMph ?? 0)} mph
-                            </span>
-                          </div>
+                          <p className="mt-0.5 truncate text-[11px] tabular-nums text-slate-500 sm:text-xs">
+                            Humidity {Math.round(current.humidity ?? 0)}% · Wind{" "}
+                            {Math.round(current.windMph ?? 0)} mph
+                          </p>
                         </div>
                       </div>
-                      {hourlyNext18 && hourlyNext18.length > 0 ? (
-                        <WeatherHourlyChart
-                          hours={hourlyNext18}
-                          sunByDate={weatherSunByDate}
-                          className="h-32 shrink-0 sm:h-36"
+                      {weatherDayParts.length > 0 ? (
+                        <WeatherDayParts parts={weatherDayParts} />
+                      ) : null}
+                      {upcomingDaily.length > 0 ? (
+                        <WeatherDailyStrip
+                          days={upcomingDaily}
+                          todayKey={todayDateKey}
                         />
                       ) : null}
                     </div>
