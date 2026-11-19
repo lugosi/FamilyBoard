@@ -30,6 +30,9 @@ const HOUSE_DASHBOARD_SKILL = `skills/house-dashboard.md — House dashboard: Wh
  * Coaching lens adapted for FamilyBoard REST cache — not Strava's official MCP.
  */
 const STRAVA_TRAINING_SKILL = `skills/strava-training.md — Strava training (30-day cache): When someone asks how training is going, mileage, load, form, last weeks, race readiness, a chart, or wants a Strava recap/analysis, first call strava_training_summary (syncs cache: bootstrap last 30 days, then diff). Pass chartPeriod=month when they ask for a monthly / month-over-month chart; default chartPeriod=week. Use strava_recent_activities for a short list and strava_athlete for name/units context. Present: (1) window + activity count, (2) totals with distance in km or mi (ask or default km; convert m→km/1000, m→mi/1609.34; run pace from m/s as min/km or min/mi — never raw m/s for runners), (3) week-over-week (or month-over-month) volume and Relative Effort from summary.byWeek / byMonth, (4) by sport, (5) 1–3 practical next steps. Never emit \`\`\`chart fences yourself — the tool attaches combo charts (one stacked moving-time-by-sport chart + Relative Effort line; no separate sport-mix chart). Never invent CTL/ATL/TSB. Flag missing HR/suffer_score. If authorizeUrl is returned, share the link. If wiki page skills/strava-training.md exists, read_wiki_page it and prefer those steps.`;
+
+/** Built-in cat diet / hydration skill when Petlibro is linked. */
+const CAT_DIET_SKILL = `skills/cat-diet.md — Cat diet & hydration (Petlibro): When someone asks how much the cat ate or drank, about portions, diet, kibble, fountain water, or hydration, call petlibro_consumption first. Present today's food (converted unit + feed count) and water (ml + drink count), note device names and offline/food-low flags, and use CatLink weight/toilet counts when the tool returns them. Give practical, non-diagnostic advice (portion vs free-feed, wet-food moisture, multi-cat shared devices). Never invent numbers — only tool data. Suggest a vet for illness, rapid weight change, or persistent low water.`;
 import { AGENT_GROUNDING_RULES } from "./agent-grounding";
 import { fetchPublicUrl } from "./fetch-url";
 import { getDefaultTimeZone, readGoogleTokens } from "./google";
@@ -531,6 +534,7 @@ function buildSystemPrompt(input: {
   wikiIndex: string | null;
   skillsIndex: string | null;
   devices: { hue: boolean; spotify: boolean; catlink: boolean };
+  petlibroConfigured?: boolean;
   stravaConfigured?: boolean;
   actor?: AgentActor;
   senderName?: string;
@@ -598,6 +602,13 @@ function buildSystemPrompt(input: {
     );
     if (input.senderName) lines.push(`The person messaging you is ${input.senderName}.`);
   }
+  if (input.petlibroConfigured) {
+    lines.push(
+      "=== CAT DIET SKILL ===",
+      CAT_DIET_SKILL.replace(/^skills\/cat-diet\.md — /, ""),
+      "=== END CAT DIET SKILL ===",
+    );
+  }
   if (input.stravaConfigured) {
     lines.push(
       "Strava: each person links their own account. REST tools only (not Strava's official MCP). If a tool returns authorizeUrl, share that link — do not invent activities.",
@@ -646,6 +657,7 @@ async function collectAgentTools(): Promise<{
   wikiIndex: string | null;
   skillsIndex: string | null;
   devices: Awaited<ReturnType<typeof deviceToolsAvailable>>;
+  petlibroConfigured: boolean;
   stravaConfigured: boolean;
   timeZone: string;
 }> {
@@ -655,8 +667,14 @@ async function collectAgentTools(): Promise<{
   const devices = await deviceToolsAvailable();
   const { buildStravaTools } = await import("./agent-strava-tools");
   const { isStravaConfigured } = await import("./strava");
+  const {
+    buildPetlibroTools,
+    petlibroToolsAvailable,
+  } = await import("./agent-petlibro-tools");
   const stravaConfigured = isStravaConfigured();
   const stravaTools = buildStravaTools();
+  const petlibroConfigured = await petlibroToolsAvailable();
+  const petlibroTools = buildPetlibroTools(petlibroConfigured);
 
   let wikiIndex: string | null = null;
   let skillsIndex: string | null = null;
@@ -684,6 +702,7 @@ async function collectAgentTools(): Promise<{
     ...(googleLinked ? [...calendarTools, ...sheetTools] : []),
     ...todoTools,
     ...buildDeviceTools(devices),
+    ...petlibroTools,
     ...stravaTools,
     ...(wikiConfigured ? wikiTools : []),
   ];
@@ -695,6 +714,7 @@ async function collectAgentTools(): Promise<{
     wikiIndex,
     skillsIndex,
     devices,
+    petlibroConfigured,
     stravaConfigured,
     timeZone,
   };
@@ -724,6 +744,7 @@ export async function runFamilyAgent(input: {
     wikiIndex: packed.wikiIndex,
     skillsIndex: packed.skillsIndex,
     devices: packed.devices,
+    petlibroConfigured: packed.petlibroConfigured,
     stravaConfigured: packed.stravaConfigured,
     actor: input.actor,
     senderName: input.senderName,

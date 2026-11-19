@@ -56,6 +56,8 @@ type Status = {
   weatherConfigured: boolean;
   catlinkConfigured?: boolean;
   catlinkLinked?: boolean;
+  petlibroConfigured?: boolean;
+  petlibroLinked?: boolean;
 };
 
 type CalendarOption = {
@@ -135,8 +137,38 @@ type CatlinkSnapshot = {
   catWeightKg?: number;
   peeCountToday?: number;
   poopCountToday?: number;
+  wasteBinFull?: boolean;
+  wasteBinStatusLabel?: string;
   updatedAt?: string;
   [key: string]: unknown;
+};
+type PetlibroDeviceSnapshot = {
+  deviceSn: string;
+  name: string;
+  kind: "feeder" | "fountain" | "other";
+  online?: boolean;
+  feeder?: {
+    todayFeedingTimes?: number;
+    todayFeedingQuantityPortions?: number;
+    todayFeedingAmount?: number;
+    todayFeedingUnit?: string;
+    foodLow?: boolean;
+  };
+  fountain?: {
+    todayDrinkMl?: number;
+    todayDrinkTimes?: number;
+    waterLevelPercent?: number;
+  };
+};
+type PetlibroSnapshot = {
+  devices?: PetlibroDeviceSnapshot[];
+  totalFoodAmountToday?: number;
+  totalFoodUnit?: string;
+  totalFoodPortionsToday?: number;
+  totalWaterMlToday?: number;
+  totalWaterTimesToday?: number;
+  updatedAt?: string;
+  error?: string;
 };
 type SpotifyRecentItem = {
   kind: "track" | "album" | "playlist";
@@ -156,7 +188,14 @@ const HUE_THEME_OPTIONS: Array<{ key: HueThemeKey; label: string }> = [
   { key: "nightlight", label: "Nightlight" },
 ];
 
-type RightWidgetKey = "clock" | "weather" | "catlink" | "nest" | "hue" | "spotify";
+type RightWidgetKey =
+  | "clock"
+  | "weather"
+  | "catlink"
+  | "petlibro"
+  | "nest"
+  | "hue"
+  | "spotify";
 type SpotifyResultTab = "recent" | "featured" | "results";
 
 type SpotifyWebPlaybackPlayer = {
@@ -457,6 +496,9 @@ export function Board() {
   const [catlink, setCatlink] = useState<CatlinkSnapshot | null>(null);
   const [catlinkLinkPhone, setCatlinkLinkPhone] = useState("");
   const [catlinkLinkPassword, setCatlinkLinkPassword] = useState("");
+  const [petlibro, setPetlibro] = useState<PetlibroSnapshot | null>(null);
+  const [petlibroLinkEmail, setPetlibroLinkEmail] = useState("");
+  const [petlibroLinkPassword, setPetlibroLinkPassword] = useState("");
   const [indoorClimate, setIndoorClimate] = useState<IndoorClimate | null>(null);
   const [spotifyPlayback, setSpotifyPlayback] = useState<SpotifyPlayback | null>(
     null,
@@ -594,6 +636,7 @@ export function Board() {
     clock: false,
     weather: false,
     catlink: false,
+    petlibro: false,
     nest: false,
     hue: false,
     spotify: false,
@@ -841,6 +884,21 @@ export function Board() {
         }
       } else {
         setCatlink(null);
+      }
+
+      if (s.petlibroConfigured) {
+        const petRes = await fetch("/api/petlibro", { signal });
+        if (signal?.aborted) return;
+        if (petRes.status === 501) {
+          setPetlibro(null);
+        } else if (petRes.ok) {
+          setPetlibro((await petRes.json()) as PetlibroSnapshot);
+        } else {
+          const err = (await petRes.json().catch(() => ({}))) as { error?: string };
+          setPetlibro({ devices: [], error: err.error || "Petlibro unavailable" });
+        }
+      } else {
+        setPetlibro(null);
       }
 
       if (s.googleLinked && s.nestConfigured) {
@@ -1584,6 +1642,43 @@ export function Board() {
     await fetchBoard();
   }
 
+  async function linkPetlibro() {
+    setBusy("petlibro-link");
+    setMessage(null);
+    const res = await fetch("/api/petlibro/auth/link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: petlibroLinkEmail.trim(),
+        password: petlibroLinkPassword.trim(),
+      }),
+    });
+    setBusy(null);
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      setMessage(j.error ?? "Petlibro link failed");
+      return;
+    }
+    setPetlibroLinkPassword("");
+    setMessage("Petlibro linked.");
+    await fetchBoard();
+  }
+
+  async function unlinkPetlibro() {
+    setBusy("petlibro-unlink");
+    setMessage(null);
+    const res = await fetch("/api/petlibro/auth/unlink", { method: "POST" });
+    setBusy(null);
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      setMessage(j.error ?? "Petlibro unlink failed");
+      return;
+    }
+    setPetlibro(null);
+    setMessage("Petlibro unlinked.");
+    await fetchBoard();
+  }
+
   async function linkCatlink() {
     setBusy("catlink-link");
     setMessage(null);
@@ -1985,6 +2080,27 @@ export function Board() {
     typeof catlink?.wasteBinStatusLabel === "string" && catlink.wasteBinStatusLabel
       ? catlink.wasteBinStatusLabel
       : null;
+  const petlibroFoodAmount =
+    typeof petlibro?.totalFoodAmountToday === "number"
+      ? petlibro.totalFoodAmountToday
+      : null;
+  const petlibroFoodUnit =
+    typeof petlibro?.totalFoodUnit === "string" && petlibro.totalFoodUnit
+      ? petlibro.totalFoodUnit
+      : "cups";
+  const petlibroWaterMl =
+    typeof petlibro?.totalWaterMlToday === "number" ? petlibro.totalWaterMlToday : null;
+  const petlibroWaterTimes =
+    typeof petlibro?.totalWaterTimesToday === "number"
+      ? petlibro.totalWaterTimesToday
+      : null;
+  const petlibroDevices = Array.isArray(petlibro?.devices) ? petlibro.devices : [];
+  const petlibroCollapsedLabel =
+    petlibroFoodAmount !== null
+      ? `${petlibroFoodAmount}${petlibroFoodUnit === "cups" ? "c" : ""}`
+      : petlibroWaterMl !== null
+        ? `${Math.round(petlibroWaterMl)}ml`
+        : "PET";
   const spotifyTrack = spotifyPlayback?.item;
   const spotifyArtist = spotifyTrack?.artists?.map((a) => a.name).filter(Boolean).join(", ");
   const spotifyActiveDevice =
@@ -2855,6 +2971,226 @@ export function Board() {
                 </div>
               ) : (
                 <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading catlink…</p>
+              )}
+            </section>
+
+            <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  {collapsedWidgets.petlibro ? (
+                    <span
+                      className={`${WIDGET_TITLE_ICON} flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950/70 text-xs font-semibold tabular-nums text-white`}
+                    >
+                      {petlibroCollapsedLabel}
+                    </span>
+                  ) : null}
+                  <h2 className="truncate text-xl font-medium text-white sm:text-2xl">
+                    Petlibro
+                  </h2>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                  <button
+                    type="button"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                    onClick={() => void fetchBoard()}
+                    aria-label="Refresh petlibro"
+                    title="Refresh petlibro"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                      <path d="M21 3v6h-6" />
+                    </svg>
+                  </button>
+                  {status?.petlibroLinked ? (
+                    <button
+                      type="button"
+                      disabled={busy === "petlibro-unlink"}
+                      className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-rose-200 disabled:opacity-50"
+                      onClick={() => void unlinkPetlibro()}
+                      aria-label="Unlink Petlibro"
+                      title="Unlink Petlibro"
+                    >
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        className={`h-5 w-5 ${busy === "petlibro-unlink" ? "animate-pulse" : ""}`}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <path d="M16 17l5-5-5-5" />
+                        <path d="M21 12H9" />
+                      </svg>
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800/70 hover:text-white"
+                    onClick={() => toggleWidgetCollapse("petlibro")}
+                    aria-label={
+                      collapsedWidgets.petlibro ? "Expand petlibro" : "Collapse petlibro"
+                    }
+                    title={
+                      collapsedWidgets.petlibro ? "Expand petlibro" : "Collapse petlibro"
+                    }
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      {collapsedWidgets.petlibro ? (
+                        <path d="M6 15l6-6 6 6" />
+                      ) : (
+                        <path d="M6 9l6 6 6-6" />
+                      )}
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              {collapsedWidgets.petlibro ? null : !status?.petlibroConfigured ? (
+                <div className="mt-3 space-y-3">
+                  <p className="text-base text-slate-300 sm:text-lg">
+                    Link Petlibro to show today&apos;s food and water for cat diet advice.
+                  </p>
+                  <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-400 sm:text-base">
+                    <li>
+                      Use an email + password account created in the Petlibro app (not Google
+                      Sign-In, not website-only signup).
+                    </li>
+                    <li>
+                      Prefer a second shared account so the phone app keeps its own session.
+                    </li>
+                    <li>Link below, then ask the AI tab about diet, portions, or hydration.</li>
+                  </ol>
+                  <div className="space-y-2">
+                    <input
+                      type="email"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500"
+                      placeholder="Petlibro email"
+                      aria-label="Petlibro email"
+                      value={petlibroLinkEmail}
+                      onChange={(e) => setPetlibroLinkEmail(e.currentTarget.value)}
+                    />
+                    <input
+                      type="password"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-sky-500"
+                      placeholder="Petlibro password"
+                      aria-label="Petlibro password"
+                      value={petlibroLinkPassword}
+                      onChange={(e) => setPetlibroLinkPassword(e.currentTarget.value)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy === "petlibro-link"}
+                    className="inline-flex rounded-md bg-sky-600 px-4 py-2 text-base font-medium text-white hover:bg-sky-500 disabled:opacity-50 sm:text-lg"
+                    onClick={() => void linkPetlibro()}
+                  >
+                    {busy === "petlibro-link" ? "Linking…" : "Link Petlibro"}
+                  </button>
+                  <p className="text-xs text-slate-500 sm:text-sm">
+                    Or set{" "}
+                    <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">
+                      PETLIBRO_EMAIL
+                    </code>{" "}
+                    and{" "}
+                    <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">
+                      PETLIBRO_PASSWORD
+                    </code>{" "}
+                    in env.
+                  </p>
+                </div>
+              ) : petlibro?.error ? (
+                <p className="mt-3 text-base text-rose-300 sm:text-lg">{petlibro.error}</p>
+              ) : petlibro ? (
+                <div className="mt-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-2 text-sm sm:text-base">
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Food today</p>
+                      <p className="mt-1 font-medium tabular-nums text-slate-100">
+                        {petlibroFoodAmount !== null
+                          ? `${petlibroFoodAmount} ${petlibroFoodUnit}`
+                          : "—"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Water today</p>
+                      <p className="mt-1 font-medium tabular-nums text-slate-100">
+                        {petlibroWaterMl !== null
+                          ? `${Math.round(petlibroWaterMl)} ml${
+                              petlibroWaterTimes !== null ? ` · ${petlibroWaterTimes}×` : ""
+                            }`
+                          : "—"}
+                      </p>
+                    </div>
+                  </div>
+                  {petlibroDevices.length ? (
+                    <ul className="space-y-2 text-sm text-slate-300 sm:text-base">
+                      {petlibroDevices.map((d) => (
+                        <li
+                          key={d.deviceSn || d.name}
+                          className="rounded-lg border border-slate-800 bg-slate-950/30 px-3 py-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate font-medium text-slate-100">{d.name}</p>
+                            <p className="shrink-0 text-xs uppercase tracking-wide text-slate-500">
+                              {d.kind}
+                              {d.online === false ? " · offline" : ""}
+                            </p>
+                          </div>
+                          {d.kind === "feeder" && d.feeder ? (
+                            <p className="mt-1 tabular-nums text-slate-400">
+                              {typeof d.feeder.todayFeedingAmount === "number"
+                                ? `${d.feeder.todayFeedingAmount} ${d.feeder.todayFeedingUnit || "cups"}`
+                                : "—"}
+                              {typeof d.feeder.todayFeedingTimes === "number"
+                                ? ` · ${d.feeder.todayFeedingTimes} feeds`
+                                : ""}
+                              {d.feeder.foodLow ? " · food low" : ""}
+                            </p>
+                          ) : null}
+                          {d.kind === "fountain" && d.fountain ? (
+                            <p className="mt-1 tabular-nums text-slate-400">
+                              {typeof d.fountain.todayDrinkMl === "number"
+                                ? `${Math.round(d.fountain.todayDrinkMl)} ml`
+                                : "—"}
+                              {typeof d.fountain.todayDrinkTimes === "number"
+                                ? ` · ${d.fountain.todayDrinkTimes}×`
+                                : ""}
+                              {typeof d.fountain.waterLevelPercent === "number"
+                                ? ` · ${Math.round(d.fountain.waterLevelPercent)}% full`
+                                : ""}
+                            </p>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-slate-400 sm:text-base">
+                      No feeders or fountains on this account yet.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading petlibro…</p>
               )}
             </section>
 

@@ -18,22 +18,24 @@ Feature: Right-column widgets
     And it does not show only setup/link copy for that integration
 
     Examples:
-      | title   | flag               |
-      | Weather | weatherConfigured  |
-      | Catlink | catlinkLinked      |
-      | Spotify | spotifyLinked      |
-      | Hue     | hueReady           |
+      | title    | flag               |
+      | Weather  | weatherConfigured  |
+      | Catlink  | catlinkLinked      |
+      | Petlibro | petlibroLinked     |
+      | Spotify  | spotifyLinked      |
+      | Hue      | hueReady           |
 
   Scenario Outline: Unconfigured widgets show setup
     Given auth status has <flag> false
     Then the "<title>" widget shows setup or link/pair copy
 
     Examples:
-      | title   | flag               |
-      | Weather | weatherConfigured  |
-      | Catlink | catlinkLinked      |
-      | Spotify | spotifyLinked      |
-      | Hue     | hueReady           |
+      | title    | flag               |
+      | Weather  | weatherConfigured  |
+      | Catlink  | catlinkLinked      |
+      | Petlibro | petlibroLinked     |
+      | Spotify  | spotifyLinked      |
+      | Hue      | hueReady           |
 
   Scenario: Indoor when Nest is ready
     Given auth status has nestConfigured true

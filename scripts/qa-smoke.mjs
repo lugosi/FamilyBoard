@@ -159,6 +159,11 @@ async function main() {
     : new Set([501]);
   await check("GET /api/catlink", "/api/catlink", catlinkOk);
 
+  const petlibroOk = statusBody.petlibroLinked
+    ? new Set([200])
+    : new Set([501]);
+  await check("GET /api/petlibro", "/api/petlibro", petlibroOk);
+
   /** @type {Set<number>} */
   let nestAllowed;
   if (statusBody.googleLinked && statusBody.nestConfigured) {

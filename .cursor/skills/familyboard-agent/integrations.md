@@ -12,6 +12,7 @@ Read this when editing CatLink, Spotify, Hue, Nest, Google Calendar, Weather, or
 | `spotify-tokens.json` | Spotify OAuth |
 | `hue.json` | Hue bridge username |
 | `catlink-session.json` | CatLink token, phone, phoneIac, apiBase |
+| `petlibro-session.json` | Petlibro email, password, token, region, apiBase |
 | `nest-climate-history.json` | Indoor climate samples |
 | `todos.json` | Legacy local todos only when wiki is not configured; with wiki, tasks live in `todos/list.md` |
 | `chat-conversations.json` | Slack bot short-term memory per DM / channel thread (30 min TTL) |
@@ -61,6 +62,27 @@ Treat as **litterbox** when:
 - `POST /api/catlink/auth/link` / `unlink`
 
 Env: `CATLINK_PHONE`, `CATLINK_PASSWORD`, `CATLINK_PHONE_IAC`, `CATLINK_API_BASE`, optional `CATLINK_DEVICE_ID`.
+
+## Petlibro (`src/lib/petlibro.ts`)
+
+Unofficial cloud API (same as HA `jjjonesjr33/petlibro`): email + **MD5** password → `token` header.
+
+### Auth gotchas
+- Account must be created in the **Petlibro mobile app** with email/password. Google Sign-In and website-only signups fail (`MEMBER_NOT_EXIST` / no password).
+- Prefer a second shared account (share devices from the primary) so the phone app keeps its session.
+- Password max **18** characters. Region defaults to `US`; API base `https://api.us.petlibro.com` (EU app accounts usually still work on the US host).
+- Token expired `code === 1009` → re-login with stored password.
+
+### Snapshot fields
+- Feeders (`PLAF*`): `grainStatus.todayFeedingQuantity` (portions) → cups/oz/g/ml via `unitType`; feed times; food-low from `surplusGrain`
+- Fountains (`PLWF*`): `todayDrinkData.todayTotalMl` / `todayTotalTimes`; reservoir `%` from `realInfo.weightPercent`
+- Agent tool: `petlibro_consumption` (+ CatLink weight when linked) for diet advice
+
+### Routes
+- `GET /api/petlibro` → snapshot
+- `POST /api/petlibro/auth/link` / `unlink`
+
+Env: `PETLIBRO_EMAIL`, `PETLIBRO_PASSWORD`, optional `PETLIBRO_REGION`, `PETLIBRO_API_BASE`.
 
 ## Weather (`src/lib/weather.ts`)
 
