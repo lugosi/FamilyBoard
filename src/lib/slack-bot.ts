@@ -44,6 +44,7 @@ const READ_ONLY_TOOLS = new Set([
   "read_wiki_page",
   "read_google_sheet",
   "search_web",
+  "fetch_url",
   "list_lights",
   "house_dashboard",
   "strava_athlete",

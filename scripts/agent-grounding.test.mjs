@@ -11,6 +11,7 @@ test("AGENT_GROUNDING_RULES ban inventing missing documents and tool results", (
   assert.match(blob, /don'?t have that document/i);
   assert.match(blob, /TRUNCATED/i);
   assert.match(blob, /search_wiki/i);
+  assert.match(blob, /fetch_url/i);
   assert.match(blob, /Do not fabricate/i);
 });
 
