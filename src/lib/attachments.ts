@@ -125,6 +125,11 @@ export async function fileToAttachment(
             `${safeName} looks like a scanned PDF with no selectable text. Try a text PDF or paste the contents.`,
           );
         }
+        if (code === "pdf_dom_unavailable") {
+          throw new AttachmentError(
+            `Couldn't read PDF ${safeName} (PDF engine missing server support). Restart/redeploy FamilyBoard and try again.`,
+          );
+        }
         throw new AttachmentError(`Couldn't read PDF ${safeName}.`);
       }
     }
