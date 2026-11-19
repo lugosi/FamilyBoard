@@ -292,15 +292,50 @@ export async function recordCatlinkDietSample(snapshot: {
   });
 }
 
+const BACKFILL_MARKER = "cat-diet-backfill.json";
+
+async function shouldRunPetlibroBackfill(): Promise<boolean> {
+  const days = await listCatDietHistory();
+  const withWaterOrFood = days.filter(
+    (d) => d.waterMl != null || d.foodAmount != null || d.foodPortions != null,
+  );
+  if (withWaterOrFood.length >= 7) return false;
+  try {
+    const raw = await fs.readFile(path.join(getDataDir(), BACKFILL_MARKER), "utf-8");
+    const parsed = JSON.parse(raw) as { at?: string };
+    if (parsed.at && Date.now() - Date.parse(parsed.at) < 12 * 60 * 60 * 1000) {
+      return false;
+    }
+  } catch {
+    /* no marker yet */
+  }
+  return true;
+}
+
+async function markPetlibroBackfill(): Promise<void> {
+  await fs.mkdir(getDataDir(), { recursive: true });
+  await fs.writeFile(
+    path.join(getDataDir(), BACKFILL_MARKER),
+    JSON.stringify({ at: new Date().toISOString() }, null, 2),
+    "utf-8",
+  );
+}
+
 /** Pull live Petlibro + CatLink (when linked) and persist today's diet row. */
 export async function syncCatDietHistory(): Promise<CatDietDaySample | null> {
-  const { getPetlibroConfig, fetchPetlibroSnapshot } = await import("./petlibro");
-  const { getCatlinkConfig, fetchCatlinkSnapshot } = await import("./catlink");
+  const { getPetlibroConfig, fetchPetlibroSnapshot, backfillPetlibroDietHistory } =
+    await import("./petlibro");
+  const { getCatlinkConfig, fetchCatlinkSnapshot, backfillCatlinkDietHistory } =
+    await import("./catlink");
 
   let wrote: CatDietDaySample | null = null;
   if (await getPetlibroConfig()) {
     try {
       await fetchPetlibroSnapshot();
+      if (await shouldRunPetlibroBackfill()) {
+        await backfillPetlibroDietHistory({ months: 2 });
+        await markPetlibroBackfill();
+      }
       wrote = (await listCatDietHistory()).at(-1) ?? null;
     } catch {
       /* keep going for catlink */
@@ -309,6 +344,11 @@ export async function syncCatDietHistory(): Promise<CatDietDaySample | null> {
   if (await getCatlinkConfig()) {
     try {
       await fetchCatlinkSnapshot();
+      try {
+        await backfillCatlinkDietHistory({ days: 14 });
+      } catch {
+        /* weight backfill is best-effort */
+      }
       wrote = (await listCatDietHistory()).at(-1) ?? null;
     } catch {
       /* ignore */

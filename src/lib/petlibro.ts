@@ -521,6 +521,202 @@ export async function unlinkPetlibroAccount(): Promise<void> {
   await clearSession();
 }
 
+function monthKeysForBackfill(monthsBack: number, timeZone: string): string[] {
+  const keys: string[] = [];
+  const now = new Date();
+  const todayKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  const [y, m] = todayKey.split("-").map(Number);
+  let year = y;
+  let month = m;
+  for (let i = 0; i < monthsBack; i++) {
+    keys.push(`${year}-${String(month).padStart(2, "0")}`);
+    month -= 1;
+    if (month < 1) {
+      month = 12;
+      year -= 1;
+    }
+  }
+  return keys;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function dateKeyFromMs(ms: number, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
+}
+
+/**
+ * Backfill local diet history from Petlibro cloud.
+ * Water: `/data/deviceDrinkWater/history` (month dimension; ~170 days retained).
+ * Food: `/device/workRecord/list` feed events (~90 days), aggregated by local day.
+ * Skips today (live sync owns the in-progress day). Does not overwrite existing rows.
+ */
+export async function backfillPetlibroDietHistory(options?: {
+  months?: number;
+}): Promise<{ waterDays: number; foodDays: number }> {
+  const cfg = await getPetlibroConfig();
+  if (!cfg) return { waterDays: 0, foodDays: 0 };
+
+  const months = Math.max(1, Math.min(options?.months ?? 2, 6));
+  const { upsertCatDietDay, listCatDietHistory, localDateKey } = await import(
+    "./cat-diet-history"
+  );
+  const existing = new Map(
+    (await listCatDietHistory(30)).map((d) => [d.dateKey, d] as const),
+  );
+  const today = localDateKey(new Date(), cfg.timeZone);
+  let waterDays = 0;
+  let foodDays = 0;
+
+  return withToken(cfg, async (token) => {
+    const listPayload = await apiData(cfg, token, "/device/device/list", {});
+    const devices = listFromPayload(listPayload);
+    const fountains = devices.filter((d) => {
+      const kind = classifyDevice(str(d.productIdentifier), str(d.productName));
+      return kind === "fountain" && (str(d.deviceSn) || str(d.id));
+    });
+    const feeders = devices.filter((d) => {
+      const kind = classifyDevice(str(d.productIdentifier), str(d.productName));
+      return kind === "feeder" && (str(d.deviceSn) || str(d.id));
+    });
+
+    // --- Water history (authoritative daily totals) ---
+    const waterByDay = new Map<string, { ml: number; times: number }>();
+    for (const fountain of fountains) {
+      const deviceSn = str(fountain.deviceSn) || str(fountain.id) || "";
+      for (const month of monthKeysForBackfill(months, cfg.timeZone)) {
+        try {
+          const hist = asRecord(
+            await apiData(cfg, token, "/data/deviceDrinkWater/history", {
+              deviceSn,
+              dimension: "month",
+              dimensionParam: month,
+            }),
+          );
+          const xdate = asArray(hist?.xdate).map((v) => str(v)).filter(Boolean) as string[];
+          const intake = asArray(hist?.waterIntake);
+          const times = asArray(hist?.drinkTimes);
+          for (let i = 0; i < xdate.length; i++) {
+            const dateKey = xdate[i]!;
+            if (dateKey >= today) continue;
+            const ml = num(intake[i]) ?? 0;
+            const drinkTimes = num(times[i]) ?? 0;
+            if (ml <= 0 && drinkTimes <= 0) continue;
+            const prev = waterByDay.get(dateKey) || { ml: 0, times: 0 };
+            waterByDay.set(dateKey, {
+              ml: prev.ml + ml,
+              times: prev.times + drinkTimes,
+            });
+          }
+        } catch {
+          /* month may be empty / outside retention */
+        }
+        await sleep(1200);
+      }
+    }
+
+    for (const [dateKey, vals] of waterByDay) {
+      const row = existing.get(dateKey);
+      if (row?.waterMl != null) continue;
+      await upsertCatDietDay({
+        dateKey,
+        waterMl: vals.ml,
+        waterTimes: vals.times || undefined,
+      });
+      waterDays += 1;
+    }
+
+    // --- Food history from feed events ---
+    const foodByDay = new Map<
+      string,
+      { portions: number; feeds: number; unitType: number }
+    >();
+    for (const feeder of feeders) {
+      const deviceSn = str(feeder.deviceSn) || str(feeder.id) || "";
+      let unitType = 1;
+      try {
+        const realInfo = asRecord(
+          await postSerial(cfg, token, "/device/device/realInfo", deviceSn),
+        );
+        unitType = num(realInfo?.unitType) ?? 1;
+      } catch {
+        unitType = 1;
+      }
+      try {
+        const endTime = Date.now();
+        const startTime = endTime - 30 * 24 * 60 * 60 * 1000;
+        const workRecord = await apiData(cfg, token, "/device/workRecord/list", {
+          deviceSn,
+          startTime,
+          endTime,
+          size: 100,
+          type: ["GRAIN_OUTPUT_SUCCESS"],
+        });
+        const days = asArray(workRecord);
+        for (const day of days) {
+          const dayRec = asRecord(day);
+          const records = dayRec?.workRecords
+            ? asArray(dayRec.workRecords)
+            : dayRec && str(dayRec.type)
+              ? [day]
+              : asArray(day);
+          for (const record of records) {
+            const r = asRecord(record);
+            if (!r || str(r.type) !== "GRAIN_OUTPUT_SUCCESS") continue;
+            const ms = num(r.recordTime) ?? num(r.timestamp);
+            if (!ms) continue;
+            const dateKey = dateKeyFromMs(ms, cfg.timeZone);
+            if (dateKey >= today) continue;
+            const portions = num(r.actualGrainNum) ?? num(r.grainNum) ?? 0;
+            const prev = foodByDay.get(dateKey) || {
+              portions: 0,
+              feeds: 0,
+              unitType,
+            };
+            foodByDay.set(dateKey, {
+              portions: prev.portions + portions,
+              feeds: prev.feeds + 1,
+              unitType: prev.unitType || unitType,
+            });
+          }
+        }
+      } catch {
+        /* ignore feeder history gaps */
+      }
+      await sleep(800);
+    }
+
+    for (const [dateKey, vals] of foodByDay) {
+      const row = existing.get(dateKey);
+      if (row?.foodAmount != null || row?.foodPortions != null) continue;
+      if (vals.portions <= 0 && vals.feeds <= 0) continue;
+      const converted = convertFeedPortions(vals.portions, vals.unitType);
+      await upsertCatDietDay({
+        dateKey,
+        foodAmount: converted.amount,
+        foodUnit: converted.unit,
+        foodPortions: vals.portions,
+        foodFeedTimes: vals.feeds,
+      });
+      foodDays += 1;
+    }
+
+    return { waterDays, foodDays };
+  });
+}
+
 export async function fetchPetlibroSnapshot(): Promise<PetlibroSnapshot> {
   const cfg = await getPetlibroConfig();
   if (!cfg) {

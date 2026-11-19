@@ -77,7 +77,8 @@ Unofficial cloud API (same as HA `jjjonesjr33/petlibro`): email + **MD5** passwo
 ### Snapshot fields
 - Feeders (`PLAF*`): `grainStatus.todayFeedingQuantity` (portions) → cups/oz/g/ml via `unitType`; feed times; food-low from `surplusGrain`
 - Fountains (`PLWF*`): `todayDrinkData.todayTotalMl` / `todayTotalTimes`; reservoir `%` from `realInfo.weightPercent`
-- History: board/agent fetches + hourly background sync upsert `DATA_DIR/cat-diet-history.json` (one row per local day; CatLink weight/toilet when linked; fountain may backfill yesterday water)
+- History: board/agent fetches + hourly background sync upsert `DATA_DIR/cat-diet-history.json` (one row per local day; CatLink weight/toilet when linked)
+- Cloud backfill (not just today): water via `POST /data/deviceDrinkWater/history` (`dimension: month`, ~170 days retained on Petlibro servers); food via `workRecord/list` feed events (~90 days); CatLink weight via `summarySimple?date=` per past day. Live `todayDrinkData` is still only today+yesterday.
 - Agent tool: `petlibro_consumption` returns today + `history` averages/deltas + food/water (and weight) charts
 
 ### Routes
