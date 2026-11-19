@@ -105,6 +105,30 @@ export async function fileToAttachment(
     const delimiter = ext === "tsv" || type.includes("tab-separated") ? "\t" : ",";
     return gridsToAttachment(safeName, [{ name: safeName, rows: parseDelimited(text, delimiter) }]);
   }
+  {
+    const { extractPdfText, isPdfMimeOrName } = await import("./pdf-text");
+    if (isPdfMimeOrName(type, safeName)) {
+      try {
+        const pdf = await extractPdfText(data);
+        const { text, truncated } = truncateLines(pdf.text);
+        return {
+          name: safeName,
+          kind: "text",
+          summary: `PDF · ${pdf.pages} page${pdf.pages === 1 ? "" : "s"}${truncated ? ", truncated" : ""}`,
+          text,
+          ...(truncated ? { truncated } : {}),
+        };
+      } catch (e) {
+        const code = e instanceof Error ? e.message : "";
+        if (code === "pdf_no_text") {
+          throw new AttachmentError(
+            `${safeName} looks like a scanned PDF with no selectable text. Try a text PDF or paste the contents.`,
+          );
+        }
+        throw new AttachmentError(`Couldn't read PDF ${safeName}.`);
+      }
+    }
+  }
   if (type.startsWith("text/") || TEXT_EXTENSIONS.has(ext) || type === "application/json") {
     const raw = data.toString("utf8").replace(/^\uFEFF/, "");
     if (raw.includes("\u0000")) throw new AttachmentError(`${safeName} doesn't look like a text file.`);
@@ -139,7 +163,7 @@ export async function fileToAttachment(
     throw new AttachmentError(`Save ${safeName} as JPEG or PNG first (HEIC isn't supported).`);
   }
   throw new AttachmentError(
-    `${safeName}: only photos (JPEG/PNG/GIF/WebP), spreadsheets (.xlsx, .csv, .tsv), and text files are supported. For a Google Sheet, paste its link.`,
+    `${safeName}: only photos (JPEG/PNG/GIF/WebP), PDFs, spreadsheets (.xlsx, .csv, .tsv), and text files are supported. For a Google Sheet, paste its link.`,
   );
 }
 

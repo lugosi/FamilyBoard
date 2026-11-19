@@ -116,7 +116,8 @@ const WIKI_WRITE_TOOLS = new Set([
   "save_skill",
 ]);
 const CALENDAR_WRITE_TOOLS = new Set(["create_event", "update_event", "delete_event"]);
-const ATTACH_ACCEPT = ".csv,.tsv,.xlsx,.xlsm,.txt,.md,.json,.ics,.jpg,.jpeg,.png,.gif,.webp,text/*,image/jpeg,image/png,image/gif,image/webp";
+const ATTACH_ACCEPT =
+  ".csv,.tsv,.xlsx,.xlsm,.pdf,.txt,.md,.json,.ics,.jpg,.jpeg,.png,.gif,.webp,application/pdf,text/*,image/jpeg,image/png,image/gif,image/webp";
 
 function ChatSessionList({
   sessions,
