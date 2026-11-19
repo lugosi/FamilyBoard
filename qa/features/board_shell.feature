@@ -12,12 +12,7 @@ Feature: Board shell and access gate
     When I open "/"
     Then I am not redirected to "/unlock"
     And the board shell is visible
-    And I see tab controls for Board, Widgets, and AI
-
-  Scenario: Widgets tab is available
-    Given BOARD_ACCESS_CODE and BOARD_ACCESS_SECRET are not both set
-    When I open "/?tab=widgets"
-    Then the board shell is visible
+    And I see tab controls for Board and AI
 
   Scenario: Unlock page when the gate is enabled
     Given BOARD_ACCESS_CODE and BOARD_ACCESS_SECRET are both set

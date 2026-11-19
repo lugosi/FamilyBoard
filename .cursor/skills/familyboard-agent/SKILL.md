@@ -23,8 +23,8 @@ You are working on **FamilyBoard**: a Next.js 16 family dashboard (calendar + ri
 
 | Concern | Pattern |
 |---------|---------|
-| UI | Almost all dashboard UX lives in `src/components/Board.tsx` (AppShell tabs: Board / Widgets / AI) |
-| Widget layout | Client helpers in `board-widget-layout.ts`; persist via `board-widget-layout-store.ts` + `GET/PUT /api/board/widgets` — order + enabled; Arrange mode; Widgets tab paginates |
+| UI | Almost all dashboard UX lives in `src/components/Board.tsx` (AppShell tabs: Board / AI) |
+| Widget layout | `board-widget-layout.ts` + `GET/PUT /api/board/widgets` — order + enabled; Arrange on column + expanded view; expand all via divider (desktop) / top control (mobile) over calendar |
 | Logic | `src/lib/<integration>.ts` |
 | HTTP | Thin `src/app/api/**/route.ts` |
 | Secrets / tokens | Files under `getDataDir()` (`DATA_DIR` or `./data`) |
@@ -82,7 +82,7 @@ Read [integrations.md](integrations.md) before touching CatLink, Petlibro, Spoti
 
 ## WikiLLM (AI tab)
 
-- Shell: `AppShell` tabs **Board** | **AI** (`?tab=ai`). Do not fold AI UI into `Board.tsx`. Board may open the same `WikiLlm` as an overlay via AppShell (robot / Ask) — still no WikiLlm import in `Board.tsx`.
+- Shell: `AppShell` tabs **Board** | **AI** (`?tab=ai`). Legacy `?tab=widgets` maps to Board. Do not fold AI UI into `Board.tsx`. Board may open the same `WikiLlm` as an overlay via AppShell (robot / Ask) — still no WikiLlm import in `Board.tsx`.
 - Web chat sessions persist in `DATA_DIR/agent-chat-sessions.json` (`/api/agent/sessions`). Do **not** store transcripts in the GitHub wiki (wiki = curated knowledge only).
 - AI tab is **one prompt** → `POST /api/agent/chat` → `runFamilyAgent` in `src/lib/agent.ts` (Gemini function calling). Add capabilities as tools there, not as new panels.
 - Chat charts: tools return `charts`; agent always injects the same ` ```chart ` fences into `reply` (channel inferred). Prefer `combo` (bars + line) with `leftAxisLabel` / `rightAxisLabel` / `xAxisLabel`. AI tab: SVG via `renderChatChartSvg`. Slack: PNG upload (`files:write`) via `renderChatChartPng` + `uploadSlackFile` — needs bundled `public/fonts/DejaVuSans*.ttf` (Alpine has no system fonts; without them PNGs show bars/lines but blank labels).

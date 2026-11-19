@@ -5,12 +5,14 @@ import { Board } from "@/components/Board";
 import { OnekoCat } from "@/components/OnekoCat";
 import { WikiLlm } from "@/components/WikiLlm";
 
-export type AppTab = "board" | "widgets" | "ai";
+export type AppTab = "board" | "ai";
 
 const TAB_STORAGE_KEY = "familyboard-tab";
 
 function parseTab(raw: string | null | undefined): AppTab | null {
-  if (raw === "board" || raw === "widgets" || raw === "ai") return raw;
+  if (raw === "board" || raw === "ai") return raw;
+  // Legacy Widgets tab → Board (expand lives on the calendar/widgets divider).
+  if (raw === "widgets") return "board";
   return null;
 }
 
@@ -91,10 +93,9 @@ export function AppShell() {
   }, [boardChatOpen]);
 
   const showAiPage = tab === "ai";
-  const showAiOverlay =
-    (tab === "board" || tab === "widgets") && boardChatOpen;
+  const showAiOverlay = tab === "board" && boardChatOpen;
   const wikiActive = showAiPage || showAiOverlay;
-  const showBoardAsk = tab === "board" || tab === "widgets";
+  const showBoardAsk = tab === "board";
 
   return (
     <div className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-slate-950 text-slate-100">
@@ -106,7 +107,6 @@ export function AppShell() {
           {(
             [
               { id: "board" as const, label: "Board" },
-              { id: "widgets" as const, label: "Widgets" },
               { id: "ai" as const, label: "AI" },
             ] as const
           ).map(({ id, label }) => {
@@ -142,16 +142,15 @@ export function AppShell() {
         ) : null}
       </nav>
       <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-        {/* One Board instance — switching Board/Widgets only changes layout variant */}
         <div
           className={
-            tab === "board" || tab === "widgets"
+            tab === "board"
               ? "h-full min-h-0"
               : "pointer-events-none invisible absolute inset-0 h-full min-h-0"
           }
-          aria-hidden={tab !== "board" && tab !== "widgets"}
+          aria-hidden={tab !== "board"}
         >
-          <Board variant={tab === "widgets" ? "widgets" : "board"} />
+          <Board />
         </div>
 
         <div
@@ -202,7 +201,7 @@ export function AppShell() {
           </button>
         ) : null}
       </div>
-      {/* Outside tab panels so the cat stays on Board, Widgets, and AI. */}
+      {/* Outside tab panels so the cat stays on Board and AI. */}
       <OnekoCat enabled />
     </div>
   );

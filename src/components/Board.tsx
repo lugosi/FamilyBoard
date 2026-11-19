@@ -496,7 +496,51 @@ function clearCalendarExplicitChoice() {
   }
 }
 
-export function Board({ variant = "board" }: { variant?: "board" | "widgets" } = {}) {
+function WidgetsExpandToggle({
+  expanded,
+  onToggle,
+  className = "",
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={`inline-flex items-center justify-center rounded-md border border-slate-700 bg-slate-900/90 text-slate-200 hover:border-sky-500/60 hover:bg-slate-800 hover:text-white ${className}`}
+      onClick={onToggle}
+      aria-pressed={expanded}
+      aria-label={expanded ? "Collapse widgets" : "Expand all widgets"}
+      title={expanded ? "Collapse widgets" : "Expand all widgets"}
+    >
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        className="h-5 w-5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {expanded ? (
+          <>
+            <path d="M9 6l-6 6 6 6" />
+            <path d="M3 12h18" />
+          </>
+        ) : (
+          <>
+            <path d="M15 6l6 6-6 6" />
+            <path d="M3 12h18" />
+          </>
+        )}
+      </svg>
+    </button>
+  );
+}
+
+export function Board() {
   const search = useSearchParams();
   const [status, setStatus] = useState<Status | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -656,7 +700,7 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
     defaultBoardWidgetLayout(),
   );
   const [widgetArrangeMode, setWidgetArrangeMode] = useState(false);
-  const [widgetsPage, setWidgetsPage] = useState(0);
+  const [widgetsExpanded, setWidgetsExpanded] = useState(false);
 
   const sunriseToday =
     typeof weather?.sunriseToday === "string" ? weather.sunriseToday : undefined;
@@ -679,6 +723,10 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
     const id = window.setInterval(() => setClockNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (search.get("expandWidgets") === "1") setWidgetsExpanded(true);
+  }, [search]);
 
   function toggleWidgetCollapse(key: RightWidgetKey) {
     setCollapsedWidgets((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -2339,13 +2387,13 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
 
         <div
           className={
-            variant === "widgets"
-              ? "board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-x-hidden overflow-y-auto sm:gap-4 lg:h-full lg:overflow-hidden"
-              : "board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-x-hidden overflow-y-auto sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-5 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem]"
+            widgetsExpanded
+              ? "relative min-h-0 min-w-0 flex-1 overflow-hidden"
+              : "board-scrollbar grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 overflow-x-hidden overflow-y-auto sm:gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_auto_18rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-0 lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_auto_23rem] 2xl:grid-cols-[minmax(0,1fr)_auto_28rem]"
           }
         >
-          {variant === "board" ? (
-          <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4">
+          {!widgetsExpanded ? (
+          <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 shadow-lg shadow-slate-950/40 sm:rounded-2xl sm:p-3 md:p-4 lg:mr-2 xl:mr-2.5">
             <div className="mb-3 flex min-w-0 shrink-0 items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-3 sm:mb-4 sm:gap-4 sm:px-4 sm:py-3.5">
               <span className="shrink-0 pt-1 text-lg font-bold tracking-tight text-white sm:text-xl">
                 Today
@@ -2545,10 +2593,40 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
           </section>
           ) : null}
 
-          <div className="board-scrollbar flex h-full max-h-full min-h-0 min-w-0 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-y-contain pb-2 sm:gap-4">
+          {!widgetsExpanded ? (
+            <div className="relative z-30 hidden items-center justify-center px-0.5 lg:flex">
+              <WidgetsExpandToggle
+                expanded={false}
+                onToggle={() => setWidgetsExpanded(true)}
+                className="h-11 w-8 shrink-0"
+              />
+            </div>
+          ) : null}
+
+          <div
+            className={
+              widgetsExpanded
+                ? "board-scrollbar absolute inset-0 z-20 flex min-h-0 min-w-0 flex-col gap-2 overflow-x-hidden overflow-y-auto overscroll-y-contain bg-slate-950 p-2 sm:gap-3 sm:p-3"
+                : "board-scrollbar flex h-full max-h-full min-h-0 min-w-0 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-y-contain pb-2 sm:gap-4 lg:ml-1"
+            }
+          >
+            {widgetsExpanded ? (
+              <div className="pointer-events-none absolute inset-y-0 left-0 z-30 hidden items-center pl-1 lg:flex">
+                <WidgetsExpandToggle
+                  expanded
+                  onToggle={() => setWidgetsExpanded(false)}
+                  className="pointer-events-auto h-11 w-8 shrink-0 shadow-lg shadow-black/40"
+                />
+              </div>
+            ) : null}
             <div className="sticky top-0 z-10 flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/95 p-2 shadow-lg shadow-slate-950/40 backdrop-blur sm:p-2.5">
+              <WidgetsExpandToggle
+                expanded={widgetsExpanded}
+                onToggle={() => setWidgetsExpanded((v) => !v)}
+                className="h-9 w-9 lg:hidden"
+              />
               <p className="min-w-0 flex-1 truncate text-sm font-medium text-slate-300 sm:text-base">
-                {variant === "widgets" ? "All widgets" : "Board widgets"}
+                {widgetsExpanded ? "All widgets" : "Board widgets"}
               </p>
               <button
                 type="button"
@@ -3965,7 +4043,7 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
                       />
                       <span className="truncate font-medium">
                         {BOARD_WIDGET_META[key].title}
-                        {variant === "board" && !widgetLayout.enabled[key]
+                        {!widgetsExpanded && !widgetLayout.enabled[key]
                           ? " (hidden on Board)"
                           : ""}
                       </span>
@@ -3992,46 +4070,17 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
                 );
               };
 
-              if (variant === "widgets") {
-                const perPage = 4;
+              if (widgetsExpanded) {
                 const keys = widgetLayout.order;
-                const pageCount = Math.max(1, Math.ceil(keys.length / perPage));
-                const page = Math.min(widgetsPage, pageCount - 1);
-                const pageKeys = keys.slice(page * perPage, page * perPage + perPage);
                 return (
-                  <>
-                    <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2 sm:gap-4">
-                      {pageKeys.map((key) => (
-                        <div key={key} className="min-w-0">
-                          {arrangeChrome(key)}
-                          {widgetNodes[key]}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex shrink-0 items-center justify-center gap-3 pt-1">
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 disabled:opacity-40 sm:text-base"
-                        disabled={page <= 0}
-                        onClick={() => setWidgetsPage((p) => Math.max(0, p - 1))}
-                      >
-                        Prev
-                      </button>
-                      <p className="text-sm tabular-nums text-slate-400 sm:text-base">
-                        {page + 1} / {pageCount}
-                      </p>
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 disabled:opacity-40 sm:text-base"
-                        disabled={page >= pageCount - 1}
-                        onClick={() =>
-                          setWidgetsPage((p) => Math.min(pageCount - 1, p + 1))
-                        }
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2 lg:grid-cols-3 lg:gap-2 xl:grid-cols-3 2xl:grid-cols-4">
+                    {keys.map((key) => (
+                      <div key={key} className="min-w-0">
+                        {arrangeChrome(key)}
+                        {widgetNodes[key]}
+                      </div>
+                    ))}
+                  </div>
                 );
               }
 

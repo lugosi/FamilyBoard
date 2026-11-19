@@ -13,6 +13,11 @@ Feature: Right-column widgets
     Then I see an "Arrange" control for board widgets
     And GET "/api/board/widgets" returns widget order and enabled flags
 
+  Scenario: All widgets can expand over the calendar
+    Then I see an expand control on the calendar/widgets divider (desktop) or widget stack top (mobile)
+    And expanding shows every widget in a multi-column scrolling layout
+    And the same control collapses back to the board column
+
   Scenario: Clock widget renders
     Then the "Clock" widget section is present
 
