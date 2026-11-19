@@ -28,10 +28,28 @@ test("extractPdfText reads fixture", async () => {
   assert.doesNotMatch(pdf.text, /--\s*1 of 1/);
 });
 
-test("attachments, fetch_url, and chat UI wire PDF support", () => {
+test("extractPdfText reads TriFit schedule PDF", async () => {
+  const { readFileSync: read } = await import("node:fs");
+  const trifitPath = "/tmp/pdf-debug/trifit.pdf";
+  let data;
+  try {
+    data = read(trifitPath);
+  } catch {
+    // Offline CI without the downloaded schedule — skip.
+    return;
+  }
+  const pdf = await extractPdfText(data);
+  assert.match(pdf.text, /HIIT|Yoga|Functional Training/i);
+  assert.ok(pdf.text.length > 200);
+});
+
+test("attachments, fetch_url, and chat UI wire PDF support via unpdf", () => {
   const attachments = readFileSync(new URL("../src/lib/attachments.ts", import.meta.url), "utf8");
   assert.match(attachments, /extractPdfText/);
   assert.match(attachments, /PDFs/);
+  const pdfText = readFileSync(new URL("../src/lib/pdf-text.ts", import.meta.url), "utf8");
+  assert.match(pdfText, /from "unpdf"|import\("unpdf"\)/);
+  assert.doesNotMatch(pdfText, /pdf-parse/);
   const fetchUrl = readFileSync(new URL("../src/lib/fetch-url.ts", import.meta.url), "utf8");
   assert.match(fetchUrl, /extractPdfText/);
   assert.match(fetchUrl, /application\/pdf/);

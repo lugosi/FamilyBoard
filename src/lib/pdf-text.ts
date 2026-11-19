@@ -1,6 +1,6 @@
 /**
  * Extract readable text from a PDF buffer (chat uploads + fetch_url).
- * Uses pdf-parse on demand so optional dependency failures stay local.
+ * Uses unpdf (serverless PDF.js) — no DOM / @napi-rs/canvas, works in Next standalone.
  */
 
 export type PdfTextResult = {
@@ -16,7 +16,7 @@ function looksLikePdf(data: Buffer): boolean {
   return head.includes("%PDF-");
 }
 
-/** Strip pdf-parse page footers like `-- 1 of 3 --`. */
+/** Normalize extracted PDF text for the model. */
 export function cleanPdfExtractedText(raw: string): string {
   return raw
     .replace(/\n*--\s*\d+\s+of\s+\d+\s*--\s*/gi, "\n\n")
@@ -32,41 +32,43 @@ export function isPdfMimeOrName(mime: string, nameOrUrl = ""): boolean {
   return path.endsWith(".pdf");
 }
 
+function failureCode(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/not_a_pdf|Invalid PDF/i.test(msg)) return "not_a_pdf";
+  if (/pdf_no_text/i.test(msg)) return "pdf_no_text";
+  // Surface common Next/standalone canvas/DOM fallout as a stable code.
+  if (/DOM|canvas|DOMMatrix|OffscreenCanvas|document is not defined/i.test(msg)) {
+    return "pdf_dom_unavailable";
+  }
+  return "pdf_parse_failed";
+}
+
 /**
  * Parse PDF bytes → plain text. Throws Error with message:
- * not_a_pdf | pdf_no_text | pdf_parse_failed
+ * not_a_pdf | pdf_no_text | pdf_dom_unavailable | pdf_parse_failed
  */
 export async function extractPdfText(data: Buffer): Promise<PdfTextResult> {
   if (!looksLikePdf(data)) {
     throw new Error("not_a_pdf");
   }
-  const { PDFParse } = await import("pdf-parse");
-  const parser = new PDFParse({ data: new Uint8Array(data) });
+  // Copy into a standalone Uint8Array — PDF.js may detach the underlying buffer.
+  const bytes = Uint8Array.from(data);
   try {
-    const textResult = await parser.getText();
-    let title: string | undefined;
-    try {
-      const infoResult = await parser.getInfo();
-      const rawTitle = (infoResult?.info as { Title?: unknown } | undefined)?.Title;
-      if (typeof rawTitle === "string" && rawTitle.trim()) {
-        title = rawTitle.trim().slice(0, 200);
-      }
-    } catch {
-      /* title optional */
-    }
-    const text = cleanPdfExtractedText(textResult.text || "");
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    const pdf = await getDocumentProxy(bytes);
+    const result = await extractText(pdf, { mergePages: true });
+    const raw = typeof result.text === "string" ? result.text : "";
+    const text = cleanPdfExtractedText(raw);
     const pages =
-      typeof textResult.total === "number" && textResult.total > 0
-        ? textResult.total
-        : Math.max(1, textResult.pages?.length || 1);
+      typeof result.totalPages === "number" && result.totalPages > 0
+        ? result.totalPages
+        : 1;
     if (!text) throw new Error("pdf_no_text");
-    return { text, pages, title };
+    return { text, pages };
   } catch (e) {
     if (e instanceof Error && (e.message === "not_a_pdf" || e.message === "pdf_no_text")) {
       throw e;
     }
-    throw new Error("pdf_parse_failed");
-  } finally {
-    await parser.destroy().catch(() => undefined);
+    throw new Error(failureCode(e));
   }
 }
