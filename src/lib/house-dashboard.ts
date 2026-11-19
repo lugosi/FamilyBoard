@@ -6,6 +6,7 @@ import {
   type HouseQuickAction,
 } from "./house-dashboard-format";
 import { isHueConfigured, listHueAreas, type HueArea } from "./hue";
+import { fetchPetlibroSnapshot, getPetlibroConfig } from "./petlibro";
 import { readSpotifyTokens, requireSpotifyOAuthEnv, spotifyApiFetch } from "./spotify";
 import { fetchOpenMeteo } from "./weather";
 
@@ -21,6 +22,7 @@ export type HouseDashboard = {
     hue: boolean;
     spotify: boolean;
     catlink: boolean;
+    petlibro: boolean;
     weather: boolean;
   };
 };
@@ -65,6 +67,29 @@ async function loadCatlink(): Promise<{
       catName: snap.catName ?? null,
       online: snap.online,
     };
+  } catch (e) {
+    return { linked: true, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+async function loadPetlibro(): Promise<{
+  linked: boolean;
+  foodLabel?: string;
+  waterLabel?: string;
+  error?: string;
+}> {
+  if (!(await getPetlibroConfig())) return { linked: false };
+  try {
+    const snap = await fetchPetlibroSnapshot();
+    const foodLabel =
+      typeof snap.totalFoodAmountToday === "number"
+        ? `${snap.totalFoodAmountToday} ${snap.totalFoodUnit || "cups"} food`
+        : undefined;
+    const waterLabel =
+      typeof snap.totalWaterMlToday === "number"
+        ? `${Math.round(snap.totalWaterMlToday)} ml water`
+        : undefined;
+    return { linked: true, foodLabel, waterLabel };
   } catch (e) {
     return { linked: true, error: e instanceof Error ? e.message : String(e) };
   }
@@ -133,9 +158,10 @@ export async function fetchHouseDashboard(): Promise<HouseDashboard> {
     minute: "2-digit",
   }).format(new Date());
 
-  const [hue, catlink, spotify, weather] = await Promise.all([
+  const [hue, catlink, petlibro, spotify, weather] = await Promise.all([
     loadHue(),
     loadCatlink(),
+    loadPetlibro(),
     loadSpotify(),
     loadWeather(),
   ]);
@@ -223,6 +249,28 @@ export async function fetchHouseDashboard(): Promise<HouseDashboard> {
     }
   }
 
+  if (petlibro.linked) {
+    if (petlibro.error) {
+      panels.push({
+        id: "petlibro",
+        title: "Pet food & water",
+        status: `Unavailable · ${petlibro.error}`,
+      });
+    } else {
+      const statusBits = [petlibro.foodLabel, petlibro.waterLabel].filter(Boolean);
+      panels.push({
+        id: "petlibro",
+        title: "Pet food & water",
+        status: statusBits.length ? statusBits.join(" · ") : "No feeder/fountain data yet",
+      });
+      quickActions.push({
+        id: "petlibro-diet",
+        label: "Cat diet",
+        prompt: "How much did the cat eat and drink today? Any diet advice?",
+      });
+    }
+  }
+
   if (spotify.linked) {
     if (spotify.error) {
       panels.push({ id: "music", title: "Music", status: `Unavailable · ${spotify.error}` });
@@ -254,7 +302,8 @@ export async function fetchHouseDashboard(): Promise<HouseDashboard> {
     panels.push({
       id: "empty",
       title: "House",
-      status: "No linked devices yet — connect Hue, CatLink, or Spotify on the Board.",
+      status:
+        "No linked devices yet — connect Hue, CatLink, Petlibro, or Spotify on the Board.",
     });
   }
 
@@ -275,6 +324,7 @@ export async function fetchHouseDashboard(): Promise<HouseDashboard> {
       hue: hue.linked,
       spotify: spotify.linked,
       catlink: catlink.linked,
+      petlibro: petlibro.linked,
       weather: weather.linked,
     },
   };

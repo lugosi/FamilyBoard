@@ -77,7 +77,7 @@ Never conflate these.
 
 ## Integration hard rules
 
-Read [integrations.md](integrations.md) before touching CatLink, Spotify, Hue, Nest, Google, or WikiLLM.
+Read [integrations.md](integrations.md) before touching CatLink, Petlibro, Spotify, Hue, Nest, Google, or WikiLLM.
 
 ## WikiLLM (AI tab)
 

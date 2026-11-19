@@ -4,6 +4,7 @@ import { getHueBridgeIp, readHueUsername } from "@/lib/hue";
 import { readSpotifyTokens } from "@/lib/spotify";
 import { getWeatherCoordinates } from "@/lib/weather";
 import { getCatlinkEnvReady, isCatlinkLinked } from "@/lib/catlink";
+import { getPetlibroEnvReady, isPetlibroLinked } from "@/lib/petlibro";
 import { isGeminiConfigured } from "@/lib/gemini";
 import { isWikilmGithubConfigured } from "@/lib/wikilm-github";
 import { isSlackConfigured } from "@/lib/slack";
@@ -21,6 +22,7 @@ export async function GET(request: Request) {
   const weather = getWeatherCoordinates();
   const nestProjectId = getNestProjectId();
   const catlinkLinked = await isCatlinkLinked();
+  const petlibroLinked = await isPetlibroLinked();
   const googleLinked = Boolean(google?.refresh_token);
   const stravaConfigured = isStravaConfigured();
   const wikiConfigured = isWikilmGithubConfigured();
@@ -71,6 +73,8 @@ export async function GET(request: Request) {
     nestConfigured: Boolean(nestProjectId),
     catlinkLinked,
     catlinkConfigured: catlinkLinked || getCatlinkEnvReady(),
+    petlibroLinked,
+    petlibroConfigured: petlibroLinked || getPetlibroEnvReady(),
     geminiConfigured: isGeminiConfigured(),
     wikilmGithubConfigured: wikiConfigured,
     gmailReady: googleLinked,
