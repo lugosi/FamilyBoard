@@ -70,9 +70,9 @@ Never conflate these.
 
 ## Weather
 
-- `HOURLY_FORECAST_HOURS = 18` → `hourlyNext18`
-- Chart: `WeatherHourlyChart` — smooth cubic path (`smoothLinePath`), high/low labels
-- Show weather icon only when `weatherIconKey(code, isNight)` changes vs previous hour
+- Glanceable board widget: large temp + `wmoLabel` condition, explicit H/L + rain %, labeled humidity/wind, `WeatherHourlyStrip` (12h), `WeatherDailyStrip` (5 days with shared-scale range bars)
+- `HOURLY_FORECAST_HOURS = 18` → `hourlyNext18` (includes optional `precipChance`); daily rows include `precipChance`
+- Legacy chart: `WeatherHourlyChart` still available; prefer strips for wall readability
 - Open-Meteo, no API key; needs `WEATHER_LAT` / `WEATHER_LON`
 - Daily calendar icons use `representativeDaytimeWeatherCode` (daytime hours), not Open-Meteo’s 24h max `weather_code` (overnight skew)
 

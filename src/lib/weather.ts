@@ -6,9 +6,15 @@ export type DailyForecast = {
   maxF: number;
   minF: number;
   code: number;
+  /** Peak precipitation probability for the day (0–100), when available. */
+  precipChance?: number;
 };
 
 export const HOURLY_FORECAST_HOURS = 18;
+/** Hours shown in the board weather strip (subset of hourlyNext18). */
+export const HOURLY_STRIP_HOURS = 12;
+/** Days shown in the board multi-day strip. */
+export const DAILY_STRIP_DAYS = 5;
 
 export type WeatherSnapshot = {
   latitude: number;
@@ -26,6 +32,7 @@ export type WeatherSnapshot = {
     time: string;
     temperatureF: number;
     code: number;
+    precipChance?: number;
   }>;
   /** Today's sunrise/sunset in local forecast timezone (ISO strings). */
   sunriseToday?: string;
@@ -193,7 +200,13 @@ function fixtureWeatherSnapshot(coords: {
     const d = new Date(now);
     d.setDate(d.getDate() + i);
     const date = dateKey(d);
-    daily.push({ date, maxF: 68 + (i % 5), minF: 52 + (i % 3), code: i % 3 === 0 ? 61 : 2 });
+    daily.push({
+      date,
+      maxF: 68 + (i % 5),
+      minF: 52 + (i % 3),
+      code: i % 3 === 0 ? 61 : 2,
+      precipChance: i % 3 === 0 ? 70 : 10 + (i % 4) * 5,
+    });
     sunByDate[date] = {
       sunrise: `${date}T06:45`,
       sunset: `${date}T19:30`,
@@ -210,6 +223,7 @@ function fixtureWeatherSnapshot(coords: {
       time: hourIso(t),
       temperatureF: 60 + (i % 8),
       code: i % 4 === 0 ? 3 : 1,
+      precipChance: i >= 3 && i <= 6 ? 40 + i * 5 : i % 5 === 0 ? 15 : 0,
     });
   }
 
@@ -405,8 +419,9 @@ export async function fetchOpenMeteoAt(
       "weather_code",
       "wind_speed_10m",
     ].join(","),
-    daily: "weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset",
-    hourly: "temperature_2m,weather_code",
+    daily:
+      "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset",
+    hourly: "temperature_2m,weather_code,precipitation_probability",
     timezone: process.env.WEATHER_TIMEZONE?.trim() || "auto",
     forecast_days: String(forecastDays),
   });
@@ -431,6 +446,7 @@ export async function fetchOpenMeteoAt(
       weather_code?: number[];
       temperature_2m_max?: number[];
       temperature_2m_min?: number[];
+      precipitation_probability_max?: number[];
       sunrise?: string[];
       sunset?: string[];
     };
@@ -438,6 +454,7 @@ export async function fetchOpenMeteoAt(
       time?: string[];
       weather_code?: number[];
       temperature_2m?: number[];
+      precipitation_probability?: number[];
     };
   };
 
@@ -451,11 +468,13 @@ export async function fetchOpenMeteoAt(
   const codes = data.daily?.weather_code ?? [];
   const max = data.daily?.temperature_2m_max ?? [];
   const min = data.daily?.temperature_2m_min ?? [];
+  const precipMax = data.daily?.precipitation_probability_max ?? [];
   const dailySunrise = data.daily?.sunrise ?? [];
   const dailySunset = data.daily?.sunset ?? [];
   const hourlyTimes = data.hourly?.time ?? [];
   const hourlyTemps = data.hourly?.temperature_2m ?? [];
   const hourlyCodes = data.hourly?.weather_code ?? [];
+  const hourlyPrecip = data.hourly?.precipitation_probability ?? [];
 
   const daily = times.map((date, i) => {
     const apiCode = codes[i] ?? 0;
@@ -466,6 +485,7 @@ export async function fetchOpenMeteoAt(
       dailySunrise[i],
       dailySunset[i],
     );
+    const precipRaw = precipMax[i];
     return {
       date,
       maxF: max[i] ?? 0,
@@ -474,6 +494,10 @@ export async function fetchOpenMeteoAt(
         daytimeCodes.length > 0
           ? representativeDaytimeWeatherCode(daytimeCodes)
           : apiCode,
+      precipChance:
+        typeof precipRaw === "number" && Number.isFinite(precipRaw)
+          ? Math.round(precipRaw)
+          : undefined,
     };
   });
 
@@ -486,11 +510,18 @@ export async function fetchOpenMeteoAt(
   const fromIdx = startIdx >= 0 ? startIdx : 0;
   const hourlyNext18 = hourlyTimes
     .slice(fromIdx, fromIdx + HOURLY_FORECAST_HOURS)
-    .map((time, i) => ({
-      time,
-      temperatureF: hourlyTemps[fromIdx + i] ?? 0,
-      code: hourlyCodes[fromIdx + i] ?? 0,
-    }));
+    .map((time, i) => {
+      const precipRaw = hourlyPrecip[fromIdx + i];
+      return {
+        time,
+        temperatureF: hourlyTemps[fromIdx + i] ?? 0,
+        code: hourlyCodes[fromIdx + i] ?? 0,
+        precipChance:
+          typeof precipRaw === "number" && Number.isFinite(precipRaw)
+            ? Math.round(precipRaw)
+            : undefined,
+      };
+    });
 
   const sunByDate: Record<string, SunTimes> = {};
   for (let i = 0; i < times.length; i++) {

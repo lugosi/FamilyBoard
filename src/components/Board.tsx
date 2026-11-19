@@ -29,10 +29,11 @@ import {
   type CalendarRangeKeys,
   type GEvent,
 } from "@/lib/calendar-layout";
+import { WeatherDailyStrip } from "@/components/WeatherDailyStrip";
 import {
-  WeatherHourlyChart,
-  type WeatherHourlyPoint,
-} from "@/components/WeatherHourlyChart";
+  WeatherHourlyStrip,
+  type WeatherHourlyStripPoint,
+} from "@/components/WeatherHourlyStrip";
 import { WeatherIcon } from "@/components/WeatherIcon";
 import {
   dailyForecastByDate,
@@ -41,6 +42,7 @@ import {
   type DailyForecast,
   type SunTimes,
 } from "@/lib/weather";
+import { wmoLabel } from "@/lib/wmo";
 import { IndoorClimateCharts } from "@/components/IndoorClimateCharts";
 import type { ClimateHistorySample } from "@/lib/nest-climate-history";
 import {
@@ -1554,7 +1556,7 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
     [locationWeatherByQuery],
   );
 
-  const todayDateKey = dateKeyLocal(new Date());
+  const todayDateKey = dateKeyLocal(clockNow);
 
   async function saveEdit() {
     if (!editOpen?.id) return;
@@ -2109,14 +2111,21 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
     () => dailyForecastByDate(daily),
     [daily],
   );
-  const hourlyNext18 = weather?.hourlyNext18 as WeatherHourlyPoint[] | undefined;
+  const hourlyNext18 = weather?.hourlyNext18 as
+    | WeatherHourlyStripPoint[]
+    | undefined;
   const weatherSunByDate = weather?.sunByDate as Record<string, SunTimes> | undefined;
   const weatherIconIsNight = useMemo(
     () => isNightForWeatherIcon(clockNow, weatherSunByDate),
     [clockNow, weatherSunByDate],
   );
   const todayForecast =
-    calendarDailyForecast[dateKeyLocal(clockNow)] ?? daily?.[0];
+    calendarDailyForecast[todayDateKey] ?? daily?.[0];
+  const upcomingDaily = useMemo(() => {
+    if (!daily?.length) return [];
+    const startIdx = daily.findIndex((d) => d.date >= todayDateKey);
+    return daily.slice(startIdx >= 0 ? startIdx : 0);
+  }, [daily, todayDateKey]);
   const catlinkCatName =
     typeof catlink?.catName === "string" && catlink.catName ? catlink.catName : null;
   const catlinkCatWeightKg =
@@ -2717,76 +2726,83 @@ export function Board({ variant = "board" }: { variant?: "board" | "widgets" } =
                       .
                     </p>
                   ) : current ? (
-                    <div className="mt-2 space-y-2.5">
-                      <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <p className="text-4xl font-semibold leading-none text-white sm:text-5xl">
-                            {Math.round(current.temperatureF ?? 0)}°
-                            <span className="text-base text-slate-400 sm:text-lg">F</span>
-                          </p>
+                    <div className="mt-2 space-y-3">
+                      <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-5xl font-semibold leading-none tabular-nums text-white sm:text-6xl">
+                              {Math.round(current.temperatureF ?? 0)}°
+                            </p>
+                            <p className="mt-1.5 truncate text-base font-medium text-slate-200 sm:text-lg">
+                              {wmoLabel(Number(current.code ?? 0))}
+                            </p>
+                          </div>
                           <WeatherIcon
                             code={Number(current.code ?? 0)}
                             isNight={weatherIconIsNight}
-                            className="h-9 w-9 shrink-0 sm:h-10 sm:w-10"
+                            className="h-12 w-12 shrink-0 text-sky-200 sm:h-14 sm:w-14"
                           />
                         </div>
-                        <div className="flex flex-col items-end gap-1.5 text-sm text-slate-300 sm:text-base">
-                          {todayForecast &&
-                          typeof todayForecast.minF === "number" &&
-                          typeof todayForecast.maxF === "number" ? (
-                            <span
-                              className="whitespace-nowrap text-xs tabular-nums text-slate-400 sm:text-sm"
-                              title="Today's forecast high / low"
-                            >
-                              <span className="font-semibold text-slate-100">
+                        {todayForecast &&
+                        typeof todayForecast.minF === "number" &&
+                        typeof todayForecast.maxF === "number" ? (
+                          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm sm:text-base">
+                            <p className="tabular-nums text-slate-200">
+                              <span className="text-slate-500">H </span>
+                              <span className="font-semibold text-white">
                                 {Math.round(todayForecast.maxF)}°
                               </span>
-                              <span className="mx-1 text-slate-500">/</span>
-                              <span className="text-slate-300">
+                              <span className="mx-1.5 text-slate-600">·</span>
+                              <span className="text-slate-500">L </span>
+                              <span className="font-semibold text-slate-100">
                                 {Math.round(todayForecast.minF)}°
                               </span>
-                            </span>
-                          ) : null}
-                          <div className="flex items-center gap-3">
-                            <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                              <svg
-                                aria-hidden="true"
-                                viewBox="0 0 24 24"
-                                className="h-4 w-4 text-sky-300"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.8"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
+                            </p>
+                            {typeof todayForecast.precipChance === "number" ? (
+                              <p
+                                className={`tabular-nums ${
+                                  todayForecast.precipChance >= 30
+                                    ? "font-medium text-sky-300"
+                                    : "text-slate-400"
+                                }`}
                               >
-                                <path d="M12 3C12 3 6 10 6 14a6 6 0 0 0 12 0c0-4-6-11-6-11z" />
-                              </svg>
+                                Rain {todayForecast.precipChance}%
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        <div className="mt-2.5 grid grid-cols-2 gap-2">
+                          <div className="rounded-md bg-slate-900/70 px-2.5 py-1.5">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-500 sm:text-xs">
+                              Humidity
+                            </p>
+                            <p className="text-base font-semibold tabular-nums text-slate-100 sm:text-lg">
                               {Math.round(current.humidity ?? 0)}%
-                            </span>
-                            <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                              <svg
-                                aria-hidden="true"
-                                viewBox="0 0 24 24"
-                                className="h-4 w-4 text-slate-300"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.8"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <path d="M3 9h10a3 3 0 1 0-3-3" />
-                                <path d="M3 15h14a3 3 0 1 1-3 3" />
-                              </svg>
-                              {Math.round(current.windMph ?? 0)} mph
-                            </span>
+                            </p>
+                          </div>
+                          <div className="rounded-md bg-slate-900/70 px-2.5 py-1.5">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-500 sm:text-xs">
+                              Wind
+                            </p>
+                            <p className="text-base font-semibold tabular-nums text-slate-100 sm:text-lg">
+                              {Math.round(current.windMph ?? 0)}{" "}
+                              <span className="text-sm font-medium text-slate-400">
+                                mph
+                              </span>
+                            </p>
                           </div>
                         </div>
                       </div>
                       {hourlyNext18 && hourlyNext18.length > 0 ? (
-                        <WeatherHourlyChart
+                        <WeatherHourlyStrip
                           hours={hourlyNext18}
                           sunByDate={weatherSunByDate}
-                          className="h-32 shrink-0 sm:h-36"
+                        />
+                      ) : null}
+                      {upcomingDaily.length > 0 ? (
+                        <WeatherDailyStrip
+                          days={upcomingDaily}
+                          todayKey={todayDateKey}
                         />
                       ) : null}
                     </div>
