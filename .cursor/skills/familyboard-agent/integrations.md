@@ -14,7 +14,7 @@ Read this when editing CatLink, Spotify, Hue, Nest, Google Calendar, Weather, or
 | `catlink-session.json` | CatLink token, phone, phoneIac, apiBase |
 | `petlibro-session.json` | Petlibro email, password, token, region, apiBase |
 | `cat-diet-history.json` | Rolling ~180 local days of cat weight + food + water |
-| `board-widget-layout.json` | Board widget order + enabled flags (Arrange / Widgets tab) |
+| `board-widget-layout.json` | Board widget order + enabled flags (Arrange / expand-all overlay) |
 | `nest-climate-history.json` | Indoor climate samples |
 | `todos.json` | Legacy local todos only when wiki is not configured; with wiki, tasks live in `todos/list.md` |
 | `chat-conversations.json` | Slack bot short-term memory per DM / channel thread (30 min TTL) |
