@@ -99,6 +99,7 @@ Read [integrations.md](integrations.md) before touching CatLink, Spotify, Hue, N
   - The AI tab has a **Chat | Wiki** switch (`WikiBrowser.tsx`): browse/search/edit/move/delete. It is the one deliberate exception to "tools, not panels".
 - Gmail drop-box: `scan_to_todos` / `scan` → todos (`DATA_DIR/todos.json`) **and** calendar events (tagged `extendedProperties.private.familyboardGmailId`), then `FamilyBoard/Processed` label. Optional `GMAIL_AUTO_SCAN_MINUTES`.
 - Slack: same agent via Socket Mode (`src/lib/slack.ts`, `slack-bot.ts`), started from `src/instrumentation.ts`. Answers DMs and channel @mentions (thread replies); open to the whole workspace. Setup + manifest: `docs/SLACK_SETUP.md`.
+- **Morning brief:** background ticker in `src/lib/background.ts` → `tickDailyBrief` (`src/lib/daily-brief.ts`). Default **7:00** `DEFAULT_TIMEZONE` (Pacific). Once per local day after that time: DMs registered Slack users + creates an AI chat session (calendar / weather / todos / house attention). Slack users auto-register on DM; `morning on` / `morning off`; store in `DATA_DIR/daily-brief.json`. Tools UI + `GET/POST /api/daily-brief`. Env: `DAILY_BRIEF_*` in `.env.example`.
 - Re-link Google after enabling Gmail API / new OAuth scopes.
 
 **CatLink (highest footgun density):**

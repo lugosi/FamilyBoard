@@ -26,6 +26,18 @@ type Status = {
   stravaRedirectUri?: string;
   stravaCallbackDomain?: string;
   stravaTrainingSkillInWiki?: boolean;
+  dailyBrief?: {
+    enabled: boolean;
+    webAgent: boolean;
+    hour: number;
+    minute: number;
+    timeZone: string;
+    lastSentDateKey: string | null;
+    lastSentAt: string | null;
+    lastError: string | null;
+    slackSubscriberCount: number;
+    dueSoon: boolean;
+  } | null;
   publicAppUrl?: string | null;
 };
 
@@ -1620,6 +1632,138 @@ export function WikiLlm({
                     Ask the assistant to list or add todos. Link the GitHub wiki to keep them on{" "}
                     <code className="text-slate-200">todos/list.md</code>.
                   </p>
+                )}
+              </section>
+
+              <section
+                aria-label="Morning brief"
+                className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-3 text-base leading-relaxed text-slate-300"
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h3 className="font-semibold text-white">Morning brief</h3>
+                  <button
+                    type="button"
+                    className={sideBtn}
+                    disabled={Boolean(busy)}
+                    onClick={() => {
+                      void (async () => {
+                        setBusy("daily-brief");
+                        setError(null);
+                        try {
+                          const res = await fetch("/api/daily-brief", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ action: "send_now" }),
+                          });
+                          const json = (await res.json()) as {
+                            skipped?: string;
+                            webSessionId?: string | null;
+                            slack?: { ok: boolean }[];
+                            error?: string;
+                          };
+                          if (!res.ok) throw new Error(json.error || `Failed (${res.status})`);
+                          const slackOk = (json.slack ?? []).filter((s) => s.ok).length;
+                          setNote(
+                            json.webSessionId
+                              ? `Morning brief sent · web chat created · Slack ${slackOk}`
+                              : `Morning brief ran · Slack ${slackOk}`,
+                          );
+                          void refresh();
+                          void refreshSessionList();
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : "Could not send brief");
+                        } finally {
+                          setBusy(null);
+                        }
+                      })();
+                    }}
+                  >
+                    {busy === "daily-brief" ? "Sending…" : "Send now"}
+                  </button>
+                </div>
+                {status?.dailyBrief ? (
+                  <>
+                    <p className="text-sm text-slate-400">
+                      {String(status.dailyBrief.hour).padStart(2, "0")}:
+                      {String(status.dailyBrief.minute).padStart(2, "0")}{" "}
+                      {status.dailyBrief.timeZone} · calendar, weather, todos, house alerts → Slack DMs
+                      + AI chat
+                    </p>
+                    <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+                      <dt className="text-slate-500">Schedule</dt>
+                      <dd className="text-slate-100">
+                        <button
+                          type="button"
+                          className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                          disabled={Boolean(busy)}
+                          onClick={() => {
+                            void (async () => {
+                              setBusy("daily-brief-toggle");
+                              try {
+                                await fetch("/api/daily-brief", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    action: "configure",
+                                    enabled: !status.dailyBrief?.enabled,
+                                  }),
+                                });
+                                void refresh();
+                              } finally {
+                                setBusy(null);
+                              }
+                            })();
+                          }}
+                        >
+                          {status.dailyBrief.enabled ? "on" : "off"}
+                        </button>
+                      </dd>
+                      <dt className="text-slate-500">Web chat</dt>
+                      <dd className="text-slate-100">
+                        <button
+                          type="button"
+                          className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                          disabled={Boolean(busy)}
+                          onClick={() => {
+                            void (async () => {
+                              setBusy("daily-brief-web");
+                              try {
+                                await fetch("/api/daily-brief", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    action: "configure",
+                                    webAgent: !status.dailyBrief?.webAgent,
+                                  }),
+                                });
+                                void refresh();
+                              } finally {
+                                setBusy(null);
+                              }
+                            })();
+                          }}
+                        >
+                          {status.dailyBrief.webAgent ? "on" : "off"}
+                        </button>
+                      </dd>
+                      <dt className="text-slate-500">Slack</dt>
+                      <dd className="text-slate-100">
+                        {status.dailyBrief.slackSubscriberCount} registered
+                        {status.slackConfigured
+                          ? " (DM the bot, or say morning on / morning off)"
+                          : ""}
+                      </dd>
+                      <dt className="text-slate-500">Last sent</dt>
+                      <dd className="text-slate-100">
+                        {status.dailyBrief.lastSentDateKey || "—"}
+                        {status.dailyBrief.lastError ? (
+                          <span className="text-amber-200"> · {status.dailyBrief.lastError}</span>
+                        ) : null}
+                      </dd>
+                    </dl>
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-500">Loading schedule…</p>
                 )}
               </section>
 

@@ -1,4 +1,6 @@
 import { getBackgroundGoogleRedirectUri } from "./app-url";
+import { tickDailyBrief } from "./daily-brief";
+import { readDailyBriefStore } from "./daily-brief-store";
 import { isGeminiConfigured } from "./gemini";
 import { scanInboxToTodos } from "./gmail";
 import { readGoogleTokens } from "./google";
@@ -33,9 +35,27 @@ function startInboxAutoScan(): void {
   console.log(`[inbox] auto-scan every ${minutes} min`);
 }
 
+function startDailyBriefTicker(): void {
+  const tickMs = 60_000;
+  const run = () => void tickDailyBrief();
+  setInterval(run, tickMs);
+  // Catch up shortly after boot if we're already past 7am local.
+  setTimeout(run, 8_000);
+  void readDailyBriefStore().then((s) => {
+    if (!s.enabled) {
+      console.log("[daily-brief] disabled");
+      return;
+    }
+    console.log(
+      `[daily-brief] scheduled ${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")} ${s.timeZone} → Slack (${s.slackUserIds.length}) + web=${s.webAgent ? "on" : "off"}`,
+    );
+  });
+}
+
 export function startBackgroundJobs(): void {
   if (g.__familyboardBackground) return;
   g.__familyboardBackground = true;
   startSlackBot();
   startInboxAutoScan();
+  startDailyBriefTicker();
 }
