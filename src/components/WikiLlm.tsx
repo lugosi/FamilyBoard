@@ -945,6 +945,7 @@ export function WikiLlm({
     if (busy) return;
     setBusy(`${decision}-${pending.id}`);
     setError(null);
+    const resolution: ApprovalResolved = decision === "approve" ? "approved" : "rejected";
     try {
       const res = await fetch("/api/agent/approve", {
         method: "POST",
@@ -957,25 +958,36 @@ export function WikiLlm({
         error?: string;
       }>(res);
       if (!res.ok) throw new Error(json.error || `Could not ${decision} (${res.status})`);
-      let persisted: ChatTurn[] | null = null;
-      setChat((prev) => {
-        const next = [...prev];
-        const turn = next[turnIndex];
-        if (!turn || turn.role !== "model") return prev;
-        next[turnIndex] = {
-          ...turn,
-          approvalResolved: decision === "approve" ? "approved" : "rejected",
-          actions: [...(turn.actions ?? []), ...(json.actions ?? [])],
-        };
-        next.push({
-          role: "model",
-          content: json.reply || (decision === "approve" ? "Applied." : "Denied — nothing was written."),
-          actions: json.actions ?? [],
-        });
-        persisted = next;
-        return next;
+      // Build next transcript from chatRef — do not rely on setState updater side
+      // effects after await (React may defer the updater; then persist never ran and
+      // reload resurrected the sticky Approve/Deny banner).
+      const prev = chatRef.current;
+      let idx = prev.findIndex(
+        (t) => t.role === "model" && t.pendingApproval?.id === pending.id && !t.approvalResolved,
+      );
+      if (idx < 0) {
+        const at = prev[turnIndex];
+        if (at?.role === "model" && at.pendingApproval?.id === pending.id) idx = turnIndex;
+      }
+      if (idx < 0) idx = turnIndex;
+      const turn = prev[idx];
+      if (!turn || turn.role !== "model") return;
+      const next: ChatTurn[] = [...prev];
+      next[idx] = {
+        ...turn,
+        approvalResolved: resolution,
+        actions: [...(turn.actions ?? []), ...(json.actions ?? [])],
+      };
+      next.push({
+        role: "model",
+        content:
+          json.reply ||
+          (decision === "approve" ? "Applied." : "Denied — nothing was written."),
+        actions: json.actions ?? [],
       });
-      if (persisted) void persistSession(persisted);
+      chatRef.current = next;
+      setChat(next);
+      await persistSession(next);
       if (
         decision === "approve" &&
         json.actions?.some((a) => a.ok && WIKI_WRITE_TOOLS.has(a.tool))
@@ -991,16 +1003,19 @@ export function WikiLlm({
     } catch (e) {
       const message = e instanceof Error ? e.message : "approve_error";
       if (/expired/i.test(message)) {
-        let persisted: ChatTurn[] | null = null;
-        setChat((prev) => {
+        const prev = chatRef.current;
+        let idx = prev.findIndex(
+          (t) => t.role === "model" && t.pendingApproval?.id === pending.id && !t.approvalResolved,
+        );
+        if (idx < 0) idx = turnIndex;
+        const turn = prev[idx];
+        if (turn?.pendingApproval && !turn.approvalResolved) {
           const next = [...prev];
-          const turn = next[turnIndex];
-          if (!turn?.pendingApproval || turn.approvalResolved) return prev;
-          next[turnIndex] = { ...turn, approvalResolved: "expired" };
-          persisted = next;
-          return next;
-        });
-        if (persisted) void persistSession(persisted);
+          next[idx] = { ...turn, approvalResolved: "expired" };
+          chatRef.current = next;
+          setChat(next);
+          await persistSession(next);
+        }
       }
       setError(message);
     } finally {

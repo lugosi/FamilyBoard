@@ -12,6 +12,7 @@ export {
   expireStaleApprovalsInTurns,
   formatPendingSummary,
   isPendingApprovalExpired,
+  markApprovalResolvedInTurns,
   previewWriteLabel,
   WRITE_TOOLS_NEEDING_APPROVAL,
   type PendingWriteItem,

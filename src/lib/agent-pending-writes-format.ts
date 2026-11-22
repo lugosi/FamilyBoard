@@ -54,6 +54,30 @@ export function expireStaleApprovalsInTurns<T extends ApprovalTurnLike>(
   return { turns: next, changed, expiredIds };
 }
 
+/**
+ * Stamp approvalResolved on model turns that reference `pendingId`.
+ * Used after Approve/Deny so reload does not resurrect the sticky banner.
+ */
+export function markApprovalResolvedInTurns<T extends ApprovalTurnLike>(
+  turns: T[],
+  pendingId: string,
+  resolution: string,
+): { turns: T[]; changed: boolean } {
+  let changed = false;
+  const next = turns.map((t) => {
+    if (
+      t.role !== "model" ||
+      t.pendingApproval?.id !== pendingId ||
+      t.approvalResolved === resolution
+    ) {
+      return t;
+    }
+    changed = true;
+    return { ...t, approvalResolved: resolution };
+  });
+  return { turns: next, changed };
+}
+
 export function formatPendingSummary(items: PendingWriteItem[]): string {
   if (!items.length) return "No changes.";
   const cal = items.filter(

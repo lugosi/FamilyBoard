@@ -4,6 +4,7 @@ import {
   expireStaleApprovalsInTurns,
   formatPendingSummary,
   isPendingApprovalExpired,
+  markApprovalResolvedInTurns,
   previewWriteLabel,
   WRITE_TOOLS_NEEDING_APPROVAL,
 } from "../src/lib/agent-pending-writes-format.ts";
@@ -105,4 +106,39 @@ test("expireStaleApprovalsInTurns marks unused past-TTL approvals", () => {
   assert.equal(next[0].approvalResolved, "expired");
   assert.equal(next[1].approvalResolved, undefined);
   assert.equal(next[2].approvalResolved, "approved");
+});
+
+test("markApprovalResolvedInTurns stamps matching pending ids", () => {
+  const turns = [
+    {
+      role: "user",
+      content: "Add dentist",
+    },
+    {
+      role: "model",
+      content: "staged",
+      pendingApproval: {
+        id: "pend-1",
+        summary: "Calendar\n• Add “Dentist”",
+        items: [{ tool: "create_event", label: "Add “Dentist”" }],
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    },
+    {
+      role: "model",
+      content: "other",
+      pendingApproval: {
+        id: "pend-2",
+        summary: "x",
+        items: [],
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    },
+  ];
+  const { turns: rejected, changed } = markApprovalResolvedInTurns(turns, "pend-1", "rejected");
+  assert.equal(changed, true);
+  assert.equal(rejected[1].approvalResolved, "rejected");
+  assert.equal(rejected[2].approvalResolved, undefined);
+  const again = markApprovalResolvedInTurns(rejected, "pend-1", "rejected");
+  assert.equal(again.changed, false);
 });
