@@ -2,6 +2,10 @@ import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { getDataDir } from "./data-dir";
+import { expireStaleApprovalsInTurns } from "./agent-pending-writes-format";
+import { markPendingBatch } from "./agent-pending-writes";
+
+export { expireStaleApprovalsInTurns } from "./agent-pending-writes-format";
 
 const STORE_FILE = "agent-chat-sessions.json";
 const MAX_SESSIONS = 40;
@@ -16,6 +20,8 @@ export type StoredChatAttachment = {
   mimeType?: string;
 };
 
+export type ApprovalResolved = "approved" | "rejected" | "expired";
+
 export type StoredChatTurn = {
   role: "user" | "model";
   content: string;
@@ -28,7 +34,7 @@ export type StoredChatTurn = {
     items: { tool: string; label: string }[];
     expiresAt: string;
   };
-  approvalResolved?: "approved" | "rejected";
+  approvalResolved?: ApprovalResolved;
 };
 
 export type ChatSessionMeta = {
@@ -75,9 +81,10 @@ export function titleFromTurns(turns: StoredChatTurn[]): string {
   return oneLine.length > 48 ? `${oneLine.slice(0, 45)}…` : oneLine;
 }
 
-/** Drop large image payloads before writing to disk. */
+/** Drop large image payloads before writing to disk; clear expired approvals. */
 export function sanitizeTurnsForStorage(turns: StoredChatTurn[]): StoredChatTurn[] {
-  return turns.slice(-MAX_TURNS).map((t) => ({
+  const { turns: withExpiry } = expireStaleApprovalsInTurns(turns);
+  return withExpiry.slice(-MAX_TURNS).map((t) => ({
     ...t,
     attachments: t.attachments?.map(({ name, kind, summary, text, mimeType }) => ({
       name,
@@ -98,7 +105,18 @@ export async function listChatSessions(): Promise<ChatSessionMeta[]> {
 
 export async function getChatSession(id: string): Promise<ChatSession | null> {
   const store = await readStore();
-  return store.sessions.find((s) => s.id === id) ?? null;
+  const idx = store.sessions.findIndex((s) => s.id === id);
+  if (idx < 0) return null;
+  const session = store.sessions[idx];
+  const { turns, changed, expiredIds } = expireStaleApprovalsInTurns(session.turns);
+  if (!changed) return session;
+  const next: ChatSession = { ...session, turns, updatedAt: Date.now() };
+  store.sessions[idx] = next;
+  await writeStore(store);
+  await Promise.all(
+    expiredIds.map((pendingId) => markPendingBatch(pendingId, "expired").catch(() => null)),
+  );
+  return next;
 }
 
 export async function createChatSession(title = "New chat"): Promise<ChatSession> {
@@ -124,7 +142,21 @@ export async function saveChatSession(
   const idx = store.sessions.findIndex((s) => s.id === id);
   if (idx < 0) return null;
   const prev = store.sessions[idx];
-  const turns = patch.turns ? sanitizeTurnsForStorage(patch.turns) : prev.turns;
+  const expiredIds: string[] = [];
+  let turns = prev.turns;
+  if (patch.turns) {
+    const swept = expireStaleApprovalsInTurns(patch.turns);
+    expiredIds.push(...swept.expiredIds);
+    for (const t of swept.turns) {
+      const id = t.pendingApproval?.id;
+      if (t.approvalResolved !== "expired" || !id || expiredIds.includes(id)) continue;
+      const wasExpired = prev.turns.some(
+        (p) => p.pendingApproval?.id === id && p.approvalResolved === "expired",
+      );
+      if (!wasExpired) expiredIds.push(id);
+    }
+    turns = sanitizeTurnsForStorage(swept.turns);
+  }
   const title =
     patch.title?.trim() ||
     (patch.turns ? titleFromTurns(turns) : prev.title) ||
@@ -137,6 +169,11 @@ export async function saveChatSession(
   };
   store.sessions[idx] = next;
   await writeStore(store);
+  if (expiredIds.length) {
+    await Promise.all(
+      expiredIds.map((pendingId) => markPendingBatch(pendingId, "expired").catch(() => null)),
+    );
+  }
   return next;
 }
 

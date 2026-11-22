@@ -19,6 +19,41 @@ export type PendingWriteItem = {
   label: string;
 };
 
+/** True when a staged approval's expiresAt is at or before `now`. */
+export function isPendingApprovalExpired(expiresAt: string, now = Date.now()): boolean {
+  const t = Date.parse(expiresAt);
+  return Number.isFinite(t) && now >= t;
+}
+
+type ApprovalTurnLike = {
+  role: string;
+  pendingApproval?: { id: string; expiresAt: string };
+  approvalResolved?: string;
+};
+
+/** Mark unused approvals past expiresAt as expired (does not mutate input). */
+export function expireStaleApprovalsInTurns<T extends ApprovalTurnLike>(
+  turns: T[],
+  now = Date.now(),
+): { turns: T[]; changed: boolean; expiredIds: string[] } {
+  let changed = false;
+  const expiredIds: string[] = [];
+  const next = turns.map((t) => {
+    if (
+      t.role === "model" &&
+      t.pendingApproval &&
+      !t.approvalResolved &&
+      isPendingApprovalExpired(t.pendingApproval.expiresAt, now)
+    ) {
+      changed = true;
+      expiredIds.push(t.pendingApproval.id);
+      return { ...t, approvalResolved: "expired" };
+    }
+    return t;
+  });
+  return { turns: next, changed, expiredIds };
+}
+
 export function formatPendingSummary(items: PendingWriteItem[]): string {
   if (!items.length) return "No changes.";
   const cal = items.filter(

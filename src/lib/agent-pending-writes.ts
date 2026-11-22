@@ -2,10 +2,16 @@ import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { getDataDir } from "./data-dir";
-import { formatPendingSummary, type PendingWriteItem } from "./agent-pending-writes-format";
+import {
+  formatPendingSummary,
+  isPendingApprovalExpired,
+  type PendingWriteItem,
+} from "./agent-pending-writes-format";
 
 export {
+  expireStaleApprovalsInTurns,
   formatPendingSummary,
+  isPendingApprovalExpired,
   previewWriteLabel,
   WRITE_TOOLS_NEEDING_APPROVAL,
   type PendingWriteItem,
@@ -47,8 +53,8 @@ async function ensureDir(): Promise<void> {
   await fs.mkdir(pendingDir(), { recursive: true });
 }
 
-function isExpired(batch: PendingWriteBatch): boolean {
-  return Date.now() > new Date(batch.expiresAt).getTime();
+function isExpired(batch: PendingWriteBatch, now = Date.now()): boolean {
+  return isPendingApprovalExpired(batch.expiresAt, now);
 }
 
 export async function readPendingBatch(id: string): Promise<PendingWriteBatch | null> {

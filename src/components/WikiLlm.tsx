@@ -1,9 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type Ref,
+} from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { WikiBrowser } from "@/components/WikiBrowser";
-import type { ChatSessionMeta, StoredChatTurn } from "@/lib/agent-chat-sessions";
+import type {
+  ApprovalResolved,
+  ChatSessionMeta,
+  StoredChatTurn,
+} from "@/lib/agent-chat-sessions";
+import {
+  expireStaleApprovalsInTurns,
+  isPendingApprovalExpired,
+} from "@/lib/agent-pending-writes-format";
 import {
   fbBtnApprove,
   fbBtnApproveLg,
@@ -68,8 +83,24 @@ type ChatTurn = {
   attachments?: ChatAttachment[];
   pendingApproval?: PendingApproval;
   /** Once resolved, hide Approve/Deny and show the outcome. */
-  approvalResolved?: "approved" | "rejected";
+  approvalResolved?: ApprovalResolved;
 };
+
+function approvalOutcome(m: ChatTurn): ApprovalResolved | undefined {
+  if (m.approvalResolved) return m.approvalResolved;
+  if (m.pendingApproval && isPendingApprovalExpired(m.pendingApproval.expiresAt)) {
+    return "expired";
+  }
+  return undefined;
+}
+
+function approvalOutcomeLabel(outcome: ApprovalResolved | undefined): string {
+  if (outcome === "approved") return "Approved";
+  if (outcome === "rejected") return "Denied";
+  if (outcome === "expired") return "Expired — ask again to retry";
+  return "Needs your approval to write";
+}
+
 
 type SkillMeta = { path: string; title: string; summary: string; category: string };
 
@@ -250,6 +281,42 @@ function ApprovalButtons({
   );
 }
 
+function ApprovalCard({
+  pending,
+  outcome,
+  busy,
+  scrollRef,
+  onApprove,
+  onDeny,
+}: {
+  pending: PendingApproval;
+  outcome: ApprovalResolved | undefined;
+  busy: string | null;
+  scrollRef?: Ref<HTMLDivElement>;
+  onApprove: () => void;
+  onDeny: () => void;
+}) {
+  return (
+    <div
+      ref={scrollRef}
+      className="mt-4 rounded-2xl border border-amber-600/60 bg-amber-950/40 px-4 py-3.5 text-base leading-relaxed text-amber-50 shadow-[0_0_0_1px_rgba(251,191,36,0.12)]"
+    >
+      <p className="mb-2 font-semibold text-amber-50">{approvalOutcomeLabel(outcome)}</p>
+      <pre className="mb-3 whitespace-pre-wrap font-sans text-[1.05rem] leading-[1.55] text-amber-50/95">
+        {pending.summary}
+      </pre>
+      {!outcome ? (
+        <ApprovalButtons
+          pendingId={pending.id}
+          busy={busy}
+          onApprove={onApprove}
+          onDeny={onDeny}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function parseView(raw: string | null | undefined): AiView | null {
   return raw === "chat" || raw === "wiki" ? raw : null;
 }
@@ -341,7 +408,11 @@ export function WikiLlm({
   let unresolvedApproval: { index: number; pending: PendingApproval } | null = null;
   for (let i = chat.length - 1; i >= 0; i -= 1) {
     const m = chat[i];
-    if (m.role === "model" && m.pendingApproval && !m.approvalResolved) {
+    if (
+      m.role === "model" &&
+      m.pendingApproval &&
+      !approvalOutcome(m)
+    ) {
       unresolvedApproval = { index: i, pending: m.pendingApproval };
       break;
     }
@@ -399,12 +470,29 @@ export function WikiLlm({
       });
       if (!res.ok) return false;
       const json = (await res.json()) as { session?: { turns?: StoredChatTurn[] } };
-      setChat((json.session?.turns ?? []) as ChatTurn[]);
+      const loaded = (json.session?.turns ?? []) as ChatTurn[];
+      const { turns: cleaned, changed } = expireStaleApprovalsInTurns(loaded);
+      setChat(cleaned);
       rememberSessionId(id);
       setChatStatus(null);
       setSkillForm(null);
       setPending([]);
       setInput("");
+      if (changed) {
+        // Server getChatSession also sweeps; persist if the client still sees stale turns.
+        void (async () => {
+          try {
+            await fetch(`/api/agent/sessions/${encodeURIComponent(id)}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ turns: cleaned }),
+              signal: signalArg,
+            });
+          } catch {
+            /* best-effort */
+          }
+        })();
+      }
       return true;
     },
     [rememberSessionId],
@@ -449,6 +537,39 @@ export function WikiLlm({
     },
     [rememberSessionId],
   );
+
+  // Clear the sticky approval banner when TTL elapses without Approve/Deny.
+  useEffect(() => {
+    const open = chat
+      .map((m, index) => ({ m, index }))
+      .filter(
+        ({ m }) =>
+          m.role === "model" &&
+          m.pendingApproval &&
+          !m.approvalResolved,
+      );
+    if (!open.length) return;
+
+    const now = Date.now();
+    const alreadyExpired = open.some(({ m }) =>
+      isPendingApprovalExpired(m.pendingApproval!.expiresAt, now),
+    );
+    const applyExpiry = () => {
+      setChat((prev) => {
+        const { turns, changed } = expireStaleApprovalsInTurns(prev);
+        if (!changed) return prev;
+        queueMicrotask(() => void persistSession(turns));
+        return turns;
+      });
+    };
+
+    const nextExpiry = alreadyExpired
+      ? now
+      : Math.min(...open.map(({ m }) => Date.parse(m.pendingApproval!.expiresAt)));
+    if (!Number.isFinite(nextExpiry)) return;
+    const timer = window.setTimeout(applyExpiry, Math.max(0, nextExpiry - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [chat, persistSession]);
 
   const startNewSession = useCallback(async () => {
     setChat([]);
@@ -743,7 +864,20 @@ export function WikiLlm({
         void refresh();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "approve_error");
+      const message = e instanceof Error ? e.message : "approve_error";
+      if (/expired/i.test(message)) {
+        let persisted: ChatTurn[] | null = null;
+        setChat((prev) => {
+          const next = [...prev];
+          const turn = next[turnIndex];
+          if (!turn?.pendingApproval || turn.approvalResolved) return prev;
+          next[turnIndex] = { ...turn, approvalResolved: "expired" };
+          persisted = next;
+          return next;
+        });
+        if (persisted) void persistSession(persisted);
+      }
+      setError(message);
     } finally {
       setBusy(null);
       focusPrompt();
@@ -1115,40 +1249,20 @@ export function WikiLlm({
                           </div>
                         ) : null}
                         {m.role === "model" && m.pendingApproval ? (
-                          <div
-                            ref={
-                              !m.approvalResolved &&
-                              chat
-                                .slice(i + 1)
-                                .every((later) => !later.pendingApproval || later.approvalResolved)
-                                ? approvalCardRef
-                                : undefined
+                          <ApprovalCard
+                            pending={m.pendingApproval}
+                            outcome={approvalOutcome(m)}
+                            busy={busy}
+                            scrollRef={
+                              unresolvedApproval?.index === i ? approvalCardRef : undefined
                             }
-                            className="mt-4 rounded-2xl border border-amber-600/60 bg-amber-950/40 px-4 py-3.5 text-base leading-relaxed text-amber-50 shadow-[0_0_0_1px_rgba(251,191,36,0.12)]"
-                          >
-                            <p className="mb-2 font-semibold text-amber-50">
-                              {m.approvalResolved === "approved"
-                                ? "Approved"
-                                : m.approvalResolved === "rejected"
-                                  ? "Denied"
-                                  : "Needs your approval to write"}
-                            </p>
-                            <pre className="mb-3 whitespace-pre-wrap font-sans text-[1.05rem] leading-[1.55] text-amber-50/95">
-                              {m.pendingApproval.summary}
-                            </pre>
-                            {!m.approvalResolved ? (
-                              <ApprovalButtons
-                                pendingId={m.pendingApproval.id}
-                                busy={busy}
-                                onApprove={() =>
-                                  void resolveApproval(i, "approve", m.pendingApproval!)
-                                }
-                                onDeny={() =>
-                                  void resolveApproval(i, "reject", m.pendingApproval!)
-                                }
-                              />
-                            ) : null}
-                          </div>
+                            onApprove={() =>
+                              void resolveApproval(i, "approve", m.pendingApproval!)
+                            }
+                            onDeny={() =>
+                              void resolveApproval(i, "reject", m.pendingApproval!)
+                            }
+                          />
                         ) : null}
                       </div>
                     </div>

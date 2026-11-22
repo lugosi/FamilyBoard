@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  expireStaleApprovalsInTurns,
   formatPendingSummary,
+  isPendingApprovalExpired,
   previewWriteLabel,
   WRITE_TOOLS_NEEDING_APPROVAL,
 } from "../src/lib/agent-pending-writes-format.ts";
@@ -51,4 +53,56 @@ test("preview labels and summary are readable", () => {
   assert.match(summary, /Calendar/);
   assert.match(summary, /Wiki/);
   assert.match(summary, /Dentist/);
+});
+
+test("isPendingApprovalExpired uses expiresAt", () => {
+  const past = new Date(Date.now() - 1000).toISOString();
+  const future = new Date(Date.now() + 60_000).toISOString();
+  assert.equal(isPendingApprovalExpired(past), true);
+  assert.equal(isPendingApprovalExpired(future), false);
+  assert.equal(isPendingApprovalExpired("not-a-date"), false);
+});
+
+test("expireStaleApprovalsInTurns marks unused past-TTL approvals", () => {
+  const past = new Date(Date.now() - 1000).toISOString();
+  const future = new Date(Date.now() + 60_000).toISOString();
+  const turns = [
+    {
+      role: "model",
+      content: "staged",
+      pendingApproval: {
+        id: "old",
+        summary: "Calendar\n• Add “Dentist”",
+        items: [{ tool: "create_event", label: "Add “Dentist”" }],
+        expiresAt: past,
+      },
+    },
+    {
+      role: "model",
+      content: "still open",
+      pendingApproval: {
+        id: "fresh",
+        summary: "Wiki\n• Create page",
+        items: [{ tool: "create_wiki_page", label: "Create page" }],
+        expiresAt: future,
+      },
+    },
+    {
+      role: "model",
+      content: "already decided",
+      pendingApproval: {
+        id: "done",
+        summary: "x",
+        items: [],
+        expiresAt: past,
+      },
+      approvalResolved: "approved",
+    },
+  ];
+  const { turns: next, changed, expiredIds } = expireStaleApprovalsInTurns(turns);
+  assert.equal(changed, true);
+  assert.deepEqual(expiredIds, ["old"]);
+  assert.equal(next[0].approvalResolved, "expired");
+  assert.equal(next[1].approvalResolved, undefined);
+  assert.equal(next[2].approvalResolved, "approved");
 });
