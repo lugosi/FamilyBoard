@@ -13,6 +13,7 @@ Feature: Board shell and access gate
     Then I am not redirected to "/unlock"
     And the board shell is visible
     And I see tab controls for Board and AI
+    And there is no floating bottom-right robot FAB (Ask lives in the nav)
 
   Scenario: Unlock page when the gate is enabled
     Given BOARD_ACCESS_CODE and BOARD_ACCESS_SECRET are both set

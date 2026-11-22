@@ -188,18 +188,6 @@ export function AppShell() {
             />
           </div>
         </div>
-
-        {showBoardAsk && !boardChatOpen ? (
-          <button
-            type="button"
-            className="absolute bottom-4 right-4 z-30 flex h-12 w-12 items-center justify-center rounded-md border border-slate-600 bg-sky-600 text-white shadow-lg shadow-sky-950/40 hover:bg-sky-500 sm:bottom-5 sm:right-5 sm:h-14 sm:w-14"
-            onClick={openBoardChat}
-            aria-label="Open assistant chat"
-            title="Assistant"
-          >
-            <RobotIcon className="h-6 w-6 sm:h-7 sm:w-7" />
-          </button>
-        ) : null}
       </div>
       {/* Outside tab panels so the cat stays on Board and AI. */}
       <OnekoCat enabled />
