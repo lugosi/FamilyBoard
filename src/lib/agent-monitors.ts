@@ -1,0 +1,316 @@
+/**
+ * Crontab-style agent monitors: run a prompt on a schedule, deliver to a
+ * persistent AI chat session and/or Slack DMs (same subscriber list as morning brief).
+ */
+
+import { getBackgroundGoogleRedirectUri } from "./app-url";
+import { runFamilyAgent } from "./agent";
+import {
+  createChatSession,
+  getChatSession,
+  saveChatSession,
+  type StoredChatTurn,
+} from "./agent-chat-sessions";
+import {
+  areAgentMonitorsEnabled,
+  listAgentMonitors,
+  markAgentMonitorRan,
+  type AgentMonitor,
+} from "./agent-monitors-store";
+import { cronMatches, cronSlotKey, describeCron, zonedCronParts } from "./cron";
+import { readDailyBriefStore } from "./daily-brief-store";
+import { isGeminiConfigured } from "./gemini";
+import { isSlackConfigured, postSlackMessage } from "./slack";
+
+export type AgentMonitorRunResult = {
+  id: string;
+  title: string;
+  slot: string;
+  reply: string;
+  webSessionId: string | null;
+  slack: { userId: string; ok: boolean; error?: string }[];
+  skipped?: string;
+  error?: string;
+};
+
+const g = globalThis as typeof globalThis & {
+  __familyboardMonitorRunning?: Set<string>;
+};
+
+function runningSet(): Set<string> {
+  if (!g.__familyboardMonitorRunning) g.__familyboardMonitorRunning = new Set();
+  return g.__familyboardMonitorRunning;
+}
+
+export function buildMonitorPrompt(monitor: AgentMonitor): string {
+  const bits: string[] = [];
+  bits.push(
+    `Scheduled monitor “${monitor.title}” (cron ${monitor.cron}). Run the check below and report clearly what changed or what to do next.`,
+  );
+  if (monitor.skillPath) {
+    const name = monitor.skillPath.replace(/^skills\//, "").replace(/\.md$/i, "");
+    bits.push(`Use the “${name}” skill from the wiki when it applies.`);
+  }
+  bits.push("");
+  bits.push(monitor.prompt.trim());
+  return bits.join("\n");
+}
+
+function isDue(monitor: AgentMonitor, now: Date): boolean {
+  if (!monitor.enabled) return false;
+  const parts = zonedCronParts(now, monitor.timeZone);
+  if (!cronMatches(monitor.cron, parts)) return false;
+  const slot = cronSlotKey(now, monitor.timeZone);
+  return monitor.lastRunSlot !== slot;
+}
+
+async function deliverSlack(text: string): Promise<AgentMonitorRunResult["slack"]> {
+  if (!isSlackConfigured()) return [];
+  const store = await readDailyBriefStore();
+  const userIds = store.slackUserIds;
+  if (!userIds.length) return [];
+  const out: AgentMonitorRunResult["slack"] = [];
+  for (const userId of userIds) {
+    try {
+      await postSlackMessage({ channel: userId, text });
+      out.push({ userId, ok: true });
+    } catch (e) {
+      out.push({
+        userId,
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+  return out;
+}
+
+async function deliverWebSession(
+  monitor: AgentMonitor,
+  prompt: string,
+  reply: string,
+  actions: { tool: string; ok: boolean; label: string }[],
+): Promise<string> {
+  const stamp = new Intl.DateTimeFormat("en-US", {
+    timeZone: monitor.timeZone,
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date());
+
+  const userTurn: StoredChatTurn = {
+    role: "user",
+    content: prompt,
+  };
+  const modelTurn: StoredChatTurn = {
+    role: "model",
+    content: reply,
+    actions: [
+      { tool: "agent_monitor", ok: true, label: `Monitor · ${stamp}` },
+      ...actions.slice(0, 12),
+    ],
+  };
+
+  if (monitor.sessionId) {
+    const existing = await getChatSession(monitor.sessionId);
+    if (existing) {
+      await saveChatSession(existing.id, {
+        title: monitor.title,
+        turns: [...existing.turns, userTurn, modelTurn],
+      });
+      return existing.id;
+    }
+  }
+
+  const session = await createChatSession(monitor.title);
+  await saveChatSession(session.id, {
+    title: monitor.title,
+    turns: [userTurn, modelTurn],
+  });
+  return session.id;
+}
+
+function formatSlackDelivery(monitor: AgentMonitor, reply: string): string {
+  const when = describeCron(monitor.cron);
+  return `*Monitor · ${monitor.title}* (${when})\n\n${reply}`.slice(0, 3500);
+}
+
+/** Run one monitor now (forced) or when due. */
+export async function runAgentMonitor(
+  monitor: AgentMonitor,
+  opts?: { force?: boolean; now?: Date },
+): Promise<AgentMonitorRunResult> {
+  const now = opts?.now ?? new Date();
+  const slot = cronSlotKey(now, monitor.timeZone);
+
+  if (!areAgentMonitorsEnabled() && !opts?.force) {
+    return {
+      id: monitor.id,
+      title: monitor.title,
+      slot,
+      reply: "",
+      webSessionId: null,
+      slack: [],
+      skipped: "disabled_globally",
+    };
+  }
+
+  if (!opts?.force && !isDue(monitor, now)) {
+    return {
+      id: monitor.id,
+      title: monitor.title,
+      slot,
+      reply: "",
+      webSessionId: null,
+      slack: [],
+      skipped: "not_due",
+    };
+  }
+
+  if (!monitor.enabled && !opts?.force) {
+    return {
+      id: monitor.id,
+      title: monitor.title,
+      slot,
+      reply: "",
+      webSessionId: null,
+      slack: [],
+      skipped: "disabled",
+    };
+  }
+
+  if (!isGeminiConfigured()) {
+    return {
+      id: monitor.id,
+      title: monitor.title,
+      slot,
+      reply: "",
+      webSessionId: null,
+      slack: [],
+      skipped: "gemini_not_configured",
+    };
+  }
+
+  const running = runningSet();
+  if (running.has(monitor.id)) {
+    return {
+      id: monitor.id,
+      title: monitor.title,
+      slot,
+      reply: "",
+      webSessionId: null,
+      slack: [],
+      skipped: "in_flight",
+    };
+  }
+
+  running.add(monitor.id);
+  try {
+    const prompt = buildMonitorPrompt(monitor);
+    const result = await runFamilyAgent({
+      messages: [{ role: "user", content: prompt }],
+      redirectUri: getBackgroundGoogleRedirectUri(),
+      channel: monitor.deliverSlack && !monitor.deliverWeb ? "slack" : "board",
+    });
+
+    let webSessionId: string | null = null;
+    if (monitor.deliverWeb) {
+      try {
+        webSessionId = await deliverWebSession(
+          monitor,
+          prompt,
+          result.reply,
+          result.actions ?? [],
+        );
+      } catch (e) {
+        console.warn(
+          "[agent-monitors] web session failed:",
+          e instanceof Error ? e.message : e,
+        );
+      }
+    }
+
+    let slack: AgentMonitorRunResult["slack"] = [];
+    if (monitor.deliverSlack) {
+      try {
+        slack = await deliverSlack(formatSlackDelivery(monitor, result.reply));
+      } catch (e) {
+        console.warn(
+          "[agent-monitors] slack failed:",
+          e instanceof Error ? e.message : e,
+        );
+      }
+    }
+
+    const slackFails = slack.filter((s) => !s.ok);
+    const error =
+      slackFails.length > 0
+        ? `slack_failed:${slackFails.map((s) => s.userId).join(",")}`
+        : monitor.deliverWeb && !webSessionId
+          ? "web_session_failed"
+          : null;
+
+    await markAgentMonitorRan(monitor.id, {
+      slot,
+      sessionId: webSessionId ?? monitor.sessionId,
+      error,
+    });
+
+    console.log(
+      `[agent-monitors] ran “${monitor.title}”: web=${webSessionId ? "yes" : "no"}, slack ${slack.filter((s) => s.ok).length}/${slack.length}`,
+    );
+
+    return {
+      id: monitor.id,
+      title: monitor.title,
+      slot,
+      reply: result.reply,
+      webSessionId,
+      slack,
+      ...(error ? { error } : {}),
+    };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    await markAgentMonitorRan(monitor.id, { slot, error: message }).catch(() => undefined);
+    throw e;
+  } finally {
+    running.delete(monitor.id);
+  }
+}
+
+export async function getAgentMonitorsStatus(): Promise<{
+  enabled: boolean;
+  monitors: (AgentMonitor & { due: boolean; cronLabel: string })[];
+}> {
+  const enabled = areAgentMonitorsEnabled();
+  const now = new Date();
+  const monitors = await listAgentMonitors();
+  return {
+    enabled,
+    monitors: monitors.map((m) => ({
+      ...m,
+      due: enabled && isDue(m, now),
+      cronLabel: describeCron(m.cron),
+    })),
+  };
+}
+
+/** Poll from background jobs (~1 min). */
+export async function tickAgentMonitors(): Promise<void> {
+  if (!areAgentMonitorsEnabled()) return;
+  if (!isGeminiConfigured()) return;
+  const now = new Date();
+  const monitors = await listAgentMonitors();
+  for (const m of monitors) {
+    if (!isDue(m, now)) continue;
+    try {
+      await runAgentMonitor(m, { now });
+    } catch (e) {
+      console.warn(
+        `[agent-monitors] tick “${m.title}” failed:`,
+        e instanceof Error ? e.message : e,
+      );
+    }
+  }
+}
