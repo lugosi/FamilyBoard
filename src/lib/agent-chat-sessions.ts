@@ -2,10 +2,16 @@ import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { getDataDir } from "./data-dir";
-import { expireStaleApprovalsInTurns } from "./agent-pending-writes-format";
+import {
+  expireStaleApprovalsInTurns,
+  markApprovalResolvedInTurns,
+} from "./agent-pending-writes-format";
 import { markPendingBatch } from "./agent-pending-writes";
 
-export { expireStaleApprovalsInTurns } from "./agent-pending-writes-format";
+export {
+  expireStaleApprovalsInTurns,
+  markApprovalResolvedInTurns,
+} from "./agent-pending-writes-format";
 
 const STORE_FILE = "agent-chat-sessions.json";
 const MAX_SESSIONS = 40;
@@ -94,6 +100,31 @@ export function sanitizeTurnsForStorage(turns: StoredChatTurn[]): StoredChatTurn
       ...(mimeType ? { mimeType } : {}),
     })),
   }));
+}
+
+/** Persist approvalResolved onto any chat session that still references this pending id. */
+export async function markApprovalResolvedInSessions(
+  pendingId: string,
+  resolution: ApprovalResolved,
+): Promise<number> {
+  const id = pendingId.trim();
+  if (!id) return 0;
+  const store = await readStore();
+  let updated = 0;
+  const now = Date.now();
+  for (let i = 0; i < store.sessions.length; i += 1) {
+    const session = store.sessions[i];
+    const { turns, changed } = markApprovalResolvedInTurns(session.turns, id, resolution);
+    if (!changed) continue;
+    store.sessions[i] = {
+      ...session,
+      turns: turns as StoredChatTurn[],
+      updatedAt: now,
+    };
+    updated += 1;
+  }
+  if (updated) await writeStore(store);
+  return updated;
 }
 
 export async function listChatSessions(): Promise<ChatSessionMeta[]> {

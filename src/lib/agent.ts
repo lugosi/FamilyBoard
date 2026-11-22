@@ -39,6 +39,7 @@ import { getDefaultTimeZone, readGoogleTokens } from "./google";
 import { scanInboxToTodos } from "./gmail";
 import { addTodo, listTodos, setTodoDone } from "./todos";
 import { buildDeviceTools, deviceToolsAvailable } from "./agent-device-tools";
+import { markApprovalResolvedInSessions } from "./agent-chat-sessions";
 import {
   assertPendingRunnable,
   markPendingBatch,
@@ -894,6 +895,8 @@ export async function resolvePendingApproval(input: {
 
   if (input.decision === "reject") {
     await markPendingBatch(batch.id, "rejected");
+    // Persist onto chat sessions so the sticky Approve/Deny banner stays gone after reload.
+    await markApprovalResolvedInSessions(batch.id, "rejected").catch(() => null);
     return {
       reply: "Denied — nothing was written.",
       actions: batch.items.map((i) => ({
@@ -932,6 +935,7 @@ export async function resolvePendingApproval(input: {
     }
   }
   await markPendingBatch(batch.id, "approved");
+  await markApprovalResolvedInSessions(batch.id, "approved").catch(() => null);
   const ok = actions.filter((a) => a.ok).length;
   const fail = actions.length - ok;
   const reply =
