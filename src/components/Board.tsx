@@ -700,7 +700,9 @@ export function Board() {
     defaultBoardWidgetLayout(),
   );
   const [widgetArrangeMode, setWidgetArrangeMode] = useState(false);
-  const [widgetsExpanded, setWidgetsExpanded] = useState(false);
+  const [widgetsExpanded, setWidgetsExpanded] = useState(
+    () => search.get("expandWidgets") === "1",
+  );
 
   const sunriseToday =
     typeof weather?.sunriseToday === "string" ? weather.sunriseToday : undefined;
@@ -723,10 +725,6 @@ export function Board() {
     const id = window.setInterval(() => setClockNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
-
-  useEffect(() => {
-    if (search.get("expandWidgets") === "1") setWidgetsExpanded(true);
-  }, [search]);
 
   function toggleWidgetCollapse(key: RightWidgetKey) {
     setCollapsedWidgets((prev) => ({ ...prev, [key]: !prev[key] }));

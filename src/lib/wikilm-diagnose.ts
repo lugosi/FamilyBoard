@@ -9,7 +9,7 @@ export function diagnoseContentsWrite404(input: {
   repoSize?: number;
   defaultBranch?: string;
 }): string {
-  const { owner, repo, branch, fullPath, putBodyText, repoStatus, repoSize, defaultBranch } = input;
+  const { owner, repo, branch, fullPath, repoStatus, repoSize, defaultBranch } = input;
   if (repoStatus === 404) {
     return `GitHub 404 writing ${fullPath}: token can't access ${owner}/${repo}. Re-create the fine-grained PAT with that repo selected and Contents: Read and write.`;
   }
