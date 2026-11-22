@@ -73,6 +73,22 @@ type ChatTurn = {
 
 type SkillMeta = { path: string; title: string; summary: string; category: string };
 
+type AgentMonitorRow = {
+  id: string;
+  title: string;
+  enabled: boolean;
+  cron: string;
+  cronLabel: string;
+  prompt: string;
+  skillPath: string | null;
+  deliverWeb: boolean;
+  deliverSlack: boolean;
+  sessionId: string | null;
+  lastRunAt: string | null;
+  lastError: string | null;
+  due?: boolean;
+};
+
 type GmailMessage = {
   id: string;
   subject: string;
@@ -333,6 +349,16 @@ export function WikiLlm({
   const [note, setNote] = useState<string | null>(null);
   const [chatStatus, setChatStatus] = useState<string | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [monitors, setMonitors] = useState<AgentMonitorRow[]>([]);
+  const [monitorsEnabled, setMonitorsEnabled] = useState(true);
+  const [monitorForm, setMonitorForm] = useState({
+    title: "",
+    cron: "0 9 * * *",
+    prompt: "",
+    deliverWeb: true,
+    deliverSlack: false,
+  });
+  const [editingMonitorId, setEditingMonitorId] = useState<string | null>(null);
   const [wikiFocus, setWikiFocus] = useState<{ path: string; nonce: number } | null>(null);
   const storedView = useSyncExternalStore(subscribeNoop, readInitialView, () => "chat" as AiView);
   const [pickedView, setPickedView] = useState<AiView | null>(null);
@@ -477,6 +503,22 @@ export function WikiLlm({
     rememberSessionId(null);
   }, [rememberSessionId]);
 
+  const refreshMonitors = useCallback(async (signalArg?: AbortSignal) => {
+    try {
+      const res = await fetch("/api/agent/monitors", { signal: signalArg });
+      if (!res.ok) return;
+      const json = (await res.json()) as {
+        enabled?: boolean;
+        monitors?: AgentMonitorRow[];
+      };
+      if (signalArg?.aborted) return;
+      setMonitorsEnabled(json.enabled !== false);
+      setMonitors(json.monitors ?? []);
+    } catch {
+      /* optional */
+    }
+  }, []);
+
   const refresh = useCallback(async (signalArg?: AbortSignal) => {
     setError(null);
     try {
@@ -513,11 +555,13 @@ export function WikiLlm({
       } else {
         setSlack(null);
       }
+
+      await refreshMonitors(signalArg);
     } catch (e) {
       if (signalArg?.aborted) return;
       setError(e instanceof Error ? e.message : "Failed to load AI tab");
     }
-  }, []);
+  }, [refreshMonitors]);
 
   useEffect(() => {
     if (!active) return;
@@ -1765,6 +1809,350 @@ export function WikiLlm({
                   </>
                 ) : (
                   <p className="text-sm text-slate-500">Loading schedule…</p>
+                )}
+              </section>
+
+              <section
+                aria-label="Monitors"
+                className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-3 text-base leading-relaxed text-slate-300"
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h3 className="font-semibold text-white">Monitors</h3>
+                  <button
+                    type="button"
+                    className={sideBtn}
+                    disabled={Boolean(busy) || !monitorForm.prompt.trim()}
+                    onClick={() => {
+                      void (async () => {
+                        setBusy("monitor-save");
+                        setError(null);
+                        try {
+                          const payload = {
+                            title: monitorForm.title.trim() || undefined,
+                            cron: monitorForm.cron.trim(),
+                            prompt: monitorForm.prompt.trim(),
+                            deliverWeb: monitorForm.deliverWeb,
+                            deliverSlack: monitorForm.deliverSlack,
+                          };
+                          const res = editingMonitorId
+                            ? await fetch(
+                                `/api/agent/monitors/${encodeURIComponent(editingMonitorId)}`,
+                                {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify(payload),
+                                },
+                              )
+                            : await fetch("/api/agent/monitors", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(payload),
+                              });
+                          const json = (await res.json()) as { error?: string };
+                          if (!res.ok) throw new Error(json.error || `Failed (${res.status})`);
+                          const wasEdit = Boolean(editingMonitorId);
+                          setMonitorForm({
+                            title: "",
+                            cron: "0 9 * * *",
+                            prompt: "",
+                            deliverWeb: true,
+                            deliverSlack: false,
+                          });
+                          setEditingMonitorId(null);
+                          setNote(wasEdit ? "Monitor updated" : "Monitor created");
+                          await refreshMonitors();
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : "Could not save monitor");
+                        } finally {
+                          setBusy(null);
+                        }
+                      })();
+                    }}
+                  >
+                    {busy === "monitor-save"
+                      ? "Saving…"
+                      : editingMonitorId
+                        ? "Save"
+                        : "Add"}
+                  </button>
+                </div>
+                <p className="mb-2 text-sm text-slate-400">
+                  Crontab-style agent checks (prices, class actions, etc.). Each run appends to one AI
+                  chat session
+                  {monitorsEnabled ? "" : " · globally off (AGENT_MONITORS_ENABLED=0)"}.
+                </p>
+                <div className="mb-3 grid gap-2">
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-slate-500">Title</span>
+                    <input
+                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
+                      value={monitorForm.title}
+                      placeholder="Price watch"
+                      onChange={(e) =>
+                        setMonitorForm((f) => ({ ...f, title: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-slate-500">
+                      Cron <span className="text-slate-600">(min hour dom month dow)</span>
+                    </span>
+                    <input
+                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-slate-100"
+                      value={monitorForm.cron}
+                      placeholder="0 9 * * *"
+                      onChange={(e) =>
+                        setMonitorForm((f) => ({ ...f, cron: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm">
+                    <span className="text-slate-500">Prompt</span>
+                    <textarea
+                      className="min-h-[4.5rem] rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
+                      value={monitorForm.prompt}
+                      placeholder="Check this product URL and tell me if the price dropped below $40…"
+                      onChange={(e) =>
+                        setMonitorForm((f) => ({ ...f, prompt: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <div className="flex flex-wrap gap-3 text-sm">
+                    <label className="inline-flex items-center gap-1.5 text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={monitorForm.deliverWeb}
+                        onChange={(e) =>
+                          setMonitorForm((f) => ({ ...f, deliverWeb: e.target.checked }))
+                        }
+                      />
+                      Web session
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={monitorForm.deliverSlack}
+                        onChange={(e) =>
+                          setMonitorForm((f) => ({ ...f, deliverSlack: e.target.checked }))
+                        }
+                      />
+                      Slack DMs
+                    </label>
+                    {editingMonitorId ? (
+                      <button
+                        type="button"
+                        className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                        onClick={() => {
+                          setEditingMonitorId(null);
+                          setMonitorForm({
+                            title: "",
+                            cron: "0 9 * * *",
+                            prompt: "",
+                            deliverWeb: true,
+                            deliverSlack: false,
+                          });
+                        }}
+                      >
+                        Cancel edit
+                      </button>
+                    ) : input.trim() ? (
+                      <button
+                        type="button"
+                        className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                        onClick={() =>
+                          setMonitorForm((f) => ({
+                            ...f,
+                            prompt: input.trim(),
+                            title: f.title || input.trim().slice(0, 40),
+                          }))
+                        }
+                      >
+                        Use current prompt
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Examples: <code className="text-slate-400">0 9 * * *</code> daily 9:00 ·{" "}
+                    <code className="text-slate-400">0 9 * * 1-5</code> weekdays ·{" "}
+                    <code className="text-slate-400">0 */6 * * *</code> every 6 hours
+                  </p>
+                </div>
+                {monitors.length === 0 ? (
+                  <p className="text-sm text-slate-500">No monitors yet.</p>
+                ) : (
+                  <ul className="grid gap-2">
+                    {monitors.map((m) => (
+                      <li
+                        key={m.id}
+                        className="rounded-md border border-slate-800 bg-slate-950/60 px-2.5 py-2 text-sm"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-slate-50">{m.title}</div>
+                            <div className="text-slate-400">
+                              {m.cronLabel || m.cron}
+                              {m.enabled ? "" : " · off"}
+                              {m.deliverWeb ? " · web" : ""}
+                              {m.deliverSlack ? " · slack" : ""}
+                            </div>
+                            <div className="truncate text-slate-500" title={m.prompt}>
+                              {m.prompt}
+                            </div>
+                            <div className="text-slate-500">
+                              Last:{" "}
+                              {m.lastRunAt
+                                ? new Date(m.lastRunAt).toLocaleString(undefined, {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "numeric",
+                                    minute: "2-digit",
+                                  })
+                                : "—"}
+                              {m.lastError ? (
+                                <span className="text-amber-200"> · {m.lastError}</span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            <button
+                              type="button"
+                              className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                              disabled={Boolean(busy)}
+                              onClick={() => {
+                                void (async () => {
+                                  setBusy(`monitor-toggle-${m.id}`);
+                                  try {
+                                    await fetch(`/api/agent/monitors/${encodeURIComponent(m.id)}`, {
+                                      method: "PATCH",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ enabled: !m.enabled }),
+                                    });
+                                    await refreshMonitors();
+                                  } finally {
+                                    setBusy(null);
+                                  }
+                                })();
+                              }}
+                            >
+                              {m.enabled ? "Disable" : "Enable"}
+                            </button>
+                            <button
+                              type="button"
+                              className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                              disabled={Boolean(busy)}
+                              onClick={() => {
+                                void (async () => {
+                                  setBusy(`monitor-run-${m.id}`);
+                                  setError(null);
+                                  try {
+                                    const res = await fetch(
+                                      `/api/agent/monitors/${encodeURIComponent(m.id)}`,
+                                      {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ action: "run_now" }),
+                                      },
+                                    );
+                                    const json = (await res.json()) as {
+                                      error?: string;
+                                      webSessionId?: string | null;
+                                      skipped?: string;
+                                    };
+                                    if (!res.ok) {
+                                      throw new Error(json.error || `Failed (${res.status})`);
+                                    }
+                                    setNote(
+                                      json.webSessionId
+                                        ? `Monitor ran · opened session`
+                                        : json.skipped
+                                          ? `Monitor skipped (${json.skipped})`
+                                          : "Monitor ran",
+                                    );
+                                    await refreshMonitors();
+                                    await refreshSessionList();
+                                    if (json.webSessionId) {
+                                      setToolsOpen(false);
+                                      await loadSession(json.webSessionId);
+                                    }
+                                  } catch (e) {
+                                    setError(
+                                      e instanceof Error ? e.message : "Could not run monitor",
+                                    );
+                                  } finally {
+                                    setBusy(null);
+                                  }
+                                })();
+                              }}
+                            >
+                              {busy === `monitor-run-${m.id}` ? "Running…" : "Run now"}
+                            </button>
+                            {m.sessionId ? (
+                              <button
+                                type="button"
+                                className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                                disabled={Boolean(busy)}
+                                onClick={() => {
+                                  void (async () => {
+                                    setToolsOpen(false);
+                                    await loadSession(m.sessionId!);
+                                  })();
+                                }}
+                              >
+                                Open chat
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                              disabled={Boolean(busy)}
+                              onClick={() => {
+                                setEditingMonitorId(m.id);
+                                setMonitorForm({
+                                  title: m.title,
+                                  cron: m.cron,
+                                  prompt: m.prompt,
+                                  deliverWeb: m.deliverWeb,
+                                  deliverSlack: m.deliverSlack,
+                                });
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="text-amber-200 underline underline-offset-2 hover:text-amber-100"
+                              disabled={Boolean(busy)}
+                              onClick={() => {
+                                void (async () => {
+                                  setBusy(`monitor-del-${m.id}`);
+                                  try {
+                                    await fetch(`/api/agent/monitors/${encodeURIComponent(m.id)}`, {
+                                      method: "DELETE",
+                                    });
+                                    if (editingMonitorId === m.id) {
+                                      setEditingMonitorId(null);
+                                      setMonitorForm({
+                                        title: "",
+                                        cron: "0 9 * * *",
+                                        prompt: "",
+                                        deliverWeb: true,
+                                        deliverSlack: false,
+                                      });
+                                    }
+                                    await refreshMonitors();
+                                  } finally {
+                                    setBusy(null);
+                                  }
+                                })();
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </section>
 

@@ -1,4 +1,6 @@
 import { getBackgroundGoogleRedirectUri } from "./app-url";
+import { tickAgentMonitors } from "./agent-monitors";
+import { areAgentMonitorsEnabled, listAgentMonitors } from "./agent-monitors-store";
 import { syncCatDietHistory } from "./cat-diet-history";
 import { tickDailyBrief } from "./daily-brief";
 import { readDailyBriefStore } from "./daily-brief-store";
@@ -73,11 +75,28 @@ function startCatDietHistoryTicker(): void {
   console.log("[cat-diet] history sync hourly when Petlibro/CatLink linked");
 }
 
+function startAgentMonitorsTicker(): void {
+  const tickMs = 60_000;
+  const run = () => void tickAgentMonitors();
+  setInterval(run, tickMs);
+  setTimeout(run, 12_000);
+  void (async () => {
+    if (!areAgentMonitorsEnabled()) {
+      console.log("[agent-monitors] disabled (AGENT_MONITORS_ENABLED=0)");
+      return;
+    }
+    const list = await listAgentMonitors();
+    const on = list.filter((m) => m.enabled).length;
+    console.log(`[agent-monitors] ticker · ${on}/${list.length} enabled`);
+  })();
+}
+
 export function startBackgroundJobs(): void {
   if (g.__familyboardBackground) return;
   g.__familyboardBackground = true;
   startSlackBot();
   startInboxAutoScan();
   startDailyBriefTicker();
+  startAgentMonitorsTicker();
   startCatDietHistoryTicker();
 }
