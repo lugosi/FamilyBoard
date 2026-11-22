@@ -77,6 +77,9 @@ Peanuts (EpiPen in the blue bag).
 
 ### Starter skills (optional)
 
-Reusable how-tos live under `skills/` in the wiki. When **Strava** and the wiki are both configured, FamilyBoard **auto-creates** `skills/strava-training.md` if it is missing (never overwrites an existing page). You can also tap **Add skill to wiki** under AI → Tools → Strava. Template source: [`docs/wiki-skills/strava-training.md`](wiki-skills/strava-training.md). A built-in copy is also injected into the assistant when Strava is configured.
+Reusable how-tos live under `skills/` in the wiki.
+
+- When the wiki is configured, FamilyBoard **auto-creates** `skills/shopping-lists.md` if it is missing (never overwrites). Covers Black Friday / shopping list adds with an Amazon link offer, plus local retail checks near Santa Monica, CA. Template: [`docs/wiki-skills/shopping-lists.md`](wiki-skills/shopping-lists.md). A built-in copy is always injected into the assistant; tap **Add skill to wiki** under AI → Tools → Todos when you want the wiki page explicitly.
+- When **Strava** and the wiki are both configured, FamilyBoard **auto-creates** `skills/strava-training.md` if it is missing (never overwrites an existing page). You can also tap **Add skill to wiki** under AI → Tools → Strava. Template source: [`docs/wiki-skills/strava-training.md`](wiki-skills/strava-training.md). A built-in copy is also injected into the assistant when Strava is configured.
 
 The repo is private, but anything you store is readable by whoever holds the token and by the assistant (Gemini). Think twice before storing things like full card numbers.

@@ -12,7 +12,10 @@ import { getInboxAutoScanMinutes } from "@/lib/background";
 import { getConfiguredPublicAppUrl } from "@/lib/app-url";
 import { getDailyBriefStatus } from "@/lib/daily-brief";
 import { getStravaRedirectUri, isStravaConfigured, listStravaAccounts } from "@/lib/strava";
-import { stravaTrainingSkillPresentInWiki } from "@/lib/wiki-skill-seeds";
+import {
+  shoppingListsSkillPresentInWiki,
+  stravaTrainingSkillPresentInWiki,
+} from "@/lib/wiki-skill-seeds";
 
 export async function GET(request: Request) {
   const google = await readGoogleTokens();
@@ -47,6 +50,15 @@ export async function GET(request: Request) {
       stravaTrainingSkillInWiki = await stravaTrainingSkillPresentInWiki();
     } catch {
       stravaTrainingSkillInWiki = false;
+    }
+  }
+
+  let shoppingListsSkillInWiki = false;
+  if (wikiConfigured) {
+    try {
+      shoppingListsSkillInWiki = await shoppingListsSkillPresentInWiki();
+    } catch {
+      shoppingListsSkillInWiki = false;
     }
   }
 
@@ -85,6 +97,7 @@ export async function GET(request: Request) {
     stravaRedirectUri,
     stravaCallbackDomain,
     stravaTrainingSkillInWiki,
+    shoppingListsSkillInWiki,
     dailyBrief: dailyBrief
       ? {
           enabled: dailyBrief.enabled,

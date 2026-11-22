@@ -97,6 +97,7 @@ export async function listTodos(): Promise<FamilyTodo[]> {
 export async function addTodo(input: {
   title: string;
   notes?: string;
+  url?: string;
   sourceMessageId?: string;
   dueHint?: string;
 }): Promise<FamilyTodo> {
@@ -104,6 +105,7 @@ export async function addTodo(input: {
     id: randomUUID(),
     title: input.title.trim(),
     notes: input.notes?.trim() || undefined,
+    url: input.url?.trim() || undefined,
     sourceMessageId: input.sourceMessageId,
     dueHint: input.dueHint?.trim() || undefined,
     done: false,
@@ -127,6 +129,7 @@ export async function addTodos(
   items: {
     title: string;
     notes?: string;
+    url?: string;
     sourceMessageId?: string;
     dueHint?: string;
   }[],
@@ -142,6 +145,7 @@ export async function addTodos(
         id: randomUUID(),
         title: item.title.trim(),
         notes: item.notes?.trim() || undefined,
+        url: item.url?.trim() || undefined,
         sourceMessageId: item.sourceMessageId,
         dueHint: item.dueHint?.trim() || undefined,
         done: false,
@@ -157,6 +161,44 @@ export async function addTodos(
   const added: FamilyTodo[] = [];
   for (const item of cleaned) added.push(await addTodo(item));
   return added;
+}
+
+export async function updateTodo(
+  id: string,
+  patch: { title?: string; notes?: string | null; url?: string | null; dueHint?: string | null },
+): Promise<FamilyTodo | null> {
+  const apply = (todo: FamilyTodo): FamilyTodo => {
+    if (patch.title !== undefined) todo.title = patch.title.trim();
+    if (patch.notes !== undefined) {
+      todo.notes = patch.notes === null || !String(patch.notes).trim() ? undefined : String(patch.notes).trim();
+    }
+    if (patch.url !== undefined) {
+      todo.url = patch.url === null || !String(patch.url).trim() ? undefined : String(patch.url).trim();
+    }
+    if (patch.dueHint !== undefined) {
+      todo.dueHint =
+        patch.dueHint === null || !String(patch.dueHint).trim()
+          ? undefined
+          : String(patch.dueHint).trim();
+    }
+    return todo;
+  };
+
+  if (await wikiBackendEnabled()) {
+    const { todos, sha } = await ensureWikiSeeded();
+    const todo = todos.find((t) => t.id === id);
+    if (!todo) return null;
+    apply(todo);
+    await saveWikiTodos(todos, sha);
+    return todo;
+  }
+
+  const data = await readJsonFile();
+  const todo = data.todos.find((t) => t.id === id);
+  if (!todo) return null;
+  apply(todo);
+  await writeJsonFile(data);
+  return todo;
 }
 
 export async function setTodoDone(

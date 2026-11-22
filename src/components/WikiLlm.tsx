@@ -41,6 +41,7 @@ type Status = {
   stravaRedirectUri?: string;
   stravaCallbackDomain?: string;
   stravaTrainingSkillInWiki?: boolean;
+  shoppingListsSkillInWiki?: boolean;
   dailyBrief?: {
     enabled: boolean;
     webAgent: boolean;
@@ -1867,12 +1868,82 @@ export function WikiLlm({
                       Todos
                     </button>{" "}
                     (<code className="text-slate-200">todos/list.md</code>). Ask the assistant or open that
-                    page to check them off.
+                    page to check them off. Shopping / Black Friday adds without a link get an Amazon offer;
+                    ask about local stock near Santa Monica too.
                   </p>
                 ) : (
                   <p>
                     Ask the assistant to list or add todos. Link the GitHub wiki to keep them on{" "}
                     <code className="text-slate-200">todos/list.md</code>.
+                  </p>
+                )}
+                {status?.wikilmGithubConfigured ? (
+                  <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm text-slate-400">
+                    {status.shoppingListsSkillInWiki ? (
+                      <p>
+                        Shopping skill is in the wiki as{" "}
+                        <button
+                          type="button"
+                          className="text-sky-300 underline-offset-2 hover:underline"
+                          onClick={() => {
+                            setWikiFocus({ path: "skills/shopping-lists.md", nonce: Date.now() });
+                            selectView("wiki");
+                            setToolsOpen(false);
+                          }}
+                        >
+                          skills/shopping-lists.md
+                        </button>
+                        .
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="flex-1">
+                          Add the shopping / Black Friday + Santa Monica local-retail skill to the wiki.
+                        </p>
+                        <button
+                          type="button"
+                          className={sideBtn}
+                          disabled={busy === "shopping-skill"}
+                          onClick={() => {
+                            void (async () => {
+                              setBusy("shopping-skill");
+                              setError(null);
+                              try {
+                                const res = await fetch("/api/wiki/control", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ action: "ensure_shopping_lists_skill" }),
+                                });
+                                const json = (await res.json()) as {
+                                  status?: string;
+                                  path?: string;
+                                  error?: string;
+                                };
+                                if (!res.ok) throw new Error(json.error || `Failed (${res.status})`);
+                                setNote(
+                                  json.status === "created"
+                                    ? `Added ${json.path ?? "skills/shopping-lists.md"} to the wiki`
+                                    : `Wiki already has ${json.path ?? "skills/shopping-lists.md"}`,
+                                );
+                                setWikiRefreshKey((k) => k + 1);
+                                void refresh();
+                              } catch (e) {
+                                setError(e instanceof Error ? e.message : "Could not add skill");
+                              } finally {
+                                setBusy(null);
+                              }
+                            })();
+                          }}
+                        >
+                          {busy === "shopping-skill" ? "Adding…" : "Add skill to wiki"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs text-slate-500">
+                    Link the family wiki to auto-install the shopping skill under{" "}
+                    <code className="text-slate-400">skills/</code>.
                   </p>
                 )}
               </section>

@@ -37,3 +37,23 @@ test("round-trips checklist items with metadata", () => {
   assert.ok(done);
   assert.equal(done.done, true);
 });
+
+test("round-trips shopping items with url as markdown link", () => {
+  const todos = [
+    {
+      id: "s1",
+      title: "AirPods Pro",
+      url: "https://www.amazon.com/s?k=AirPods%20Pro",
+      done: false,
+      createdAt: "2026-11-22T12:00:00.000Z",
+    },
+  ];
+  const md = composeTodoChecklistPage(todos, "2026-11-22");
+  assert.match(md, /\[AirPods Pro\]\(https:\/\/www\.amazon\.com\/s\?k=AirPods%20Pro\)/);
+  assert.match(md, /url=https:\/\/www\.amazon\.com\/s\?k=AirPods%20Pro/);
+  const body = md.replace(/^---[\s\S]*?---\n/, "");
+  const items = parseTodoChecklist(body);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].title, "AirPods Pro");
+  assert.equal(items[0].url, "https://www.amazon.com/s?k=AirPods%20Pro");
+});
