@@ -1,10 +1,6 @@
 import { fetchCatlinkSnapshot, getCatlinkConfig } from "./catlink";
 import { getDefaultTimeZone } from "./google";
-import {
-  formatHouseDashboardText,
-  type HousePanel,
-  type HouseQuickAction,
-} from "./house-dashboard-format";
+import type { HousePanel, HouseQuickAction } from "./house-dashboard-format";
 import { isHueConfigured, listHueAreas, type HueArea } from "./hue";
 import { fetchPetlibroSnapshot, getPetlibroConfig } from "./petlibro";
 import { readSpotifyTokens, requireSpotifyOAuthEnv, spotifyApiFetch } from "./spotify";
