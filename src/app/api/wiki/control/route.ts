@@ -7,7 +7,10 @@ import {
   saveWikiPageRaw,
   wikiErrorStatus,
 } from "@/lib/wikilm-github";
-import { ensureStravaTrainingWikiSkill } from "@/lib/wiki-skill-seeds";
+import {
+  ensureShoppingListsWikiSkill,
+  ensureStravaTrainingWikiSkill,
+} from "@/lib/wiki-skill-seeds";
 import { isStravaConfigured } from "@/lib/strava";
 
 type ControlBody = {
@@ -16,7 +19,8 @@ type ControlBody = {
     | "create_page"
     | "move_page"
     | "delete_page"
-    | "ensure_strava_training_skill";
+    | "ensure_strava_training_skill"
+    | "ensure_shopping_lists_skill";
   path?: string;
   newPath?: string;
   /** Raw markdown (frontmatter included) for save_page. */
@@ -99,6 +103,10 @@ export async function POST(request: Request) {
           );
         }
         const result = await ensureStravaTrainingWikiSkill();
+        return NextResponse.json(result);
+      }
+      case "ensure_shopping_lists_skill": {
+        const result = await ensureShoppingListsWikiSkill();
         return NextResponse.json(result);
       }
       default:

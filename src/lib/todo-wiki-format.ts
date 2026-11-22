@@ -4,6 +4,8 @@ export type FamilyTodo = {
   id: string;
   title: string;
   notes?: string;
+  /** Optional product / reference link (Amazon search, store page, …). */
+  url?: string;
   sourceMessageId?: string;
   dueHint?: string;
   done: boolean;
@@ -15,6 +17,7 @@ export const TODOS_WIKI_PATH = "todos/list.md";
 const META_RE =
   /<!--\s*fb:([^>]*)-->\s*$/;
 const ITEM_RE = /^(\s*)- \[([ xX])\]\s+(.+?)\s*$/;
+const MD_LINK_RE = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/i;
 
 function parseMeta(raw: string): Partial<FamilyTodo> {
   const out: Partial<FamilyTodo> = {};
@@ -26,6 +29,7 @@ function parseMeta(raw: string): Partial<FamilyTodo> {
     if (key === "id") out.id = val;
     else if (key === "due") out.dueHint = val;
     else if (key === "notes") out.notes = val;
+    else if (key === "url") out.url = val;
     else if (key === "src") out.sourceMessageId = val;
     else if (key === "created") out.createdAt = val;
   }
@@ -36,8 +40,23 @@ function encodeMeta(t: FamilyTodo): string {
   const bits = [`id=${t.id}`, `created=${t.createdAt}`];
   if (t.dueHint) bits.push(`due=${t.dueHint.replace(/[;>\n]/g, " ")}`);
   if (t.notes) bits.push(`notes=${t.notes.replace(/[;>\n]/g, " ")}`);
+  if (t.url) bits.push(`url=${t.url.replace(/[;>\n]/g, "")}`);
   if (t.sourceMessageId) bits.push(`src=${t.sourceMessageId.replace(/[;>\n]/g, "")}`);
   return `<!-- fb:${bits.join(";")} -->`;
+}
+
+/** Prefer a markdown link in the visible title when a URL is set. */
+export function formatTodoTitleForChecklist(t: FamilyTodo): string {
+  const title = t.title.trim();
+  if (!t.url?.trim()) return title;
+  if (MD_LINK_RE.test(title)) return title;
+  return `[${title}](${t.url.trim()})`;
+}
+
+function parseVisibleTitle(rest: string): { title: string; url?: string } {
+  const md = rest.match(MD_LINK_RE);
+  if (md) return { title: md[1].trim(), url: md[2].trim() };
+  return { title: rest };
 }
 
 export function parseTodoChecklist(body: string): FamilyTodo[] {
@@ -54,10 +73,12 @@ export function parseTodoChecklist(body: string): FamilyTodo[] {
       rest = rest.slice(0, mm.index).trim();
     }
     if (!rest) continue;
+    const visible = parseVisibleTitle(rest);
     todos.push({
-      id: meta.id || `legacy-${todos.length}-${rest.slice(0, 24)}`,
-      title: rest,
+      id: meta.id || `legacy-${todos.length}-${visible.title.slice(0, 24)}`,
+      title: visible.title,
       notes: meta.notes,
+      url: meta.url || visible.url,
       sourceMessageId: meta.sourceMessageId,
       dueHint: meta.dueHint,
       done,
@@ -87,13 +108,13 @@ export function composeTodoChecklistPage(todos: FamilyTodo[], updated: string): 
   ];
   if (!open.length) lines.push("_Nothing open._", "");
   else {
-    for (const t of open) lines.push(`- [ ] ${t.title} ${encodeMeta(t)}`);
+    for (const t of open) lines.push(`- [ ] ${formatTodoTitleForChecklist(t)} ${encodeMeta(t)}`);
     lines.push("");
   }
   lines.push("## Done", "");
   if (!done.length) lines.push("_Nothing finished yet._", "");
   else {
-    for (const t of done) lines.push(`- [x] ${t.title} ${encodeMeta(t)}`);
+    for (const t of done) lines.push(`- [x] ${formatTodoTitleForChecklist(t)} ${encodeMeta(t)}`);
     lines.push("");
   }
   return lines.join("\n");

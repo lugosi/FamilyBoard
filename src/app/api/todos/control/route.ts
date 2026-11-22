@@ -3,13 +3,15 @@ import {
   addTodo,
   removeTodo,
   setTodoDone,
+  updateTodo,
 } from "@/lib/todos";
 
 type ControlBody = {
-  action?: "add" | "complete" | "uncomplete" | "remove";
+  action?: "add" | "complete" | "uncomplete" | "remove" | "update";
   id?: string;
   title?: string;
   notes?: string;
+  url?: string;
   dueHint?: string;
 };
 
@@ -32,12 +34,25 @@ export async function POST(request: Request) {
       const todo = await addTodo({
         title: body.title,
         notes: body.notes,
+        url: body.url,
         dueHint: body.dueHint,
       });
       return NextResponse.json({ todo });
     }
     if (!body.id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+    if (body.action === "update") {
+      const todo = await updateTodo(body.id, {
+        title: body.title,
+        notes: body.notes,
+        url: body.url,
+        dueHint: body.dueHint,
+      });
+      if (!todo) {
+        return NextResponse.json({ error: "not_found" }, { status: 404 });
+      }
+      return NextResponse.json({ todo });
     }
     if (body.action === "complete" || body.action === "uncomplete") {
       const todo = await setTodoDone(body.id, body.action === "complete");

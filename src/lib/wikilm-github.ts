@@ -75,8 +75,9 @@ const blobCache = new Map<string, string>();
 /** Default private family wiki; override with WIKILM_GITHUB_REPO if needed. */
 export const DEFAULT_WIKILM_GITHUB_REPO = "lugosi/family-wiki";
 
-/** Seeded starter skill path (relative to wiki root). */
+/** Seeded starter skill paths (relative to wiki root). */
 export const STRAVA_TRAINING_SKILL_PATH = `${SKILLS_FOLDER}/strava-training.md`;
+export const SHOPPING_LISTS_SKILL_PATH = `${SKILLS_FOLDER}/shopping-lists.md`;
 
 export function getWikilmGithubConfig(): WikiConfig | null {
   const token = process.env.WIKILM_GITHUB_TOKEN?.trim();
