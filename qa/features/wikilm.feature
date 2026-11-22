@@ -24,6 +24,21 @@ Feature: WikiLLM AI tab
     And I see action chips such as "House dashboard" (only real actions, no fake example appointments)
     And Inbox / Slack / Todos live under Tools (not a second column on the chat)
 
+  Scenario: Steer while the assistant is thinking
+    Given auth status has geminiConfigured true
+    When I open the AI tab
+    And I send "Find a gym class this week"
+    And before the reply returns I type "add HIIT" and press Enter (or Add)
+    Then the in-flight request is aborted and retried with both lines in one user turn
+    And I get a single combined assistant reply (not two parallel answers)
+    And while thinking the prompt placeholder invites adding to the reply
+    And Stop / Escape cancels and puts the combined draft back in the input
+
+  Scenario: Board opens Ask overlay without a floating robot FAB
+    When I am on the Board tab
+    Then I do not see a floating bottom-right robot button
+    And I can open assistant chat from the nav "Ask" control (or the AI tab)
+
   Scenario: House dashboard from chat or Slack
     Given auth status has geminiConfigured true
     When I send "House dashboard" (AI tab) or message the Slack bot the same

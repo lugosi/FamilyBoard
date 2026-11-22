@@ -384,7 +384,7 @@ export function WikiLlm({
   onClose,
 }: {
   active?: boolean;
-  /** Board floating chat vs full AI tab. */
+  /** Board Ask overlay vs full AI tab. */
   variant?: "page" | "overlay";
   onClose?: () => void;
 }) {
@@ -464,10 +464,25 @@ export function WikiLlm({
   const chatAbortRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  /** Latest chat transcript (sendPrompt reads this; setState alone can be stale). */
+  const chatRef = useRef<ChatTurn[]>([]);
+  /**
+   * Mid-turn steer: abort+retry folds follow-ups into the in-flight user turn.
+   * turnBase = transcript before that user bubble; turnText/Files = combined prompt.
+   */
+  const turnBaseRef = useRef<ChatTurn[] | null>(null);
+  const turnTextRef = useRef("");
+  const turnFilesRef = useRef<ChatAttachment[]>([]);
+  /** Bumped on each in-flight request so superseded (aborted-for-steer) replies are ignored. */
+  const chatRequestGenRef = useRef(0);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
+
+  useEffect(() => {
+    chatRef.current = chat;
+  }, [chat]);
 
   const rememberSessionId = useCallback((id: string | null) => {
     setSessionId(id);
@@ -769,25 +784,24 @@ export function WikiLlm({
     chatAbortRef.current?.abort();
   }
 
-  async function sendPrompt(raw?: string) {
-    const text = (raw ?? input).trim();
-    const files = raw === undefined ? pending : [];
-    if ((!text && !files.length) || busy) return;
-    setBusy("chat");
-    setError(null);
-    setChatStatus(null);
-    setSkillForm(null);
-    const nextChat: ChatTurn[] = [
-      ...chat,
-      { role: "user", content: text, ...(files.length ? { attachments: files } : {}) },
-    ];
-    setChat(nextChat);
-    setInput("");
-    if (files.length) setPending([]);
-    focusPrompt();
+  /**
+   * POST /api/agent/chat for `nextChat`. Concurrent steers bump `chatRequestGenRef`
+   * and abort the previous fetch so only the latest combined prompt gets a reply.
+   */
+  async function runChatRequest(nextChat: ChatTurn[], opts?: { steered?: boolean }) {
+    const myGen = ++chatRequestGenRef.current;
+    chatAbortRef.current?.abort();
     const ac = new AbortController();
     chatAbortRef.current = ac;
+    setBusy("chat");
+    setError(null);
+    setChatStatus(
+      opts?.steered
+        ? "Folding that into the reply…"
+        : null,
+    );
     const statusTimer = window.setTimeout(() => {
+      if (myGen !== chatRequestGenRef.current) return;
       setChatStatus("Still working (Gemini may be retrying) — hit Stop anytime.");
     }, 4000);
     try {
@@ -796,7 +810,11 @@ export function WikiLlm({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: nextChat.map(({ role, content, attachments }) => ({ role, content, attachments })),
+          messages: nextChat.map(({ role, content, attachments }) => ({
+            role,
+            content,
+            attachments,
+          })),
           ...(member
             ? {
                 actorMember: member,
@@ -813,6 +831,7 @@ export function WikiLlm({
         pendingApproval?: PendingApproval;
         error?: string;
       }>(res);
+      if (myGen !== chatRequestGenRef.current) return;
       if (!res.ok) throw new Error(json.error || `Assistant failed (${res.status})`);
       const withReply: ChatTurn[] = [
         ...nextChat,
@@ -824,6 +843,7 @@ export function WikiLlm({
           ...(json.pendingApproval ? { pendingApproval: json.pendingApproval } : {}),
         },
       ];
+      chatRef.current = withReply;
       setChat(withReply);
       void persistSession(withReply);
       // Writes to calendar/wiki are staged until Approve — don't refresh as if applied.
@@ -839,21 +859,81 @@ export function WikiLlm({
         void refresh();
       }
     } catch (e) {
+      if (myGen !== chatRequestGenRef.current) return;
       if (ac.signal.aborted) {
         setChatStatus("Stopped.");
       } else {
         setError(friendlyChatError(e));
       }
-      setChat(chat);
-      setInput(text);
-      if (files.length) setPending(files);
+      const base = turnBaseRef.current ?? chatRef.current;
+      chatRef.current = base;
+      setChat(base);
+      setInput(turnTextRef.current);
+      if (turnFilesRef.current.length) setPending(turnFilesRef.current);
     } finally {
       window.clearTimeout(statusTimer);
+      if (myGen !== chatRequestGenRef.current) return;
       chatAbortRef.current = null;
+      turnBaseRef.current = null;
+      turnTextRef.current = "";
+      turnFilesRef.current = [];
       setBusy(null);
       setChatStatus((prev) => (prev === "Stopped." ? prev : null));
       focusPrompt();
     }
+  }
+
+  async function sendPrompt(raw?: string) {
+    const text = (raw ?? input).trim();
+    const files = raw === undefined ? pending : [];
+    if (!text && !files.length) return;
+    // Block non-chat busy (approve / scan / …). While thinking, allow steers.
+    if (busy && busy !== "chat") return;
+
+    if (busy === "chat") {
+      // Mid-turn steer: merge into the in-flight user bubble, abort, retry once.
+      if (!turnBaseRef.current) return;
+      if (files.length && turnFilesRef.current.length + files.length > 3) {
+        setError("Attach up to 3 files per message.");
+        return;
+      }
+      const combinedText = [turnTextRef.current, text].filter(Boolean).join("\n\n");
+      const combinedFiles = [...turnFilesRef.current, ...files];
+      turnTextRef.current = combinedText;
+      turnFilesRef.current = combinedFiles;
+      const nextChat: ChatTurn[] = [
+        ...turnBaseRef.current,
+        {
+          role: "user",
+          content: combinedText,
+          ...(combinedFiles.length ? { attachments: combinedFiles } : {}),
+        },
+      ];
+      chatRef.current = nextChat;
+      setChat(nextChat);
+      setInput("");
+      if (files.length) setPending([]);
+      setSkillForm(null);
+      focusPrompt();
+      await runChatRequest(nextChat, { steered: true });
+      return;
+    }
+
+    setSkillForm(null);
+    const base = chatRef.current;
+    turnBaseRef.current = base;
+    turnTextRef.current = text;
+    turnFilesRef.current = files;
+    const nextChat: ChatTurn[] = [
+      ...base,
+      { role: "user", content: text, ...(files.length ? { attachments: files } : {}) },
+    ];
+    chatRef.current = nextChat;
+    setChat(nextChat);
+    setInput("");
+    if (files.length) setPending([]);
+    focusPrompt();
+    await runChatRequest(nextChat);
   }
 
   async function resolveApproval(
@@ -1313,8 +1393,8 @@ export function WikiLlm({
                   ))
                 )}
                 {busy === "chat" ? (
-                  <div className="mx-auto flex max-w-3xl items-center gap-3 text-slate-400">
-                    <p>Thinking…</p>
+                  <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-3 text-slate-400">
+                    <p>Thinking… you can add to this reply below.</p>
                     <button
                       type="button"
                       className="rounded-md border border-slate-600 px-3 py-1 text-sm font-medium text-slate-100 hover:bg-slate-800 hover:text-white"
@@ -1469,7 +1549,7 @@ export function WikiLlm({
                   className="max-h-40 min-h-[3.25rem] min-w-0 flex-1 resize-none rounded-md border border-slate-600 bg-slate-900 px-4 py-3.5 text-lg leading-relaxed text-white outline-none placeholder:text-slate-500 focus:border-slate-400"
                   placeholder={
                     busy === "chat"
-                      ? "Still thinking… type the next message"
+                      ? "Add to this reply (e.g. include HIIT)…"
                       : pending.length
                         ? "What should I do with it?"
                         : "Message"
@@ -1489,7 +1569,8 @@ export function WikiLlm({
                     }
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
-                      if (busy === "chat") return;
+                      // While thinking, Enter steers (abort+retry with combined prompt).
+                      if (busy && busy !== "chat") return;
                       void sendPrompt();
                     }
                   }}
@@ -1498,21 +1579,23 @@ export function WikiLlm({
                 {busy === "chat" ? (
                   <button
                     type="button"
-                    className="mb-0.5 rounded-md border border-amber-600/70 bg-amber-950/40 px-5 py-3 text-base font-semibold text-amber-50 hover:border-amber-500 hover:bg-amber-950/70"
+                    className="mb-0.5 rounded-md border border-amber-600/70 bg-amber-950/40 px-4 py-3 text-base font-semibold text-amber-50 hover:border-amber-500 hover:bg-amber-950/70"
                     onClick={stopChat}
                     aria-label="Stop generating"
                   >
                     Stop
                   </button>
-                ) : (
-                  <button
-                    type="submit"
-                    className="mb-0.5 rounded-md bg-slate-100 px-5 py-3 text-base font-semibold text-slate-900 hover:bg-white disabled:opacity-40"
-                    disabled={!input.trim() && !pending.length}
-                  >
-                    Send
-                  </button>
-                )}
+                ) : null}
+                <button
+                  type="submit"
+                  className="mb-0.5 rounded-md bg-slate-100 px-5 py-3 text-base font-semibold text-slate-900 hover:bg-white disabled:opacity-40"
+                  disabled={
+                    (!input.trim() && !pending.length) ||
+                    (Boolean(busy) && busy !== "chat")
+                  }
+                >
+                  {busy === "chat" ? "Add" : "Send"}
+                </button>
               </form>
             </>
           )}
