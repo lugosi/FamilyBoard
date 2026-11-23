@@ -2,6 +2,7 @@ import { getBackgroundGoogleRedirectUri } from "./app-url";
 import { isGeminiConfigured, type GeminiMessage } from "./gemini";
 import { resolvePendingApproval, runFamilyAgent } from "./agent";
 import { findPendingForConversation } from "./agent-pending-writes";
+import { formatPendingSummary } from "./agent-pending-writes-format";
 import {
   AttachmentError,
   attachmentsToPrompt,
@@ -18,18 +19,34 @@ import {
 } from "./chat-chart";
 import { clearChatHistory, getChatHistory, saveChatHistory } from "./chat-memory";
 import {
+  clipSlackText,
   downloadSlackFile,
   getSlackConfig,
   getSlackUserName,
   openSlackSocketUrl,
   pendingApprovalBlocks,
   postSlackMessage,
+  postSlackText,
   setSlackReaction,
   slackAuthTest,
   slackTextToPlain,
   updateSlackMessage,
   uploadSlackFile,
 } from "./slack";
+
+const SLACK_ACTION_FOOTER_MAX = 12;
+const SLACK_APPROVAL_BULLETS = 15;
+
+function slackActionFooter(
+  actions: { ok: boolean; label: string }[],
+): string {
+  if (!actions.length) return "";
+  const head = actions.slice(0, SLACK_ACTION_FOOTER_MAX);
+  const lines = head.map((a) => `${a.ok ? "✅" : "⚠️"} ${a.label}`);
+  const rest = actions.length - head.length;
+  if (rest > 0) lines.push(`…and ${rest} more`);
+  return `\n${lines.join("\n")}`;
+}
 
 const MAX_BACKOFF_MS = 60_000;
 const WORKING_REACTION = "eyes";
@@ -228,7 +245,7 @@ async function handle(msg: Incoming): Promise<void> {
   const state = bot().state;
   const key = msg.threadTs ? `slack:${msg.channel}:${msg.threadTs}` : `slack:dm:${msg.user}`;
   const reply = (text: string) =>
-    postSlackMessage({ channel: msg.channel, text, threadTs: msg.threadTs });
+    postSlackText({ channel: msg.channel, text, threadTs: msg.threadTs });
 
   if (RESET_WORDS.has(msg.text.toLowerCase())) {
     await clearChatHistory(key);
@@ -285,9 +302,7 @@ async function handle(msg: Incoming): Promise<void> {
           decision: APPROVE_WORDS.has(decisionWord) ? "approve" : "reject",
           redirectUri: getBackgroundGoogleRedirectUri(),
         });
-        const footer = result.actions.length
-          ? `\n${result.actions.map((a) => `${a.ok ? "✅" : "⚠️"} ${a.label}`).join("\n")}`
-          : "";
+        const footer = slackActionFooter(result.actions);
         await reply(`${result.reply}${footer}`);
         state.handled += 1;
       } catch (e) {
@@ -355,9 +370,7 @@ async function handle(msg: Incoming): Promise<void> {
       { role: "model", content: result.reply },
     ]);
     const changed = result.actions.filter((a) => !a.ok || !READ_ONLY_TOOLS.has(a.tool));
-    const footer = changed.length
-      ? `\n${changed.map((a) => `${a.ok ? "✅" : "⚠️"} ${a.label}`).join("\n")}`
-      : "";
+    const footer = slackActionFooter(changed);
     const quick =
       result.quickActions?.length &&
       !result.reply.toLowerCase().includes("reply with")
@@ -372,14 +385,41 @@ async function handle(msg: Incoming): Promise<void> {
     // Same ```chart payload as the AI tab — upload PNGs, strip fences from text.
     const body = stripChatChartFences(raw, charts.length ? "remove" : "caption");
     if (result.pendingApproval) {
-      const fallback = `${body}\n\n⏸ Review before writing — tap Approve / Deny (or reply *approve* / *deny*)`;
+      // Compact bullet list for Slack — 100+ calendar proposals used to blow msg_too_long.
+      const approvalSummary = formatPendingSummary(
+        result.pendingApproval.items.map((i) => ({
+          tool: i.tool,
+          args: {},
+          label: i.label,
+        })),
+        { maxBullets: SLACK_APPROVAL_BULLETS },
+      );
+      const n = result.pendingApproval.items.length;
+      const head = clipSlackText(
+        `${body}\n\n⏸ *${n} change${n === 1 ? "" : "s"}* staged — tap Approve / Deny (or reply *approve* / *deny*)`,
+      );
+      // Post long prose as threaded chunks first; approval buttons on a short follow-up.
+      const posted = await postSlackText({
+        channel: msg.channel,
+        text: body || `⏸ ${n} change${n === 1 ? "" : "s"} ready to review.`,
+        threadTs: msg.threadTs,
+      });
+      const reviewTs = msg.threadTs || posted.ts;
       await postSlackMessage({
         channel: msg.channel,
-        text: fallback,
-        threadTs: msg.threadTs,
+        text: head,
+        threadTs: reviewTs,
         blocks: [
-          { type: "section", text: { type: "mrkdwn", text: body.slice(0, 2900) || " " } },
-          ...pendingApprovalBlocks(result.pendingApproval.id, result.pendingApproval.summary),
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: clipSlackText(
+                `⏸ *Review before writing* · ${n} change${n === 1 ? "" : "s"} — Approve applies all.`,
+              ),
+            },
+          },
+          ...pendingApprovalBlocks(result.pendingApproval.id, approvalSummary),
         ],
       });
     } else {
@@ -442,26 +482,29 @@ async function handleInteractive(payload: SlackInteractivePayload): Promise<void
       decision: approve ? "approve" : "reject",
       redirectUri: getBackgroundGoogleRedirectUri(),
     });
-    const footer = result.actions.length
-      ? `\n${result.actions.map((a) => `${a.ok ? "✅" : "⚠️"} ${a.label}`).join("\n")}`
-      : "";
+    const footer = slackActionFooter(result.actions);
     const text = `${result.reply}${footer}`;
     const statusLine = approve ? "✅ *Approved* — changes applied." : "🚫 *Denied* — nothing was written.";
+    // chat.update hard-fails above ~4k (msg_too_long); keep the button message short.
     await updateSlackMessage({
       channel,
       ts: messageTs,
-      text,
+      text: clipSlackText(`${statusLine}\n${text}`, 3500),
       blocks: [
         {
           type: "section",
-          text: { type: "mrkdwn", text: `${statusLine}\n${text}`.slice(0, 2900) },
+          text: { type: "mrkdwn", text: clipSlackText(`${statusLine}\n${text}`) },
         },
       ],
     });
+    // Spill the full result into the thread when it won't fit on the updated message.
+    if (text.length > 2500) {
+      await postSlackText({ channel, text, threadTs: messageTs });
+    }
     state.handled += 1;
   } catch (e) {
     const err = e instanceof Error ? e.message : "Could not resolve that review.";
-    await postSlackMessage({
+    await postSlackText({
       channel,
       text: err,
       threadTs: messageTs,

@@ -78,25 +78,45 @@ export function markApprovalResolvedInTurns<T extends ApprovalTurnLike>(
   return { turns: next, changed };
 }
 
-export function formatPendingSummary(items: PendingWriteItem[]): string {
+export function formatPendingSummary(
+  items: PendingWriteItem[],
+  opts?: { maxBullets?: number },
+): string {
   if (!items.length) return "No changes.";
+  const maxBullets = opts?.maxBullets;
   const cal = items.filter(
     (i) =>
       i.tool === "create_event" || i.tool === "update_event" || i.tool === "delete_event",
   );
   const wiki = items.filter((i) => i.tool.includes("wiki") || i.tool === "save_skill");
-  const lines: string[] = [];
-  if (cal.length) {
-    lines.push("Calendar");
-    for (const i of cal) lines.push(`• ${i.label}`);
-  }
-  if (wiki.length) {
-    if (lines.length) lines.push("");
-    lines.push("Wiki");
-    for (const i of wiki) lines.push(`• ${i.label}`);
-  }
   const other = items.filter((i) => !cal.includes(i) && !wiki.includes(i));
-  for (const i of other) lines.push(`• ${i.label}`);
+  const lines: string[] = [];
+  let bullets = 0;
+  let omitted = 0;
+
+  const pushGroup = (title: string | null, group: PendingWriteItem[]) => {
+    if (!group.length) return;
+    if (title) {
+      if (lines.length) lines.push("");
+      lines.push(title);
+    }
+    for (const i of group) {
+      if (maxBullets != null && bullets >= maxBullets) {
+        omitted += 1;
+        continue;
+      }
+      lines.push(`• ${i.label}`);
+      bullets += 1;
+    }
+  };
+
+  pushGroup("Calendar", cal);
+  pushGroup("Wiki", wiki);
+  pushGroup(null, other);
+
+  if (omitted > 0) {
+    lines.push(`…and ${omitted} more (Approve applies all ${items.length})`);
+  }
   return lines.join("\n");
 }
 

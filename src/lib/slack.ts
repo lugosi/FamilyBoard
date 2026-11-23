@@ -158,9 +158,42 @@ export async function openSlackSocketUrl(): Promise<string> {
 
 export type SlackBlock = Record<string, unknown>;
 
+/** Stay under Slack's practical text budget (docs recommend ~4k; hard fails as msg_too_long). */
+export const SLACK_SAFE_TEXT_CHARS = 3500;
+/** Block Kit section mrkdwn max is 3000. */
+export const SLACK_SECTION_TEXT_CHARS = 2900;
+
+/** Split long Slack text on paragraph/line boundaries for thread replies. */
+export function splitSlackText(text: string, maxChars = SLACK_SAFE_TEXT_CHARS): string[] {
+  const raw = text.replace(/\s+$/u, "");
+  if (!raw) return [" "];
+  if (raw.length <= maxChars) return [raw];
+
+  const chunks: string[] = [];
+  let rest = raw;
+  while (rest.length > maxChars) {
+    const window = rest.slice(0, maxChars);
+    let cut = Math.max(window.lastIndexOf("\n\n"), window.lastIndexOf("\n"));
+    if (cut < maxChars * 0.4) cut = window.lastIndexOf(" ");
+    if (cut < maxChars * 0.4) cut = maxChars;
+    const piece = rest.slice(0, cut).replace(/\s+$/u, "");
+    chunks.push(piece || rest.slice(0, maxChars));
+    rest = rest.slice(piece ? cut : maxChars).replace(/^\s+/u, "");
+  }
+  if (rest) chunks.push(rest);
+  return chunks.length ? chunks : [" "];
+}
+
+/** Clip a single Block Kit section / notification fallback string. */
+export function clipSlackText(text: string, maxChars = SLACK_SECTION_TEXT_CHARS): string {
+  const t = text.trim() || " ";
+  if (t.length <= maxChars) return t;
+  return `${t.slice(0, Math.max(0, maxChars - 1))}…`;
+}
+
 /** Block Kit Approve / Deny row for a staged calendar/wiki write. */
 export function pendingApprovalBlocks(pendingId: string, summary: string): SlackBlock[] {
-  const clipped = summary.length > 2800 ? `${summary.slice(0, 2790)}…` : summary;
+  const clipped = clipSlackText(summary, 2700);
   return [
     {
       type: "section",
@@ -212,6 +245,33 @@ export async function postSlackMessage(input: {
   );
   if (!res.ts) throw new Error("Slack chat.postMessage returned no ts");
   return { ts: res.ts, channel: res.channel ?? input.channel };
+}
+
+/**
+ * Post a (possibly long) reply as one Slack message, then continue in the same thread
+ * so we never hit msg_too_long. When already in a thread, all chunks use that thread.
+ * When top-level, chunk 2+ reply under the first message's ts.
+ */
+export async function postSlackText(input: {
+  channel: string;
+  text: string;
+  threadTs?: string;
+}): Promise<{ ts: string; channel: string }> {
+  const chunks = splitSlackText(input.text);
+  const first = await postSlackMessage({
+    channel: input.channel,
+    text: chunks[0]!,
+    threadTs: input.threadTs,
+  });
+  const continueTs = input.threadTs || first.ts;
+  for (let i = 1; i < chunks.length; i += 1) {
+    await postSlackMessage({
+      channel: input.channel,
+      text: chunks[i]!,
+      threadTs: continueTs,
+    });
+  }
+  return first;
 }
 
 /**
