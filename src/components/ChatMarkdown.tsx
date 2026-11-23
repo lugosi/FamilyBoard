@@ -108,9 +108,12 @@ const components: Components = {
 export function ChatMarkdown({
   children,
   onRelativeLink,
+  /** Wiki pages read larger than chat bubbles. */
+  size = "chat",
 }: {
   children: string;
   onRelativeLink?: (href: string) => void;
+  size?: "chat" | "wiki";
 }) {
   const merged = useMemo<Components>(() => {
     if (!onRelativeLink) return components;
@@ -133,8 +136,13 @@ export function ChatMarkdown({
     };
   }, [onRelativeLink]);
 
+  const sizeClass =
+    size === "wiki"
+      ? "text-[1.3125rem] leading-[1.7]"
+      : "text-[1.125rem] leading-[1.65]";
+
   return (
-    <div className="break-words text-[1.125rem] leading-[1.65] text-slate-50">
+    <div className={`break-words text-slate-50 ${sizeClass}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={merged}>
         {children}
       </ReactMarkdown>

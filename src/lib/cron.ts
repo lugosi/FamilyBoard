@@ -100,10 +100,63 @@ export function cronMatches(expr: string, parts: CronParts): boolean {
   return true;
 }
 
+/** Friendly schedule chips for Tools UI (still stored as 5-field cron). */
+export const SCHEDULE_PRESETS = [
+  {
+    id: "daily-morning",
+    label: "Every morning",
+    hint: "Around 9:00",
+    cron: "0 9 * * *",
+  },
+  {
+    id: "weekdays",
+    label: "Weekday mornings",
+    hint: "Mon–Fri at 9:00",
+    cron: "0 9 * * 1-5",
+  },
+  {
+    id: "twice-daily",
+    label: "Morning & evening",
+    hint: "9:00 and 6:00 pm",
+    cron: "0 9,18 * * *",
+  },
+  {
+    id: "every-6h",
+    label: "A few times a day",
+    hint: "Every 6 hours",
+    cron: "0 */6 * * *",
+  },
+  {
+    id: "hourly",
+    label: "Every hour",
+    hint: "On the hour",
+    cron: "0 * * * *",
+  },
+] as const;
+
+export type SchedulePresetId = (typeof SCHEDULE_PRESETS)[number]["id"] | "custom";
+
+export function cronForSchedulePreset(id: Exclude<SchedulePresetId, "custom">): string {
+  const hit = SCHEDULE_PRESETS.find((p) => p.id === id);
+  return hit?.cron ?? "0 9 * * *";
+}
+
+export function schedulePresetForCron(expr: string): SchedulePresetId {
+  const normalized = expr.trim().replace(/\s+/g, " ");
+  const hit = SCHEDULE_PRESETS.find((p) => p.cron === normalized);
+  return hit?.id ?? "custom";
+}
+
 /** Human-ish one-liner for Tools UI (not a full English rewriter). */
 export function describeCron(expr: string): string {
+  const preset = schedulePresetForCron(expr);
+  if (preset !== "custom") {
+    const hit = SCHEDULE_PRESETS.find((p) => p.id === preset);
+    if (hit) return hit.label;
+  }
+
   const parsed = parseCron(expr);
-  if (!parsed) return "invalid cron";
+  if (!parsed) return "custom schedule";
   const [mins, hours, doms, months, dows] = parsed;
   const everyMin = mins.size === 60;
   const everyHour = hours.size === 24;
@@ -122,7 +175,22 @@ export function describeCron(expr: string): string {
   ) {
     const m = [...mins][0];
     const h = [...hours][0];
-    return `daily at ${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    return `daily at ${formatClock(h, m)}`;
+  }
+
+  if (
+    mins.size === 1 &&
+    hours.size > 1 &&
+    everyDom &&
+    everyMonth &&
+    everyDow
+  ) {
+    const m = [...mins][0];
+    const clocks = [...hours]
+      .sort((a, b) => a - b)
+      .map((h) => formatClock(h, m))
+      .join(" & ");
+    return `daily at ${clocks}`;
   }
 
   if (
@@ -135,8 +203,8 @@ export function describeCron(expr: string): string {
     const m = [...mins][0];
     const h = [...hours][0];
     const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const days = [...dows].sort((a, b) => a - b).map((d) => names[d]).join(",");
-    return `${days} at ${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    const days = [...dows].sort((a, b) => a - b).map((d) => names[d]).join(", ");
+    return `${days} at ${formatClock(h, m)}`;
   }
 
   if (
@@ -147,10 +215,36 @@ export function describeCron(expr: string): string {
     everyMonth &&
     everyDow
   ) {
-    return "hourly";
+    return "every hour";
   }
 
-  return expr.trim();
+  // */N hour patterns with minute 0
+  if (
+    mins.size === 1 &&
+    [...mins][0] === 0 &&
+    hours.size > 1 &&
+    hours.size < 24 &&
+    everyDom &&
+    everyMonth &&
+    everyDow
+  ) {
+    const sorted = [...hours].sort((a, b) => a - b);
+    const step = sorted.length >= 2 ? sorted[1] - sorted[0] : 0;
+    if (step > 0 && sorted.every((h, i) => h === sorted[0] + i * step)) {
+      return `every ${step} hours`;
+    }
+  }
+
+  return "custom schedule";
+}
+
+function formatClock(hour: number, minute: number): string {
+  const d = new Date(Date.UTC(2000, 0, 1, hour, minute));
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    hour: "numeric",
+    ...(minute === 0 ? {} : { minute: "2-digit" as const }),
+  }).format(d);
 }
 
 export function zonedCronParts(now: Date, timeZone: string): CronParts {

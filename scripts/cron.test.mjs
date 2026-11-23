@@ -2,11 +2,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  cronForSchedulePreset,
   cronMatches,
   cronSlotKey,
   describeCron,
   isValidCron,
   parseCron,
+  schedulePresetForCron,
   zonedCronParts,
 } from "../src/lib/cron.ts";
 
@@ -47,8 +49,16 @@ test("zonedCronParts + slot key are stable in Pacific", () => {
 });
 
 test("describeCron covers common shapes", () => {
-  assert.equal(describeCron("0 7 * * *"), "daily at 07:00");
-  assert.equal(describeCron("0 9 * * 1-5"), "Mon,Tue,Wed,Thu,Fri at 09:00");
-  assert.equal(describeCron("0 * * * *"), "hourly");
+  assert.equal(describeCron("0 9 * * *"), "Every morning");
+  assert.equal(describeCron("0 9 * * 1-5"), "Weekday mornings");
+  assert.equal(describeCron("0 * * * *"), "Every hour");
+  assert.equal(describeCron("0 */6 * * *"), "A few times a day");
+  assert.equal(describeCron("0 7 * * *"), "daily at 7 AM");
   assert.equal(describeCron("* * * * *"), "every minute");
+});
+
+test("schedule presets map to cron and back", () => {
+  assert.equal(cronForSchedulePreset("daily-morning"), "0 9 * * *");
+  assert.equal(schedulePresetForCron("0 9 * * *"), "daily-morning");
+  assert.equal(schedulePresetForCron("0 7 * * *"), "custom");
 });

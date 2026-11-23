@@ -20,6 +20,12 @@ import {
   isPendingApprovalExpired,
 } from "@/lib/agent-pending-writes-format";
 import {
+  SCHEDULE_PRESETS,
+  cronForSchedulePreset,
+  schedulePresetForCron,
+  type SchedulePresetId,
+} from "@/lib/cron";
+import {
   fbBtnApprove,
   fbBtnApproveLg,
   fbBtnChip,
@@ -27,6 +33,18 @@ import {
   fbBtnDenyLg,
   fbBtnSecondarySm,
 } from "@/lib/ui-buttons";
+
+const DEFAULT_MONITOR_FORM = {
+  title: "",
+  schedule: "daily-morning" as SchedulePresetId,
+  cron: cronForSchedulePreset("daily-morning"),
+  prompt: "",
+  deliverWeb: true,
+  deliverSlack: false,
+};
+
+const PRICE_WATCH_EXAMPLE =
+  "Check this product page and tell me the current price. Alert me if it drops below $40: https://example.com/product";
 
 type Status = {
   googleLinked?: boolean;
@@ -419,13 +437,7 @@ export function WikiLlm({
   const [toolsOpen, setToolsOpen] = useState(false);
   const [monitors, setMonitors] = useState<AgentMonitorRow[]>([]);
   const [monitorsEnabled, setMonitorsEnabled] = useState(true);
-  const [monitorForm, setMonitorForm] = useState({
-    title: "",
-    cron: "0 9 * * *",
-    prompt: "",
-    deliverWeb: true,
-    deliverSlack: false,
-  });
+  const [monitorForm, setMonitorForm] = useState(DEFAULT_MONITOR_FORM);
   const [editingMonitorId, setEditingMonitorId] = useState<string | null>(null);
   const [wikiFocus, setWikiFocus] = useState<{ path: string; nonce: number } | null>(null);
   const storedView = useSyncExternalStore(subscribeNoop, readInitialView, () => "chat" as AiView);
@@ -2096,11 +2108,11 @@ export function WikiLlm({
               </section>
 
               <section
-                aria-label="Monitors"
+                aria-label="Scheduled checks"
                 className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-3 text-base leading-relaxed text-slate-300"
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <h3 className="font-semibold text-white">Monitors</h3>
+                  <h3 className="font-semibold text-white">Scheduled checks</h3>
                   <button
                     type="button"
                     className={sideBtn}
@@ -2110,9 +2122,16 @@ export function WikiLlm({
                         setBusy("monitor-save");
                         setError(null);
                         try {
+                          const cron =
+                            monitorForm.schedule === "custom"
+                              ? monitorForm.cron.trim()
+                              : cronForSchedulePreset(monitorForm.schedule);
                           const payload = {
-                            title: monitorForm.title.trim() || undefined,
-                            cron: monitorForm.cron.trim(),
+                            title:
+                              monitorForm.title.trim() ||
+                              monitorForm.prompt.trim().slice(0, 48) ||
+                              "Price check",
+                            cron,
                             prompt: monitorForm.prompt.trim(),
                             deliverWeb: monitorForm.deliverWeb,
                             deliverSlack: monitorForm.deliverSlack,
@@ -2134,18 +2153,12 @@ export function WikiLlm({
                           const json = (await res.json()) as { error?: string };
                           if (!res.ok) throw new Error(json.error || `Failed (${res.status})`);
                           const wasEdit = Boolean(editingMonitorId);
-                          setMonitorForm({
-                            title: "",
-                            cron: "0 9 * * *",
-                            prompt: "",
-                            deliverWeb: true,
-                            deliverSlack: false,
-                          });
+                          setMonitorForm(DEFAULT_MONITOR_FORM);
                           setEditingMonitorId(null);
-                          setNote(wasEdit ? "Monitor updated" : "Monitor created");
+                          setNote(wasEdit ? "Check updated" : "Check saved — it’ll run on that schedule");
                           await refreshMonitors();
                         } catch (e) {
-                          setError(e instanceof Error ? e.message : "Could not save monitor");
+                          setError(e instanceof Error ? e.message : "Could not save check");
                         } finally {
                           setBusy(null);
                         }
@@ -2156,50 +2169,116 @@ export function WikiLlm({
                       ? "Saving…"
                       : editingMonitorId
                         ? "Save"
-                        : "Add"}
+                        : "Start watching"}
                   </button>
                 </div>
-                <p className="mb-2 text-sm text-slate-400">
-                  Crontab-style agent checks (prices, class actions, etc.). Each run appends to one AI
-                  chat session
-                  {monitorsEnabled ? "" : " · globally off (AGENT_MONITORS_ENABLED=0)"}.
+                <p className="mb-3 text-sm text-slate-400">
+                  Have the assistant check something for you on a schedule — like a product price —
+                  and leave the answer in a chat
+                  {status?.slackConfigured ? " (and optionally Slack)" : ""}
+                  {monitorsEnabled ? "." : " · currently off (AGENT_MONITORS_ENABLED=0)."}
                 </p>
-                <div className="mb-3 grid gap-2">
+                <div className="mb-3 grid gap-3">
                   <label className="grid gap-1 text-sm">
-                    <span className="text-slate-500">Title</span>
+                    <span className="text-slate-500">Name</span>
                     <input
                       className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
                       value={monitorForm.title}
-                      placeholder="Price watch"
+                      placeholder="AirPods price"
                       onChange={(e) =>
                         setMonitorForm((f) => ({ ...f, title: e.target.value }))
                       }
                     />
                   </label>
                   <label className="grid gap-1 text-sm">
-                    <span className="text-slate-500">
-                      Cron <span className="text-slate-600">(min hour dom month dow)</span>
-                    </span>
-                    <input
-                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-slate-100"
-                      value={monitorForm.cron}
-                      placeholder="0 9 * * *"
-                      onChange={(e) =>
-                        setMonitorForm((f) => ({ ...f, cron: e.target.value }))
-                      }
-                    />
-                  </label>
-                  <label className="grid gap-1 text-sm">
-                    <span className="text-slate-500">Prompt</span>
+                    <span className="text-slate-500">What should it check?</span>
                     <textarea
-                      className="min-h-[4.5rem] rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
+                      className="min-h-[5rem] rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
                       value={monitorForm.prompt}
-                      placeholder="Check this product URL and tell me if the price dropped below $40…"
+                      placeholder={PRICE_WATCH_EXAMPLE}
                       onChange={(e) =>
                         setMonitorForm((f) => ({ ...f, prompt: e.target.value }))
                       }
                     />
                   </label>
+                  {!monitorForm.prompt.trim() && !editingMonitorId ? (
+                    <button
+                      type="button"
+                      className="justify-self-start text-sm text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                      onClick={() =>
+                        setMonitorForm((f) => ({
+                          ...f,
+                          title: f.title || "Price watch",
+                          prompt: PRICE_WATCH_EXAMPLE,
+                        }))
+                      }
+                    >
+                      Use a price-tracking example
+                    </button>
+                  ) : null}
+                  <fieldset className="grid gap-1.5">
+                    <legend className="text-sm text-slate-500">How often?</legend>
+                    <div className="flex flex-wrap gap-1.5">
+                      {SCHEDULE_PRESETS.map((p) => {
+                        const active = monitorForm.schedule === p.id;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            title={p.hint}
+                            className={`rounded-md border px-2.5 py-1.5 text-sm ${
+                              active
+                                ? "border-sky-500/70 bg-sky-950/50 text-sky-50"
+                                : "border-slate-700 bg-slate-950 text-slate-200 hover:border-slate-500"
+                            }`}
+                            onClick={() =>
+                              setMonitorForm((f) => ({
+                                ...f,
+                                schedule: p.id,
+                                cron: p.cron,
+                              }))
+                            }
+                          >
+                            {p.label}
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        className={`rounded-md border px-2.5 py-1.5 text-sm ${
+                          monitorForm.schedule === "custom"
+                            ? "border-sky-500/70 bg-sky-950/50 text-sky-50"
+                            : "border-slate-700 bg-slate-950 text-slate-200 hover:border-slate-500"
+                        }`}
+                        onClick={() =>
+                          setMonitorForm((f) => ({ ...f, schedule: "custom" }))
+                        }
+                      >
+                        Custom…
+                      </button>
+                    </div>
+                    {monitorForm.schedule !== "custom" ? (
+                      <p className="text-xs text-slate-500">
+                        {SCHEDULE_PRESETS.find((p) => p.id === monitorForm.schedule)?.hint}
+                      </p>
+                    ) : (
+                      <label className="grid gap-1 text-sm">
+                        <span className="text-slate-500">Custom schedule</span>
+                        <input
+                          className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-slate-100"
+                          value={monitorForm.cron}
+                          placeholder="0 9 * * *"
+                          onChange={(e) =>
+                            setMonitorForm((f) => ({
+                              ...f,
+                              schedule: "custom",
+                              cron: e.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    )}
+                  </fieldset>
                   <div className="flex flex-wrap gap-3 text-sm">
                     <label className="inline-flex items-center gap-1.5 text-slate-200">
                       <input
@@ -2209,7 +2288,7 @@ export function WikiLlm({
                           setMonitorForm((f) => ({ ...f, deliverWeb: e.target.checked }))
                         }
                       />
-                      Web session
+                      Keep a chat history
                     </label>
                     <label className="inline-flex items-center gap-1.5 text-slate-200">
                       <input
@@ -2219,7 +2298,7 @@ export function WikiLlm({
                           setMonitorForm((f) => ({ ...f, deliverSlack: e.target.checked }))
                         }
                       />
-                      Slack DMs
+                      Also Slack me
                     </label>
                     {editingMonitorId ? (
                       <button
@@ -2227,13 +2306,7 @@ export function WikiLlm({
                         className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
                         onClick={() => {
                           setEditingMonitorId(null);
-                          setMonitorForm({
-                            title: "",
-                            cron: "0 9 * * *",
-                            prompt: "",
-                            deliverWeb: true,
-                            deliverSlack: false,
-                          });
+                          setMonitorForm(DEFAULT_MONITOR_FORM);
                         }}
                       >
                         Cancel edit
@@ -2250,18 +2323,15 @@ export function WikiLlm({
                           }))
                         }
                       >
-                        Use current prompt
+                        Use current chat prompt
                       </button>
                     ) : null}
                   </div>
-                  <p className="text-xs text-slate-500">
-                    Examples: <code className="text-slate-400">0 9 * * *</code> daily 9:00 ·{" "}
-                    <code className="text-slate-400">0 9 * * 1-5</code> weekdays ·{" "}
-                    <code className="text-slate-400">0 */6 * * *</code> every 6 hours
-                  </p>
                 </div>
                 {monitors.length === 0 ? (
-                  <p className="text-sm text-slate-500">No monitors yet.</p>
+                  <p className="text-sm text-slate-500">
+                    Nothing scheduled yet. Try a morning price check to get started.
+                  </p>
                 ) : (
                   <ul className="grid gap-2">
                     {monitors.map((m) => (
@@ -2274,15 +2344,15 @@ export function WikiLlm({
                             <div className="truncate font-medium text-slate-50">{m.title}</div>
                             <div className="text-slate-400">
                               {m.cronLabel || m.cron}
-                              {m.enabled ? "" : " · off"}
-                              {m.deliverWeb ? " · web" : ""}
-                              {m.deliverSlack ? " · slack" : ""}
+                              {m.enabled ? "" : " · paused"}
+                              {m.deliverWeb ? " · chat" : ""}
+                              {m.deliverSlack ? " · Slack" : ""}
                             </div>
                             <div className="truncate text-slate-500" title={m.prompt}>
                               {m.prompt}
                             </div>
                             <div className="text-slate-500">
-                              Last:{" "}
+                              Last check:{" "}
                               {m.lastRunAt
                                 ? new Date(m.lastRunAt).toLocaleString(undefined, {
                                     month: "short",
@@ -2290,7 +2360,7 @@ export function WikiLlm({
                                     hour: "numeric",
                                     minute: "2-digit",
                                   })
-                                : "—"}
+                                : "not yet"}
                               {m.lastError ? (
                                 <span className="text-amber-200"> · {m.lastError}</span>
                               ) : null}
@@ -2317,7 +2387,7 @@ export function WikiLlm({
                                 })();
                               }}
                             >
-                              {m.enabled ? "Disable" : "Enable"}
+                              {m.enabled ? "Pause" : "Resume"}
                             </button>
                             <button
                               type="button"
@@ -2346,10 +2416,10 @@ export function WikiLlm({
                                     }
                                     setNote(
                                       json.webSessionId
-                                        ? `Monitor ran · opened session`
+                                        ? `Check ran · opened chat`
                                         : json.skipped
-                                          ? `Monitor skipped (${json.skipped})`
-                                          : "Monitor ran",
+                                          ? `Skipped (${json.skipped})`
+                                          : "Check ran",
                                     );
                                     await refreshMonitors();
                                     await refreshSessionList();
@@ -2359,7 +2429,7 @@ export function WikiLlm({
                                     }
                                   } catch (e) {
                                     setError(
-                                      e instanceof Error ? e.message : "Could not run monitor",
+                                      e instanceof Error ? e.message : "Could not run check",
                                     );
                                   } finally {
                                     setBusy(null);
@@ -2367,7 +2437,7 @@ export function WikiLlm({
                                 })();
                               }}
                             >
-                              {busy === `monitor-run-${m.id}` ? "Running…" : "Run now"}
+                              {busy === `monitor-run-${m.id}` ? "Checking…" : "Check now"}
                             </button>
                             {m.sessionId ? (
                               <button
@@ -2392,6 +2462,7 @@ export function WikiLlm({
                                 setEditingMonitorId(m.id);
                                 setMonitorForm({
                                   title: m.title,
+                                  schedule: schedulePresetForCron(m.cron),
                                   cron: m.cron,
                                   prompt: m.prompt,
                                   deliverWeb: m.deliverWeb,
@@ -2414,13 +2485,7 @@ export function WikiLlm({
                                     });
                                     if (editingMonitorId === m.id) {
                                       setEditingMonitorId(null);
-                                      setMonitorForm({
-                                        title: "",
-                                        cron: "0 9 * * *",
-                                        prompt: "",
-                                        deliverWeb: true,
-                                        deliverSlack: false,
-                                      });
+                                      setMonitorForm(DEFAULT_MONITOR_FORM);
                                     }
                                     await refreshMonitors();
                                   } finally {
