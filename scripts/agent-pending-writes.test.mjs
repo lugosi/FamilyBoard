@@ -56,6 +56,20 @@ test("preview labels and summary are readable", () => {
   assert.match(summary, /Dentist/);
 });
 
+test("formatPendingSummary can compact long bullet lists for Slack", () => {
+  const items = Array.from({ length: 40 }, (_, i) => ({
+    tool: "create_event",
+    args: {},
+    label: `Add “Event ${i + 1}”`,
+  }));
+  const compact = formatPendingSummary(items, { maxBullets: 15 });
+  assert.match(compact, /Calendar/);
+  assert.match(compact, /Event 1/);
+  assert.match(compact, /Event 15/);
+  assert.doesNotMatch(compact, /Event 16/);
+  assert.match(compact, /and 25 more \(Approve applies all 40\)/);
+});
+
 test("isPendingApprovalExpired uses expiresAt", () => {
   const past = new Date(Date.now() - 1000).toISOString();
   const future = new Date(Date.now() + 60_000).toISOString();
