@@ -32,6 +32,10 @@ export async function PATCH(request: Request, ctx: Ctx) {
     );
   }
 
+  const slackUserIds = Array.isArray(body.slackUserIds)
+    ? body.slackUserIds.filter((x): x is string => typeof x === "string")
+    : undefined;
+
   try {
     const monitor = await patchAgentMonitor(id, {
       ...(typeof body.title === "string" ? { title: body.title } : {}),
@@ -44,6 +48,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
       ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
       ...(typeof body.deliverWeb === "boolean" ? { deliverWeb: body.deliverWeb } : {}),
       ...(typeof body.deliverSlack === "boolean" ? { deliverSlack: body.deliverSlack } : {}),
+      ...(slackUserIds !== undefined ? { slackUserIds } : {}),
     });
     if (!monitor) return NextResponse.json({ error: "not_found" }, { status: 404 });
     return NextResponse.json({ monitor });
@@ -55,9 +60,15 @@ export async function PATCH(request: Request, ctx: Ctx) {
 
 export async function DELETE(_request: Request, ctx: Ctx) {
   const { id } = await ctx.params;
-  const ok = await deleteAgentMonitor(id);
-  if (!ok) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  return NextResponse.json({ ok: true });
+  try {
+    const ok = await deleteAgentMonitor(id);
+    if (!ok) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "delete_failed";
+    const status = message === "morning_brief_cannot_delete" ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
 }
 
 export async function POST(request: Request, ctx: Ctx) {

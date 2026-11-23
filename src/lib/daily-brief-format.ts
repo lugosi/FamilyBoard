@@ -3,6 +3,10 @@
  * No I/O — unit-tested from scripts/daily-brief.test.mjs.
  */
 
+/** Default “what’s included” copy for the built-in Morning brief scheduler item. */
+export const DEFAULT_MORNING_BRIEF_PROMPT =
+  "Calendar, weather, open todos, and house alerts that need attention.";
+
 export type BriefEvent = {
   summary: string;
   start: string;

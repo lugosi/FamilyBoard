@@ -47,6 +47,7 @@ Pages directly under the wiki folder still work (shown as **Unfiled**); ask the 
 title: Maya
 summary: Maya's sizes, school, and allergies
 tags: [kids, school]
+slack: U012ABCDEF
 updated: 2026-11-06
 ---
 
@@ -64,6 +65,7 @@ Peanuts (EpiPen in the blue bag).
 
 - **summary** is what the assistant sees in its index, so make it say what's on the page. Pages without frontmatter fall back to their first paragraph.
 - **tags** help search. **updated** is stamped automatically on every save.
+- **slack** (optional, on `people/` pages): Slack member id (`U…`) so Scheduled checks can DM that person. Find it in Slack → profile → ⋯ → Copy member ID.
 - Use `##` sections: the assistant adds facts under the matching section ("Sizes") instead of rewriting the page.
 - Link pages with relative links, e.g. `[school](../school/washington-elementary.md)`; they open inside the Wiki view.
 - Other frontmatter keys are kept as-is.

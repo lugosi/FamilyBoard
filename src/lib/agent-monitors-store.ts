@@ -4,25 +4,40 @@ import { randomUUID } from "crypto";
 import { getDataDir } from "./data-dir";
 import { getDefaultTimeZone } from "./google";
 import { isValidCron } from "./cron";
+import { DEFAULT_MORNING_BRIEF_PROMPT } from "./daily-brief-format";
+import { normalizeSlackUserId } from "./wiki-format";
+import { readDailyBriefStore } from "./daily-brief-store";
 
 const STORE_FILE = "agent-monitors.json";
 const MAX_MONITORS = 40;
 const MAX_PROMPT = 4000;
 const MAX_TITLE = 80;
 
+export const MORNING_BRIEF_MONITOR_ID = "morning-brief";
+
+export { DEFAULT_MORNING_BRIEF_PROMPT };
+
+export type AgentMonitorKind = "agent" | "morning-brief";
+
 export type AgentMonitor = {
   id: string;
+  kind: AgentMonitorKind;
   title: string;
   enabled: boolean;
   /** 5-field crontab: minute hour day-of-month month day-of-week */
   cron: string;
   timeZone: string;
-  /** Prompt for the family agent each run */
+  /** Prompt for the family agent each run (or brief notes for morning-brief) */
   prompt: string;
   /** Optional wiki skill path (e.g. skills/price-watch.md) */
   skillPath: string | null;
   deliverWeb: boolean;
   deliverSlack: boolean;
+  /**
+   * Slack DM recipients (U…). Empty + deliverSlack → all morning-brief
+   * subscribers (and wiki-linked people are selectable in the UI).
+   */
+  slackUserIds: string[];
   /** Persistent AI chat session for web delivery (append each run) */
   sessionId: string | null;
   lastRunAt: string | null;
@@ -65,16 +80,47 @@ function normalizeSkillPath(raw: unknown): string | null {
   return p;
 }
 
+function normalizeSlackUserIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const item of raw) {
+    const id = normalizeSlackUserId(typeof item === "string" ? item : String(item));
+    if (id && !out.includes(id)) out.push(id);
+  }
+  return out.slice(0, 40);
+}
+
+function normalizeKind(raw: unknown): AgentMonitorKind {
+  return raw === "morning-brief" ? "morning-brief" : "agent";
+}
+
 function normalizeMonitor(raw: Partial<AgentMonitor> | null | undefined): AgentMonitor | null {
   if (!raw || typeof raw !== "object") return null;
   const cron = typeof raw.cron === "string" ? raw.cron.trim() : "";
   if (!isValidCron(cron)) return null;
-  const prompt = typeof raw.prompt === "string" ? clampPrompt(raw.prompt) : "";
+  const kind = normalizeKind(raw.kind);
+  const promptRaw = typeof raw.prompt === "string" ? clampPrompt(raw.prompt) : "";
+  const prompt =
+    promptRaw ||
+    (kind === "morning-brief" ? DEFAULT_MORNING_BRIEF_PROMPT : "");
   if (!prompt) return null;
   const nowIso = new Date().toISOString();
+  const id =
+    kind === "morning-brief"
+      ? MORNING_BRIEF_MONITOR_ID
+      : typeof raw.id === "string" && raw.id.trim()
+        ? raw.id.trim()
+        : randomUUID();
   return {
-    id: typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : randomUUID(),
-    title: clampTitle(typeof raw.title === "string" ? raw.title : "Monitor"),
+    id,
+    kind,
+    title: clampTitle(
+      typeof raw.title === "string"
+        ? raw.title
+        : kind === "morning-brief"
+          ? "Morning brief"
+          : "Monitor",
+    ),
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : true,
     cron,
     timeZone:
@@ -82,9 +128,10 @@ function normalizeMonitor(raw: Partial<AgentMonitor> | null | undefined): AgentM
         ? raw.timeZone.trim()
         : getDefaultTimeZone(),
     prompt,
-    skillPath: normalizeSkillPath(raw.skillPath),
+    skillPath: kind === "morning-brief" ? null : normalizeSkillPath(raw.skillPath),
     deliverWeb: typeof raw.deliverWeb === "boolean" ? raw.deliverWeb : true,
     deliverSlack: typeof raw.deliverSlack === "boolean" ? raw.deliverSlack : false,
+    slackUserIds: normalizeSlackUserIds(raw.slackUserIds),
     sessionId: typeof raw.sessionId === "string" && raw.sessionId.trim() ? raw.sessionId.trim() : null,
     lastRunAt: typeof raw.lastRunAt === "string" && raw.lastRunAt ? raw.lastRunAt : null,
     lastRunSlot: typeof raw.lastRunSlot === "string" && raw.lastRunSlot ? raw.lastRunSlot : null,
@@ -123,7 +170,11 @@ export async function listAgentMonitors(): Promise<AgentMonitor[]> {
   return store.monitors
     .map((m) => normalizeMonitor(m))
     .filter((m): m is AgentMonitor => Boolean(m))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => {
+      if (a.kind === "morning-brief" && b.kind !== "morning-brief") return -1;
+      if (b.kind === "morning-brief" && a.kind !== "morning-brief") return 1;
+      return b.updatedAt.localeCompare(a.updatedAt);
+    });
 }
 
 export async function getAgentMonitor(id: string): Promise<AgentMonitor | null> {
@@ -140,12 +191,18 @@ export type CreateAgentMonitorInput = {
   enabled?: boolean;
   deliverWeb?: boolean;
   deliverSlack?: boolean;
+  slackUserIds?: string[];
+  kind?: AgentMonitorKind;
 };
 
 export async function createAgentMonitor(input: CreateAgentMonitorInput): Promise<AgentMonitor> {
+  if (input.kind === "morning-brief") {
+    throw new Error("morning_brief_is_builtin");
+  }
   const nowIso = new Date().toISOString();
   const draft = normalizeMonitor({
     id: randomUUID(),
+    kind: "agent",
     title: input.title,
     cron: input.cron,
     prompt: input.prompt,
@@ -154,6 +211,7 @@ export async function createAgentMonitor(input: CreateAgentMonitorInput): Promis
     enabled: input.enabled,
     deliverWeb: input.deliverWeb,
     deliverSlack: input.deliverSlack,
+    slackUserIds: input.slackUserIds ?? [],
     sessionId: null,
     lastRunAt: null,
     lastRunSlot: null,
@@ -181,6 +239,7 @@ export type PatchAgentMonitorInput = Partial<
     | "enabled"
     | "deliverWeb"
     | "deliverSlack"
+    | "slackUserIds"
     | "sessionId"
     | "lastRunAt"
     | "lastRunSlot"
@@ -201,16 +260,40 @@ export async function patchAgentMonitor(
     ...prev,
     ...patch,
     id: prev.id,
+    kind: prev.kind,
     createdAt: prev.createdAt,
     updatedAt: new Date().toISOString(),
   });
   if (!next) throw new Error("invalid_monitor");
   store.monitors[idx] = next;
   await writeStore(store);
+
+  // Keep legacy daily-brief.json in sync for Slack morning on/off + status.
+  if (next.kind === "morning-brief") {
+    try {
+      const { patchDailyBriefStore } = await import("./daily-brief-store");
+      const parts = next.cron.trim().split(/\s+/);
+      const minute = Number(parts[0]);
+      const hour = Number(parts[1]);
+      await patchDailyBriefStore({
+        enabled: next.enabled,
+        webAgent: next.deliverWeb,
+        ...(Number.isFinite(hour) ? { hour } : {}),
+        ...(Number.isFinite(minute) ? { minute } : {}),
+        timeZone: next.timeZone,
+      });
+    } catch {
+      /* best-effort */
+    }
+  }
+
   return next;
 }
 
 export async function deleteAgentMonitor(id: string): Promise<boolean> {
+  if (id === MORNING_BRIEF_MONITOR_ID) {
+    throw new Error("morning_brief_cannot_delete");
+  }
   const store = await readRaw();
   const before = store.monitors.length;
   store.monitors = store.monitors.filter((m) => m.id !== id);
@@ -233,4 +316,59 @@ export async function markAgentMonitorRan(
     lastError: input.error ?? null,
     ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
   });
+}
+
+/**
+ * Ensure the built-in Morning brief row exists (seeded from daily-brief.json).
+ * Idempotent — safe to call from status / tick.
+ */
+export async function ensureMorningBriefMonitor(): Promise<AgentMonitor> {
+  const store = await readRaw();
+  const normalized = store.monitors
+    .map((m) => normalizeMonitor(m))
+    .filter((m): m is AgentMonitor => Boolean(m));
+  const existing =
+    normalized.find((m) => m.id === MORNING_BRIEF_MONITOR_ID) ??
+    normalized.find((m) => m.kind === "morning-brief");
+  if (existing) {
+    const fixed: AgentMonitor = {
+      ...existing,
+      id: MORNING_BRIEF_MONITOR_ID,
+      kind: "morning-brief",
+      skillPath: null,
+    };
+    store.monitors = [
+      fixed,
+      ...normalized.filter((m) => m.id !== existing.id && m.id !== MORNING_BRIEF_MONITOR_ID),
+    ];
+    await writeStore(store);
+    return fixed;
+  }
+
+  const brief = await readDailyBriefStore();
+  const nowIso = new Date().toISOString();
+  const cron = `${brief.minute} ${brief.hour} * * *`;
+  const draft = normalizeMonitor({
+    id: MORNING_BRIEF_MONITOR_ID,
+    kind: "morning-brief",
+    title: "Morning brief",
+    enabled: brief.enabled,
+    cron: isValidCron(cron) ? cron : "0 7 * * *",
+    timeZone: brief.timeZone || getDefaultTimeZone(),
+    prompt: DEFAULT_MORNING_BRIEF_PROMPT,
+    skillPath: null,
+    deliverWeb: brief.webAgent,
+    deliverSlack: brief.slackUserIds.length > 0 || Boolean(process.env.DAILY_BRIEF_SLACK_USER_IDS),
+    slackUserIds: [],
+    sessionId: null,
+    lastRunAt: brief.lastSentAt,
+    lastRunSlot: null,
+    lastError: brief.lastError,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  });
+  if (!draft) throw new Error("invalid_morning_brief_monitor");
+  store.monitors.unshift(draft);
+  await writeStore(store);
+  return draft;
 }

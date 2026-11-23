@@ -28,6 +28,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "prompt required" }, { status: 400 });
   }
 
+  const slackUserIds = Array.isArray(body.slackUserIds)
+    ? body.slackUserIds.filter((x): x is string => typeof x === "string")
+    : undefined;
+
   try {
     const monitor = await createAgentMonitor({
       title: typeof body.title === "string" ? body.title : undefined,
@@ -38,6 +42,7 @@ export async function POST(request: Request) {
       enabled: typeof body.enabled === "boolean" ? body.enabled : true,
       deliverWeb: typeof body.deliverWeb === "boolean" ? body.deliverWeb : true,
       deliverSlack: typeof body.deliverSlack === "boolean" ? body.deliverSlack : false,
+      slackUserIds,
     });
     return NextResponse.json({ monitor });
   } catch (e) {

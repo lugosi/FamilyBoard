@@ -1,6 +1,7 @@
 /**
  * Crontab-style agent monitors: run a prompt on a schedule, deliver to a
- * persistent AI chat session and/or Slack DMs (same subscriber list as morning brief).
+ * persistent AI chat session and/or Slack DMs (per-monitor recipient list).
+ * Built-in “Morning brief” uses the deterministic calendar/weather gatherer.
  */
 
 import { getBackgroundGoogleRedirectUri } from "./app-url";
@@ -13,14 +14,18 @@ import {
 } from "./agent-chat-sessions";
 import {
   areAgentMonitorsEnabled,
+  ensureMorningBriefMonitor,
   listAgentMonitors,
   markAgentMonitorRan,
+  MORNING_BRIEF_MONITOR_ID,
   type AgentMonitor,
 } from "./agent-monitors-store";
 import { cronMatches, cronSlotKey, describeCron, zonedCronParts } from "./cron";
+import { runDailyBrief } from "./daily-brief";
 import { readDailyBriefStore } from "./daily-brief-store";
 import { isGeminiConfigured } from "./gemini";
 import { isSlackConfigured, postSlackMessage } from "./slack";
+import { listSlackDeliveryTargets, type SlackDeliveryTarget } from "./wiki-slack-people";
 
 export type AgentMonitorRunResult = {
   id: string;
@@ -64,11 +69,19 @@ function isDue(monitor: AgentMonitor, now: Date): boolean {
   return monitor.lastRunSlot !== slot;
 }
 
-async function deliverSlack(text: string): Promise<AgentMonitorRunResult["slack"]> {
-  if (!isSlackConfigured()) return [];
+/** Resolve who gets Slack DMs for this monitor. */
+export async function resolveMonitorSlackUserIds(monitor: AgentMonitor): Promise<string[]> {
+  if (!monitor.deliverSlack) return [];
+  if (monitor.slackUserIds.length) return [...monitor.slackUserIds];
   const store = await readDailyBriefStore();
-  const userIds = store.slackUserIds;
-  if (!userIds.length) return [];
+  return [...store.slackUserIds];
+}
+
+async function deliverSlack(
+  userIds: string[],
+  text: string,
+): Promise<AgentMonitorRunResult["slack"]> {
+  if (!isSlackConfigured() || !userIds.length) return [];
   const out: AgentMonitorRunResult["slack"] = [];
   for (const userId of userIds) {
     try {
@@ -107,7 +120,11 @@ async function deliverWebSession(
     role: "model",
     content: reply,
     actions: [
-      { tool: "agent_monitor", ok: true, label: `Monitor · ${stamp}` },
+      {
+        tool: monitor.kind === "morning-brief" ? "daily_brief" : "agent_monitor",
+        ok: true,
+        label: monitor.kind === "morning-brief" ? "Morning brief" : `Monitor · ${stamp}`,
+      },
       ...actions.slice(0, 12),
     ],
   };
@@ -132,8 +149,69 @@ async function deliverWebSession(
 }
 
 function formatSlackDelivery(monitor: AgentMonitor, reply: string): string {
+  if (monitor.kind === "morning-brief") return reply.slice(0, 3500);
   const when = describeCron(monitor.cron);
   return `*Monitor · ${monitor.title}* (${when})\n\n${reply}`.slice(0, 3500);
+}
+
+async function runMorningBriefMonitor(
+  monitor: AgentMonitor,
+  opts: { force?: boolean; now?: Date; slot: string },
+): Promise<AgentMonitorRunResult> {
+  const result = await runDailyBrief({
+    force: true,
+    now: opts.now,
+    delivery: {
+      deliverWeb: monitor.deliverWeb,
+      deliverSlack: monitor.deliverSlack,
+      slackUserIds: await resolveMonitorSlackUserIds(monitor),
+      timeZone: monitor.timeZone,
+      extraNote: monitor.prompt,
+      skipWebSession: true,
+      markSent: true,
+    },
+  });
+
+  let webSessionId: string | null = null;
+  if (monitor.deliverWeb && result.textBoard) {
+    try {
+      webSessionId = await deliverWebSession(
+        monitor,
+        "Morning brief for today",
+        result.textBoard,
+        [],
+      );
+    } catch (e) {
+      console.warn(
+        "[agent-monitors] morning brief web session failed:",
+        e instanceof Error ? e.message : e,
+      );
+    }
+  }
+
+  const slackFails = result.slack.filter((s) => !s.ok);
+  const error =
+    slackFails.length > 0
+      ? `slack_failed:${slackFails.map((s) => s.userId).join(",")}`
+      : monitor.deliverWeb && !webSessionId
+        ? "web_session_failed"
+        : null;
+
+  await markAgentMonitorRan(monitor.id, {
+    slot: opts.slot,
+    sessionId: webSessionId ?? monitor.sessionId,
+    error,
+  });
+
+  return {
+    id: monitor.id,
+    title: monitor.title,
+    slot: opts.slot,
+    reply: result.textBoard || result.textSlack,
+    webSessionId,
+    slack: result.slack,
+    ...(error ? { error } : {}),
+  };
 }
 
 /** Run one monitor now (forced) or when due. */
@@ -180,7 +258,7 @@ export async function runAgentMonitor(
     };
   }
 
-  if (!isGeminiConfigured()) {
+  if (monitor.kind !== "morning-brief" && !isGeminiConfigured()) {
     return {
       id: monitor.id,
       title: monitor.title,
@@ -207,6 +285,10 @@ export async function runAgentMonitor(
 
   running.add(monitor.id);
   try {
+    if (monitor.kind === "morning-brief") {
+      return await runMorningBriefMonitor(monitor, { force: opts?.force, now, slot });
+    }
+
     const prompt = buildMonitorPrompt(monitor);
     const result = await runFamilyAgent({
       messages: [{ role: "user", content: prompt }],
@@ -234,7 +316,8 @@ export async function runAgentMonitor(
     let slack: AgentMonitorRunResult["slack"] = [];
     if (monitor.deliverSlack) {
       try {
-        slack = await deliverSlack(formatSlackDelivery(monitor, result.reply));
+        const userIds = await resolveMonitorSlackUserIds(monitor);
+        slack = await deliverSlack(userIds, formatSlackDelivery(monitor, result.reply));
       } catch (e) {
         console.warn(
           "[agent-monitors] slack failed:",
@@ -282,12 +365,16 @@ export async function runAgentMonitor(
 export async function getAgentMonitorsStatus(): Promise<{
   enabled: boolean;
   monitors: (AgentMonitor & { due: boolean; cronLabel: string })[];
+  slackTargets: SlackDeliveryTarget[];
 }> {
+  await ensureMorningBriefMonitor();
   const enabled = areAgentMonitorsEnabled();
   const now = new Date();
   const monitors = await listAgentMonitors();
+  const slackTargets = await listSlackDeliveryTargets();
   return {
     enabled,
+    slackTargets,
     monitors: monitors.map((m) => ({
       ...m,
       due: enabled && isDue(m, now),
@@ -299,11 +386,12 @@ export async function getAgentMonitorsStatus(): Promise<{
 /** Poll from background jobs (~1 min). */
 export async function tickAgentMonitors(): Promise<void> {
   if (!areAgentMonitorsEnabled()) return;
-  if (!isGeminiConfigured()) return;
+  await ensureMorningBriefMonitor();
   const now = new Date();
   const monitors = await listAgentMonitors();
   for (const m of monitors) {
     if (!isDue(m, now)) continue;
+    if (m.kind !== "morning-brief" && !isGeminiConfigured()) continue;
     try {
       await runAgentMonitor(m, { now });
     } catch (e) {
@@ -314,3 +402,5 @@ export async function tickAgentMonitors(): Promise<void> {
     }
   }
 }
+
+export { MORNING_BRIEF_MONITOR_ID };

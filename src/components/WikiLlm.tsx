@@ -41,6 +41,7 @@ const DEFAULT_MONITOR_FORM = {
   prompt: "",
   deliverWeb: true,
   deliverSlack: false,
+  slackUserIds: [] as string[],
 };
 
 const PRICE_WATCH_EXAMPLE =
@@ -125,6 +126,7 @@ type SkillMeta = { path: string; title: string; summary: string; category: strin
 
 type AgentMonitorRow = {
   id: string;
+  kind?: "agent" | "morning-brief";
   title: string;
   enabled: boolean;
   cron: string;
@@ -133,10 +135,18 @@ type AgentMonitorRow = {
   skillPath: string | null;
   deliverWeb: boolean;
   deliverSlack: boolean;
+  slackUserIds?: string[];
   sessionId: string | null;
   lastRunAt: string | null;
   lastError: string | null;
   due?: boolean;
+};
+
+type SlackDeliveryTarget = {
+  userId: string;
+  name: string;
+  source: "wiki" | "registered";
+  path?: string;
 };
 
 type GmailMessage = {
@@ -437,6 +447,7 @@ export function WikiLlm({
   const [toolsOpen, setToolsOpen] = useState(false);
   const [monitors, setMonitors] = useState<AgentMonitorRow[]>([]);
   const [monitorsEnabled, setMonitorsEnabled] = useState(true);
+  const [slackTargets, setSlackTargets] = useState<SlackDeliveryTarget[]>([]);
   const [monitorForm, setMonitorForm] = useState(DEFAULT_MONITOR_FORM);
   const [editingMonitorId, setEditingMonitorId] = useState<string | null>(null);
   const [wikiFocus, setWikiFocus] = useState<{ path: string; nonce: number } | null>(null);
@@ -659,10 +670,12 @@ export function WikiLlm({
       const json = (await res.json()) as {
         enabled?: boolean;
         monitors?: AgentMonitorRow[];
+        slackTargets?: SlackDeliveryTarget[];
       };
       if (signalArg?.aborted) return;
       setMonitorsEnabled(json.enabled !== false);
       setMonitors(json.monitors ?? []);
+      setSlackTargets(json.slackTargets ?? []);
     } catch {
       /* optional */
     }
@@ -1976,138 +1989,6 @@ export function WikiLlm({
               </section>
 
               <section
-                aria-label="Morning brief"
-                className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-3 text-base leading-relaxed text-slate-300"
-              >
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <h3 className="font-semibold text-white">Morning brief</h3>
-                  <button
-                    type="button"
-                    className={sideBtn}
-                    disabled={Boolean(busy)}
-                    onClick={() => {
-                      void (async () => {
-                        setBusy("daily-brief");
-                        setError(null);
-                        try {
-                          const res = await fetch("/api/daily-brief", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ action: "send_now" }),
-                          });
-                          const json = (await res.json()) as {
-                            skipped?: string;
-                            webSessionId?: string | null;
-                            slack?: { ok: boolean }[];
-                            error?: string;
-                          };
-                          if (!res.ok) throw new Error(json.error || `Failed (${res.status})`);
-                          const slackOk = (json.slack ?? []).filter((s) => s.ok).length;
-                          setNote(
-                            json.webSessionId
-                              ? `Morning brief sent · web chat created · Slack ${slackOk}`
-                              : `Morning brief ran · Slack ${slackOk}`,
-                          );
-                          void refresh();
-                          void refreshSessionList();
-                        } catch (e) {
-                          setError(e instanceof Error ? e.message : "Could not send brief");
-                        } finally {
-                          setBusy(null);
-                        }
-                      })();
-                    }}
-                  >
-                    {busy === "daily-brief" ? "Sending…" : "Send now"}
-                  </button>
-                </div>
-                {status?.dailyBrief ? (
-                  <>
-                    <p className="text-sm text-slate-400">
-                      {String(status.dailyBrief.hour).padStart(2, "0")}:
-                      {String(status.dailyBrief.minute).padStart(2, "0")}{" "}
-                      {status.dailyBrief.timeZone} · calendar, weather, todos, house alerts → Slack DMs
-                      + AI chat
-                    </p>
-                    <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
-                      <dt className="text-slate-500">Schedule</dt>
-                      <dd className="text-slate-100">
-                        <button
-                          type="button"
-                          className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
-                          disabled={Boolean(busy)}
-                          onClick={() => {
-                            void (async () => {
-                              setBusy("daily-brief-toggle");
-                              try {
-                                await fetch("/api/daily-brief", {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({
-                                    action: "configure",
-                                    enabled: !status.dailyBrief?.enabled,
-                                  }),
-                                });
-                                void refresh();
-                              } finally {
-                                setBusy(null);
-                              }
-                            })();
-                          }}
-                        >
-                          {status.dailyBrief.enabled ? "on" : "off"}
-                        </button>
-                      </dd>
-                      <dt className="text-slate-500">Web chat</dt>
-                      <dd className="text-slate-100">
-                        <button
-                          type="button"
-                          className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
-                          disabled={Boolean(busy)}
-                          onClick={() => {
-                            void (async () => {
-                              setBusy("daily-brief-web");
-                              try {
-                                await fetch("/api/daily-brief", {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({
-                                    action: "configure",
-                                    webAgent: !status.dailyBrief?.webAgent,
-                                  }),
-                                });
-                                void refresh();
-                              } finally {
-                                setBusy(null);
-                              }
-                            })();
-                          }}
-                        >
-                          {status.dailyBrief.webAgent ? "on" : "off"}
-                        </button>
-                      </dd>
-                      <dt className="text-slate-500">Slack</dt>
-                      <dd className="text-slate-100">
-                        {status.dailyBrief.slackSubscriberCount} registered
-                        {status.slackConfigured
-                          ? " (DM the bot, or say morning on / morning off)"
-                          : ""}
-                      </dd>
-                      <dt className="text-slate-500">Last sent</dt>
-                      <dd className="text-slate-100">
-                        {status.dailyBrief.lastSentDateKey || "—"}
-                        {status.dailyBrief.lastError ? (
-                          <span className="text-amber-200"> · {status.dailyBrief.lastError}</span>
-                        ) : null}
-                      </dd>
-                    </dl>
-                  </>
-                ) : (
-                  <p className="text-sm text-slate-500">Loading schedule…</p>
-                )}
-              </section>
-
-              <section
                 aria-label="Scheduled checks"
                 className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-3 text-base leading-relaxed text-slate-300"
               >
@@ -2135,6 +2016,9 @@ export function WikiLlm({
                             prompt: monitorForm.prompt.trim(),
                             deliverWeb: monitorForm.deliverWeb,
                             deliverSlack: monitorForm.deliverSlack,
+                            slackUserIds: monitorForm.deliverSlack
+                              ? monitorForm.slackUserIds
+                              : [],
                           };
                           const res = editingMonitorId
                             ? await fetch(
@@ -2173,9 +2057,8 @@ export function WikiLlm({
                   </button>
                 </div>
                 <p className="mb-3 text-sm text-slate-400">
-                  Have the assistant check something for you on a schedule — like a product price —
-                  and leave the answer in a chat
-                  {status?.slackConfigured ? " (and optionally Slack)" : ""}
+                  Morning brief is listed here like any other check — edit its time, notes, and who
+                  gets a Slack DM. Add more checks (price watch, etc.) the same way
                   {monitorsEnabled ? "." : " · currently off (AGENT_MONITORS_ENABLED=0)."}
                 </p>
                 <div className="mb-3 grid gap-3">
@@ -2191,7 +2074,12 @@ export function WikiLlm({
                     />
                   </label>
                   <label className="grid gap-1 text-sm">
-                    <span className="text-slate-500">What should it check?</span>
+                    <span className="text-slate-500">
+                      {editingMonitorId &&
+                      monitors.find((m) => m.id === editingMonitorId)?.kind === "morning-brief"
+                        ? "What’s included / extra note"
+                        : "What should it check?"}
+                    </span>
                     <textarea
                       className="min-h-[5rem] rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
                       value={monitorForm.prompt}
@@ -2297,8 +2185,9 @@ export function WikiLlm({
                         onChange={(e) =>
                           setMonitorForm((f) => ({ ...f, deliverSlack: e.target.checked }))
                         }
+                        disabled={!status?.slackConfigured}
                       />
-                      Also Slack me
+                      Slack DMs
                     </label>
                     {editingMonitorId ? (
                       <button
@@ -2327,26 +2216,93 @@ export function WikiLlm({
                       </button>
                     ) : null}
                   </div>
+                  {monitorForm.deliverSlack && status?.slackConfigured ? (
+                    <fieldset className="grid gap-1.5 rounded-md border border-slate-800 bg-slate-950/50 px-2.5 py-2">
+                      <legend className="px-1 text-sm text-slate-500">Who gets the DM?</legend>
+                      {slackTargets.length === 0 ? (
+                        <p className="text-xs text-slate-500">
+                          Add <code className="text-slate-400">slack: U…</code> to a wiki people page,
+                          or have someone DM the bot (they’ll show up as registered).
+                          {monitorForm.slackUserIds.length === 0
+                            ? " Empty selection → all registered morning-brief subscribers."
+                            : ""}
+                        </p>
+                      ) : (
+                        <>
+                          <p className="text-xs text-slate-500">
+                            Leave everyone unchecked to DM all registered subscribers. Wiki people
+                            need <code className="text-slate-400">slack: U…</code> in frontmatter.
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {slackTargets.map((t) => {
+                              const checked = monitorForm.slackUserIds.includes(t.userId);
+                              return (
+                                <label
+                                  key={t.userId}
+                                  className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-sm ${
+                                    checked
+                                      ? "border-sky-500/70 bg-sky-950/40 text-sky-50"
+                                      : "border-slate-700 text-slate-200"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() =>
+                                      setMonitorForm((f) => ({
+                                        ...f,
+                                        slackUserIds: checked
+                                          ? f.slackUserIds.filter((id) => id !== t.userId)
+                                          : [...f.slackUserIds, t.userId],
+                                      }))
+                                    }
+                                  />
+                                  <span>{t.name}</span>
+                                  <span className="text-xs text-slate-500">
+                                    {t.source === "wiki" ? "wiki" : "Slack"}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </fieldset>
+                  ) : null}
                 </div>
                 {monitors.length === 0 ? (
                   <p className="text-sm text-slate-500">
-                    Nothing scheduled yet. Try a morning price check to get started.
+                    Nothing scheduled yet — Morning brief should appear after refresh.
                   </p>
                 ) : (
                   <ul className="grid gap-2">
-                    {monitors.map((m) => (
+                    {monitors.map((m) => {
+                      const isBrief = m.kind === "morning-brief";
+                      const slackCount = m.slackUserIds?.length ?? 0;
+                      return (
                       <li
                         key={m.id}
                         className="rounded-md border border-slate-800 bg-slate-950/60 px-2.5 py-2 text-sm"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="truncate font-medium text-slate-50">{m.title}</div>
+                            <div className="truncate font-medium text-slate-50">
+                              {m.title}
+                              {isBrief ? (
+                                <span className="ml-1.5 text-xs font-normal text-sky-300/90">
+                                  built-in
+                                </span>
+                              ) : null}
+                            </div>
                             <div className="text-slate-400">
                               {m.cronLabel || m.cron}
                               {m.enabled ? "" : " · paused"}
                               {m.deliverWeb ? " · chat" : ""}
-                              {m.deliverSlack ? " · Slack" : ""}
+                              {m.deliverSlack
+                                ? slackCount
+                                  ? ` · Slack (${slackCount})`
+                                  : " · Slack (all registered)"
+                                : ""}
                             </div>
                             <div className="truncate text-slate-500" title={m.prompt}>
                               {m.prompt}
@@ -2381,6 +2337,7 @@ export function WikiLlm({
                                       body: JSON.stringify({ enabled: !m.enabled }),
                                     });
                                     await refreshMonitors();
+                                    void refresh();
                                   } finally {
                                     setBusy(null);
                                   }
@@ -2416,10 +2373,10 @@ export function WikiLlm({
                                     }
                                     setNote(
                                       json.webSessionId
-                                        ? `Check ran · opened chat`
+                                        ? `${isBrief ? "Morning brief" : "Check"} ran · opened chat`
                                         : json.skipped
                                           ? `Skipped (${json.skipped})`
-                                          : "Check ran",
+                                          : `${isBrief ? "Morning brief" : "Check"} ran`,
                                     );
                                     await refreshMonitors();
                                     await refreshSessionList();
@@ -2437,7 +2394,13 @@ export function WikiLlm({
                                 })();
                               }}
                             >
-                              {busy === `monitor-run-${m.id}` ? "Checking…" : "Check now"}
+                              {busy === `monitor-run-${m.id}`
+                                ? isBrief
+                                  ? "Sending…"
+                                  : "Checking…"
+                                : isBrief
+                                  ? "Send now"
+                                  : "Check now"}
                             </button>
                             {m.sessionId ? (
                               <button
@@ -2467,39 +2430,44 @@ export function WikiLlm({
                                   prompt: m.prompt,
                                   deliverWeb: m.deliverWeb,
                                   deliverSlack: m.deliverSlack,
+                                  slackUserIds: m.slackUserIds ?? [],
                                 });
                               }}
                             >
                               Edit
                             </button>
-                            <button
-                              type="button"
-                              className="text-amber-200 underline underline-offset-2 hover:text-amber-100"
-                              disabled={Boolean(busy)}
-                              onClick={() => {
-                                void (async () => {
-                                  setBusy(`monitor-del-${m.id}`);
-                                  try {
-                                    await fetch(`/api/agent/monitors/${encodeURIComponent(m.id)}`, {
-                                      method: "DELETE",
-                                    });
-                                    if (editingMonitorId === m.id) {
-                                      setEditingMonitorId(null);
-                                      setMonitorForm(DEFAULT_MONITOR_FORM);
+                            {!isBrief ? (
+                              <button
+                                type="button"
+                                className="text-amber-200 underline underline-offset-2 hover:text-amber-100"
+                                disabled={Boolean(busy)}
+                                onClick={() => {
+                                  void (async () => {
+                                    setBusy(`monitor-del-${m.id}`);
+                                    try {
+                                      await fetch(
+                                        `/api/agent/monitors/${encodeURIComponent(m.id)}`,
+                                        { method: "DELETE" },
+                                      );
+                                      if (editingMonitorId === m.id) {
+                                        setEditingMonitorId(null);
+                                        setMonitorForm(DEFAULT_MONITOR_FORM);
+                                      }
+                                      await refreshMonitors();
+                                    } finally {
+                                      setBusy(null);
                                     }
-                                    await refreshMonitors();
-                                  } finally {
-                                    setBusy(null);
-                                  }
-                                })();
-                              }}
-                            >
-                              Delete
-                            </button>
+                                  })();
+                                }}
+                              >
+                                Delete
+                              </button>
+                            ) : null}
                           </div>
                         </div>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 )}
               </section>

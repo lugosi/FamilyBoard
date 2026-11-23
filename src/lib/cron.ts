@@ -103,6 +103,12 @@ export function cronMatches(expr: string, parts: CronParts): boolean {
 /** Friendly schedule chips for Tools UI (still stored as 5-field cron). */
 export const SCHEDULE_PRESETS = [
   {
+    id: "early-morning",
+    label: "7:00 morning",
+    hint: "Around 7:00 (classic morning brief)",
+    cron: "0 7 * * *",
+  },
+  {
     id: "daily-morning",
     label: "Every morning",
     hint: "Around 9:00",
