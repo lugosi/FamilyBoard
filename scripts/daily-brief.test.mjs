@@ -100,4 +100,20 @@ test("background jobs start the daily brief ticker", () => {
   const src = readFileSync(new URL("../src/lib/background.ts", import.meta.url), "utf8");
   assert.match(src, /startDailyBriefTicker/);
   assert.match(src, /tickDailyBrief/);
+  assert.match(src, /Scheduled checks/);
+});
+
+test("morning brief is a built-in scheduled check", () => {
+  const store = readFileSync(
+    new URL("../src/lib/agent-monitors-store.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(store, /MORNING_BRIEF_MONITOR_ID/);
+  assert.match(store, /ensureMorningBriefMonitor/);
+  const monitors = readFileSync(
+    new URL("../src/lib/agent-monitors.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(monitors, /morning-brief/);
+  assert.match(monitors, /runMorningBriefMonitor|runDailyBrief/);
 });

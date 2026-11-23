@@ -41,18 +41,13 @@ function startInboxAutoScan(): void {
 }
 
 function startDailyBriefTicker(): void {
-  const tickMs = 60_000;
+  // Morning brief runs via agent-monitors (built-in Scheduled check). This
+  // ticker stays for boot logging + API compatibility; tickDailyBrief is a no-op.
   const run = () => void tickDailyBrief();
-  setInterval(run, tickMs);
-  // Catch up shortly after boot if we're already past 7am local.
   setTimeout(run, 8_000);
   void readDailyBriefStore().then((s) => {
-    if (!s.enabled) {
-      console.log("[daily-brief] disabled");
-      return;
-    }
     console.log(
-      `[daily-brief] scheduled ${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")} ${s.timeZone} → Slack (${s.slackUserIds.length}) + web=${s.webAgent ? "on" : "off"}`,
+      `[daily-brief] managed by Scheduled checks · store ${s.enabled ? "on" : "off"} · ${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")} ${s.timeZone} · Slack ${s.slackUserIds.length}`,
     );
   });
 }

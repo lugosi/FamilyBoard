@@ -55,6 +55,8 @@ export type WikiFrontmatter = {
   summary?: string;
   tags?: string[];
   updated?: string;
+  /** Slack user id (U…) for DMs / scheduled checks — set on people pages. */
+  slack?: string;
 };
 
 export type ParsedPage = {
@@ -158,12 +160,35 @@ export function parseFrontmatter(raw: string): ParsedPage {
     } else if (key === "tags") {
       meta.tags = value.trim() ? parseInlineList(value) : [];
       if (!value.trim()) listKey = "tags";
+    } else if (key === "slack" || key === "slack_user_id" || key === "slack_id") {
+      const id = normalizeSlackUserId(unquote(value));
+      if (id) meta.slack = id;
     } else {
       extra.push(line);
     }
   }
   if (meta.tags) meta.tags = normalizeTags(meta.tags);
   return { meta, extra, body: raw.slice(m[0].length) };
+}
+
+/** Normalize a Slack member id (U…). */
+export function normalizeSlackUserId(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  const id = raw.trim().toUpperCase().replace(/^<@/, "").replace(/>$/, "");
+  return /^U[A-Z0-9]+$/.test(id) ? id : null;
+}
+
+/**
+ * Prefer frontmatter `slack:` / `slack_user_id:` / `slack_id:`;
+ * fall back to a body line like `Slack: U…` / `Slack ID: U…`.
+ */
+export function extractSlackUserIdFromPage(content: string): string | null {
+  const parsed = parseFrontmatter(content);
+  if (parsed.meta.slack) return parsed.meta.slack;
+  const bodyHit = parsed.body.match(
+    /(?:^|\n)\s*(?:slack(?:\s*id)?|slack_user_id)\s*[:：]\s*<?@?(U[A-Z0-9]+)>?/i,
+  );
+  return normalizeSlackUserId(bodyHit?.[1] ?? null);
 }
 
 function yamlScalar(value: string): string {
@@ -180,6 +205,8 @@ export function renderFrontmatter(meta: WikiFrontmatter, extra: string[] = []): 
   const tags = normalizeTags(meta.tags);
   if (tags.length) lines.push(`tags: [${tags.join(", ")}]`);
   if (meta.updated?.trim()) lines.push(`updated: ${meta.updated.trim()}`);
+  const slack = normalizeSlackUserId(meta.slack);
+  if (slack) lines.push(`slack: ${slack}`);
   lines.push(...extra);
   return lines.length ? `---\n${lines.join("\n")}\n---\n` : "";
 }

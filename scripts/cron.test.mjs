@@ -53,12 +53,14 @@ test("describeCron covers common shapes", () => {
   assert.equal(describeCron("0 9 * * 1-5"), "Weekday mornings");
   assert.equal(describeCron("0 * * * *"), "Every hour");
   assert.equal(describeCron("0 */6 * * *"), "A few times a day");
-  assert.equal(describeCron("0 7 * * *"), "daily at 7 AM");
+  assert.equal(describeCron("0 7 * * *"), "7:00 morning");
+  assert.equal(describeCron("0 8 * * *"), "daily at 8 AM");
   assert.equal(describeCron("* * * * *"), "every minute");
 });
 
 test("schedule presets map to cron and back", () => {
   assert.equal(cronForSchedulePreset("daily-morning"), "0 9 * * *");
+  assert.equal(cronForSchedulePreset("early-morning"), "0 7 * * *");
   assert.equal(schedulePresetForCron("0 9 * * *"), "daily-morning");
-  assert.equal(schedulePresetForCron("0 7 * * *"), "custom");
+  assert.equal(schedulePresetForCron("0 7 * * *"), "early-morning");
 });
