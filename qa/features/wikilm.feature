@@ -102,6 +102,14 @@ Feature: WikiLLM AI tab
     When I send "What's the Wi-Fi password?"
     Then the reply cites the Wi-Fi page after "Searched the wiki" / "Read wiki page" chips
 
+  Scenario: Scheduled checks for everyday watching (price, etc.)
+    Given auth status has geminiConfigured true
+    When I open the AI tab and open Tools
+    Then I see "Scheduled checks" (not raw crontab jargon by default)
+    And I can pick how often from plain choices like "Every morning"
+    And I can start from a price-tracking example prompt
+    And saving creates a check that appends to a chat (and optionally Slack)
+
   # Knowledge base lives only in the private GitHub repo (not DATA_DIR). QA against a real repo
   # creates commits; prefer a scratch repo or the local mock (WIKILM_GITHUB_API_BASE_URL).
   # Todos live on wiki todos/list.md when the wiki is configured; otherwise DATA_DIR/todos.json.

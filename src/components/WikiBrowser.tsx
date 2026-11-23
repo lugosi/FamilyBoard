@@ -81,13 +81,13 @@ function toChatAttachment(name: string, summary: string, text: string): ChatAtta
 }
 
 const inputClass =
-  "w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3.5 py-2.5 text-base text-white outline-none placeholder:text-slate-500 focus:border-slate-500";
+  "w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3.5 py-2.5 text-lg text-white outline-none placeholder:text-slate-500 focus:border-slate-500";
 const btn =
-  "rounded-md border border-slate-600/80 bg-slate-800/90 px-3 py-2 text-sm font-medium text-slate-100 hover:border-slate-500 hover:bg-slate-700 disabled:opacity-50";
+  "rounded-md border border-slate-600/80 bg-slate-800/90 px-3.5 py-2 text-base font-medium text-slate-100 hover:border-slate-500 hover:bg-slate-700 disabled:opacity-50";
 const primaryBtn =
-  "rounded-md bg-slate-100 px-3.5 py-2 text-sm font-semibold text-slate-900 hover:bg-white disabled:opacity-50";
+  "rounded-md bg-slate-100 px-3.5 py-2 text-base font-semibold text-slate-900 hover:bg-white disabled:opacity-50";
 const ghostBtn =
-  "rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50";
+  "rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50";
 
 export function WikiBrowser({
   active,
@@ -329,12 +329,12 @@ export function WikiBrowser({
   if (!configured) {
     return (
       <div className="mx-auto flex max-w-lg flex-col gap-3 px-2 py-10 text-center">
-        <p className="text-lg font-medium text-slate-100">Wiki not linked yet</p>
-        <p className="text-sm leading-relaxed text-slate-400">
+        <p className="text-2xl font-medium text-slate-100">Wiki not linked yet</p>
+        <p className="text-lg leading-relaxed text-slate-400">
           The family wiki lives in a private GitHub repo. Set{" "}
-          <code className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-200">WIKILM_GITHUB_TOKEN</code>{" "}
+          <code className="rounded bg-slate-800 px-1.5 py-0.5 text-base text-slate-200">WIKILM_GITHUB_TOKEN</code>{" "}
           (fine-grained PAT with Contents read/write on{" "}
-          <code className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-200">lugosi/family-wiki</code>)
+          <code className="rounded bg-slate-800 px-1.5 py-0.5 text-base text-slate-200">lugosi/family-wiki</code>)
           to browse and edit it here.
         </p>
       </div>
@@ -347,7 +347,7 @@ export function WikiBrowser({
   };
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-[15.5rem_minmax(0,1fr)]">
+    <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-[17.5rem_minmax(0,1fr)]">
       <aside className="flex min-h-0 flex-col gap-3">
         <div className="flex gap-2">
           <input
@@ -374,10 +374,10 @@ export function WikiBrowser({
           aria-label="Wiki pages"
         >
           {!pages ? (
-            <p className="px-2 py-3 text-sm text-slate-500">Loading…</p>
+            <p className="px-2 py-3 text-base text-slate-500">Loading…</p>
           ) : list ? (
             list.length === 0 ? (
-              <p className="px-2 py-3 text-sm text-slate-500">No pages match “{query.trim()}”.</p>
+              <p className="px-2 py-3 text-base text-slate-500">No pages match “{query.trim()}”.</p>
             ) : (
               <ul className="space-y-0.5">
                 {list.map((p) => (
@@ -386,7 +386,7 @@ export function WikiBrowser({
               </ul>
             )
           ) : pages.length === 0 ? (
-            <p className="px-2 py-3 text-sm leading-relaxed text-slate-400">
+            <p className="px-2 py-3 text-base leading-relaxed text-slate-400">
               No pages yet. Create one, or ask the assistant to remember something.
             </p>
           ) : (
@@ -397,12 +397,12 @@ export function WikiBrowser({
                 <div key={catKey} className="mb-1.5">
                   <button
                     type="button"
-                    className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+                    className="flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
                     aria-expanded={catOpen}
                     onClick={() => toggleCat(catKey)}
                   >
                     <Chevron open={catOpen} />
-                    <WikiCategoryIcon id={g.key} className="h-3.5 w-3.5" />
+                    <WikiCategoryIcon id={g.key} className="h-4 w-4" />
                     <span className="min-w-0 flex-1 truncate">{g.label}</span>
                     <span className="tabular-nums text-slate-500">{g.pages.length}</span>
                   </button>
@@ -419,7 +419,7 @@ export function WikiBrowser({
           )}
         </div>
         {pages ? (
-          <p className="px-1 text-[11px] text-slate-500 tabular-nums">
+          <p className="px-1 text-sm text-slate-500 tabular-nums">
             {pages.length} page{pages.length === 1 ? "" : "s"} ·{" "}
             <button type="button" className="underline decoration-slate-600 hover:text-slate-300" onClick={() => void loadList(true)}>
               reload
@@ -430,7 +430,7 @@ export function WikiBrowser({
 
       <section className="relative flex min-h-[20rem] min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-800/90 bg-[radial-gradient(120%_80%_at_10%_-10%,rgba(56,189,248,0.08),transparent_45%),linear-gradient(180deg,rgba(15,23,42,0.95),rgba(2,6,23,0.88))] shadow-[inset_0_1px_0_rgba(148,163,184,0.06)]">
         {error ? (
-          <div className="m-3 mb-0 flex items-center justify-between gap-2 rounded-xl border border-amber-800/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-100">
+          <div className="m-3 mb-0 flex items-center justify-between gap-2 rounded-xl border border-amber-800/60 bg-amber-950/40 px-3 py-2.5 text-base text-amber-100">
             <span>{error}</span>
             {conflict && page ? (
               <button type="button" className={btn} onClick={() => void openPage(page.path)}>
@@ -440,7 +440,7 @@ export function WikiBrowser({
           </div>
         ) : null}
         {notice ? (
-          <p className="m-3 mb-0 rounded-xl border border-emerald-900/50 bg-emerald-950/30 px-3 py-1.5 text-xs text-emerald-100">
+          <p className="m-3 mb-0 rounded-xl border border-emerald-900/50 bg-emerald-950/30 px-3 py-2 text-base text-emerald-100">
             {notice}
           </p>
         ) : null}
@@ -453,7 +453,7 @@ export function WikiBrowser({
               void createPage();
             }}
           >
-            <h2 className="text-xl font-semibold tracking-tight text-white">New page</h2>
+            <h2 className="text-2xl font-semibold tracking-tight text-white">New page</h2>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_minmax(0,1fr)]">
               <label className="relative flex items-center gap-2">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2">
@@ -481,7 +481,7 @@ export function WikiBrowser({
                 required
               />
             </div>
-            <p className="text-xs text-slate-400">{categories.find((c) => c.id === form.category)?.hint}</p>
+            <p className="text-base text-slate-400">{categories.find((c) => c.id === form.category)?.hint}</p>
             <input
               className={inputClass}
               placeholder="One-line summary (helps the assistant find it)"
@@ -497,7 +497,7 @@ export function WikiBrowser({
               aria-label="Tags"
             />
             <textarea
-              className={`${inputClass} board-scrollbar min-h-40 flex-1 font-mono text-xs leading-relaxed`}
+              className={`${inputClass} board-scrollbar min-h-40 flex-1 font-mono text-base leading-relaxed`}
               placeholder={"## Section\n\n- Detail"}
               value={form.body}
               onChange={(e) => setForm({ ...form, body: e.target.value })}
@@ -515,11 +515,11 @@ export function WikiBrowser({
         ) : !page ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-16 text-center">
             {busy === "open" ? (
-              <p className="text-sm text-slate-400">Opening…</p>
+              <p className="text-base text-slate-400">Opening…</p>
             ) : (
               <>
-                <p className="text-xl font-medium tracking-tight text-slate-100">Pick a page</p>
-                <p className="max-w-sm text-sm leading-relaxed text-slate-400">
+                <p className="text-2xl font-medium tracking-tight text-slate-100">Pick a page</p>
+                <p className="max-w-sm text-base leading-relaxed text-slate-400">
                   Browse the family knowledge base, or tell the assistant “remember that…” and it files it on the right page.
                 </p>
               </>
@@ -529,20 +529,20 @@ export function WikiBrowser({
           <>
             <header className="sticky top-0 z-[1] flex flex-wrap items-start justify-between gap-3 border-b border-slate-800/80 bg-slate-950/70 px-4 py-3 backdrop-blur-md sm:px-5">
               <div className="min-w-0">
-                <p className="mb-0.5 flex items-center gap-1.5 truncate font-mono text-[11px] text-slate-500">
-                  <WikiCategoryIcon id={page.category} className="h-3.5 w-3.5" />
+                <p className="mb-0.5 flex items-center gap-1.5 truncate font-mono text-sm text-slate-500">
+                  <WikiCategoryIcon id={page.category} className="h-4 w-4" />
                   <span className="truncate">{page.path}</span>
                 </p>
-                <h2 className="truncate text-2xl font-semibold tracking-tight text-white">{page.title}</h2>
+                <h2 className="truncate text-3xl font-semibold tracking-tight text-white">{page.title}</h2>
                 {page.summary ? (
-                  <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-300">{page.summary}</p>
+                  <p className="mt-1.5 max-w-2xl text-lg leading-relaxed text-slate-300">{page.summary}</p>
                 ) : null}
                 {page.tags.length ? (
                   <ul className="mt-2 flex flex-wrap gap-1.5">
                     {page.tags.map((t) => (
                       <li
                         key={t}
-                        className="rounded-md border border-slate-700/70 bg-slate-900/70 px-2 py-0.5 text-[11px] text-slate-300"
+                        className="rounded-md border border-slate-700/70 bg-slate-900/70 px-2.5 py-1 text-sm text-slate-300"
                       >
                         {t}
                       </li>
@@ -550,7 +550,7 @@ export function WikiBrowser({
                   </ul>
                 ) : null}
                 {page.updated ? (
-                  <p className="mt-1.5 text-[11px] text-slate-500">Updated {page.updated}</p>
+                  <p className="mt-1.5 text-sm text-slate-500">Updated {page.updated}</p>
                 ) : null}
               </div>
               {mode === "view" ? (
@@ -558,7 +558,7 @@ export function WikiBrowser({
                   {onAddToChat ? (
                     <button
                       type="button"
-                      className="rounded-xl border border-emerald-700/60 bg-emerald-950/40 px-3 py-2 text-sm font-medium text-emerald-100 hover:border-emerald-500 hover:bg-emerald-900/50 disabled:opacity-50"
+                      className="rounded-xl border border-emerald-700/60 bg-emerald-950/40 px-3.5 py-2 text-base font-medium text-emerald-100 hover:border-emerald-500 hover:bg-emerald-900/50 disabled:opacity-50"
                       disabled={Boolean(busy)}
                       onClick={addPageToChat}
                     >
@@ -606,7 +606,7 @@ export function WikiBrowser({
 
             {mode === "move" ? (
               <form
-                className="mx-4 mt-3 flex flex-wrap items-center gap-2 text-xs sm:mx-5"
+                className="mx-4 mt-3 flex flex-wrap items-center gap-2 text-base sm:mx-5"
                 onSubmit={(e) => {
                   e.preventDefault();
                   void movePage();
@@ -631,7 +631,7 @@ export function WikiBrowser({
             ) : null}
 
             {mode === "delete" ? (
-              <div className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-red-900/70 bg-red-950/30 px-3 py-2 text-xs text-red-100 sm:mx-5">
+              <div className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-red-900/70 bg-red-950/30 px-3 py-2.5 text-base text-red-100 sm:mx-5">
                 <span className="flex-1">Delete “{page.title}”? It stays in the repo&apos;s git history.</span>
                 <button
                   type="button"
@@ -650,14 +650,14 @@ export function WikiBrowser({
             {mode === "edit" ? (
               <div className="flex min-h-0 flex-1 flex-col gap-2 p-4 sm:p-5">
                 <textarea
-                  className={`${inputClass} board-scrollbar min-h-64 flex-1 font-mono text-xs leading-relaxed`}
+                  className={`${inputClass} board-scrollbar min-h-64 flex-1 font-mono text-base leading-relaxed`}
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   aria-label="Page markdown"
                   spellCheck
                 />
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-sm text-slate-500">
                     Markdown with optional frontmatter (title, summary, tags).
                   </p>
                   <div className="flex gap-2">
@@ -700,7 +700,9 @@ export function WikiBrowser({
 
                 {preamble.trim() ? (
                   <div className="mb-5">
-                    <ChatMarkdown onRelativeLink={openLink}>{preamble}</ChatMarkdown>
+                    <ChatMarkdown size="wiki" onRelativeLink={openLink}>
+                      {preamble}
+                    </ChatMarkdown>
                   </div>
                 ) : null}
 
@@ -721,7 +723,7 @@ export function WikiBrowser({
                               onClick={() => toggleSection(section.title)}
                             >
                               <Chevron open={open} />
-                              <span className="min-w-0 flex-1 truncate text-base font-semibold text-white">
+                              <span className="min-w-0 flex-1 truncate text-lg font-semibold text-white">
                                 {section.title}
                               </span>
                             </button>
@@ -736,11 +738,13 @@ export function WikiBrowser({
                             ) : null}
                           </div>
                           {open ? (
-                            <div className="px-3 py-3 sm:px-4">
+                            <div className="px-3 py-3.5 sm:px-4">
                               {section.body.trim() ? (
-                                <ChatMarkdown onRelativeLink={openLink}>{section.body}</ChatMarkdown>
+                                <ChatMarkdown size="wiki" onRelativeLink={openLink}>
+                                  {section.body}
+                                </ChatMarkdown>
                               ) : (
-                                <p className="text-sm italic text-slate-500">Empty section</p>
+                                <p className="text-base italic text-slate-500">Empty section</p>
                               )}
                             </div>
                           ) : null}
@@ -749,7 +753,7 @@ export function WikiBrowser({
                     })}
                   </div>
                 ) : !preamble.trim() ? (
-                  <p className="text-sm italic text-slate-500">This page is empty.</p>
+                  <p className="text-base italic text-slate-500">This page is empty.</p>
                 ) : null}
               </div>
             )}
@@ -918,8 +922,8 @@ function PageItem({
       >
         <WikiCategoryIcon id={page.category} className="mt-0.5 h-3.5 w-3.5 opacity-90" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{page.title}</span>
-          <span className="mt-0.5 block line-clamp-2 text-xs leading-snug text-slate-400">
+          <span className="block truncate text-base font-medium">{page.title}</span>
+          <span className="mt-0.5 block line-clamp-2 text-sm leading-snug text-slate-400">
             {page.snippet || page.summary || page.path}
           </span>
         </span>
