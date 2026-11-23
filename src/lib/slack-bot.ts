@@ -384,6 +384,9 @@ async function handle(msg: Incoming): Promise<void> {
     ].filter((c, i, arr) => arr.findIndex((x) => x.title === c.title) === i);
     // Same ```chart payload as the AI tab — upload PNGs, strip fences from text.
     const body = stripChatChartFences(raw, charts.length ? "remove" : "caption");
+    // Thread parent for follow-ups (charts, long overflow). Top-level DMs use the
+    // first bot message ts so details hang under the main reply.
+    let followUpTs = msg.threadTs ?? null;
     if (result.pendingApproval) {
       // Compact bullet list for Slack — 100+ calendar proposals used to blow msg_too_long.
       const approvalSummary = formatPendingSummary(
@@ -395,35 +398,33 @@ async function handle(msg: Incoming): Promise<void> {
         { maxBullets: SLACK_APPROVAL_BULLETS },
       );
       const n = result.pendingApproval.items.length;
-      const head = clipSlackText(
-        `${body}\n\n⏸ *${n} change${n === 1 ? "" : "s"}* staged — tap Approve / Deny (or reply *approve* / *deny*)`,
-      );
-      // Post long prose as threaded chunks first; approval buttons on a short follow-up.
-      const posted = await postSlackText({
+      const shortBody = body.trim().length > 0 && body.trim().length <= 500;
+      const lead = shortBody
+        ? clipSlackText(body)
+        : `I staged *${n}* change${n === 1 ? "" : "s"}. Full summary is in the thread — Approve applies all.`;
+      // Main message carries Approve/Deny; long prose is threaded underneath.
+      const main = await postSlackMessage({
         channel: msg.channel,
-        text: body || `⏸ ${n} change${n === 1 ? "" : "s"} ready to review.`,
+        text: clipSlackText(
+          `⏸ ${n} change${n === 1 ? "" : "s"} staged — tap Approve / Deny (or reply *approve* / *deny*)`,
+        ),
         threadTs: msg.threadTs,
-      });
-      const reviewTs = msg.threadTs || posted.ts;
-      await postSlackMessage({
-        channel: msg.channel,
-        text: head,
-        threadTs: reviewTs,
         blocks: [
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: clipSlackText(
-                `⏸ *Review before writing* · ${n} change${n === 1 ? "" : "s"} — Approve applies all.`,
-              ),
-            },
-          },
+          { type: "section", text: { type: "mrkdwn", text: lead } },
           ...pendingApprovalBlocks(result.pendingApproval.id, approvalSummary),
         ],
       });
+      followUpTs = msg.threadTs || main.ts;
+      if (!shortBody && body.trim()) {
+        await postSlackText({
+          channel: msg.channel,
+          text: body,
+          threadTs: followUpTs,
+        });
+      }
     } else {
-      await reply(body || " ");
+      const posted = await reply(body || " ");
+      followUpTs = msg.threadTs || posted.ts;
     }
     if (charts.length) {
       try {
@@ -437,7 +438,7 @@ async function handle(msg: Incoming): Promise<void> {
             .slice(0, 40);
           await uploadSlackFile({
             channel: msg.channel,
-            threadTs: msg.threadTs,
+            threadTs: followUpTs ?? undefined,
             filename: `${slug || "chart"}.png`,
             title: spec.title || `Chart ${i + 1}`,
             data: png,
@@ -451,7 +452,11 @@ async function handle(msg: Incoming): Promise<void> {
           ? " Add *files:write*, reinstall the Slack app, and update `SLACK_BOT_TOKEN`."
           : "";
         const clipped = message.replace(/\s+/g, " ").slice(0, 160);
-        await reply(`_Couldn't attach chart images: \`${clipped}\`.${scopeHint}_`);
+        await postSlackText({
+          channel: msg.channel,
+          text: `_Couldn't attach chart images: \`${clipped}\`.${scopeHint}_`,
+          threadTs: followUpTs ?? undefined,
+        });
       }
     }
     state.handled += 1;
