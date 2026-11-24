@@ -352,7 +352,44 @@ async function handle(msg: Incoming): Promise<void> {
     };
     const turns: GeminiMessage[] = [...(await getChatHistory(key)), userTurn];
 
-    const { slackAccountKey } = await import("./strava");
+    const { isStravaConfigured, slackAccountKey } = await import("./strava");
+    // Layer A.5 POC: personal/<slug>/ wiki folder for continuity past chat TTL.
+    let personalContext: {
+      slug: string;
+      folder: string;
+      depth: "dm" | "channel";
+      index: string;
+    } | null = null;
+    try {
+      const { preparePersonalContextForSlack } = await import("./personal-context");
+      const { isWikilmGithubConfigured } = await import("./wikilm-github");
+      if (isWikilmGithubConfigured()) {
+        const prepared = await preparePersonalContextForSlack({
+          slackUserId: msg.user,
+          displayName: name,
+          depth: msg.threadTs ? "channel" : "dm",
+          ensureStrava: isStravaConfigured(),
+        });
+        if (prepared) {
+          personalContext = {
+            slug: prepared.slug,
+            folder: prepared.folder,
+            depth: prepared.depth,
+            index: prepared.index,
+          };
+          if (prepared.seeded.length) {
+            console.log(
+              `[personal-context] seeded for ${prepared.slug}: ${prepared.seeded.join(", ")}`,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(
+        "[personal-context] skipped:",
+        e instanceof Error ? e.message : e,
+      );
+    }
     const result = await runFamilyAgent({
       messages: turns,
       redirectUri: getBackgroundGoogleRedirectUri(),
@@ -363,6 +400,7 @@ async function handle(msg: Incoming): Promise<void> {
         accountKey: slackAccountKey(msg.user),
         displayName: name || undefined,
       },
+      personalContext,
     });
     // Don't keep image bytes in the 30‑minute chat memory.
     await saveChatHistory(key, [
