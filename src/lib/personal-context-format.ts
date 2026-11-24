@@ -1,16 +1,37 @@
 /**
- * Pure helpers for .context/<SlackUserId>/ continuity folders (no I/O).
+ * Pure helpers for .context/<SlackUserId>/ continuity folders (templates + paths).
+ * Fact parse/TTL/index live in personal-context-facts.ts (zero-import, Node-testable).
  */
 
 import {
-  buildWikiIndex,
   CONTEXT_ROOT,
   normalizeSlackUserId,
   slugify,
-  type WikiPageMeta,
 } from "./wiki-format";
+import {
+  buildPersonalContextFactIndex,
+  CONTEXT_FACT_BASE_TTL_DAYS,
+  CONTEXT_FACT_MAX_WEIGHT,
+  type ContextPageForIndex,
+} from "./personal-context-facts";
 
 export { CONTEXT_ROOT };
+export {
+  bumpFactOnRecurrence,
+  CONTEXT_FACT_BASE_TTL_DAYS,
+  CONTEXT_FACT_MAX_WEIGHT,
+  CONTEXT_FACT_MIN_WEIGHT,
+  clampFactWeight,
+  daysBetweenDateKeys,
+  extractContextFacts,
+  factTtlDays,
+  formatContextFact,
+  isFactStale,
+  newContextFact,
+  parseContextFactLine,
+  type ContextFact,
+  type ContextPageForIndex,
+} from "./personal-context-facts";
 
 export const PERSONAL_INDEX_BUDGET = 2_500;
 
@@ -76,27 +97,34 @@ export function wikiWriteTargetsSilentContext(args: Record<string, unknown>): bo
   return false;
 }
 
-/** Build a compact index of pages under `.context/<SlackUserId>/`. */
+/** Build a compact index of pages + fact freshness under `.context/<SlackUserId>/`. */
 export function buildPersonalContextIndex(
-  pages: readonly WikiPageMeta[],
+  pages: readonly ContextPageForIndex[],
   slackUserId: string,
-  budget = PERSONAL_INDEX_BUDGET,
+  opts?: { budget?: number; today?: string },
 ): string {
-  const folder = personalFolder(slackUserId) + "/";
-  const mine = pages.filter((p) => p.path.startsWith(folder) || p.path === folder.slice(0, -1));
-  if (!mine.length) {
-    return `(no personal pages yet under ${personalFolder(slackUserId)}/)`;
-  }
-  return buildWikiIndex(mine, budget);
+  return buildPersonalContextFactIndex(pages, personalFolder(slackUserId), {
+    budget: opts?.budget ?? PERSONAL_INDEX_BUDGET,
+    today: opts?.today,
+  });
 }
 
-export function personalIndexTemplate(slackUserId: string, displayName: string): string {
+function frontmatterDates(today: string): string {
+  return `created: ${today}\nupdated: ${today}`;
+}
+
+export function personalIndexTemplate(
+  slackUserId: string,
+  displayName: string,
+  today: string,
+): string {
   const name = displayName.trim() || slackUserId;
   const folder = personalFolder(slackUserId);
   return `---
 title: ${name} · context index
 summary: Hidden Slack continuity folder for ${name}
 tags: [context]
+${frontmatterDates(today)}
 ---
 
 # ${name} · context
@@ -105,9 +133,17 @@ Private-ish continuity files for Slack (path \`${folder}/\`). Not listed in the 
 
 ## Contexts
 
-- [profile.md](./profile.md) — how to address them, durable prefs
+- [profile.md](./profile.md) — how to address them, durable prefs + Facts
 - [open-loops.md](./open-loops.md) — short notes on in-flight projects
 - [strava.md](./strava.md) — training prefs when Strava is linked
+
+## Fact format
+
+Use under \`## Facts\` on context pages:
+
+\`- Prefer miles · created: ${today} · updated: ${today} · weight: 1\`
+
+Weight 1–${CONTEXT_FACT_MAX_WEIGHT} (bump on recurrence). Fresh for ${CONTEXT_FACT_BASE_TTL_DAYS} × weight days after \`updated\`.
 `;
 }
 
@@ -115,6 +151,7 @@ export function personalProfileTemplate(
   slackUserId: string,
   displayName: string,
   peoplePath: string | null,
+  today: string,
 ): string {
   const name = displayName.trim() || slackUserId;
   const peopleLine = peoplePath
@@ -124,6 +161,7 @@ export function personalProfileTemplate(
 title: ${name} · profile
 summary: Durable personal prefs for ${name}
 tags: [context, profile]
+${frontmatterDates(today)}
 ---
 
 # ${name} · profile
@@ -134,41 +172,62 @@ tags: [context, profile]
 - Slack: ${normalizeSlackUserId(slackUserId) ?? slackUserId}
 ${peopleLine}
 
+## Facts
+
+- Preferred name is ${name} · created: ${today} · updated: ${today} · weight: 2
+
 ## Preferences
 
-- (Units, diet, communication style — append as you learn them.)
+- (Free-form notes OK; durable prefs also belong under Facts with dates + weight.)
 `;
 }
 
-export function personalOpenLoopsTemplate(slackUserId: string, displayName: string): string {
+export function personalOpenLoopsTemplate(
+  slackUserId: string,
+  displayName: string,
+  today: string,
+): string {
   const name = displayName.trim() || slackUserId;
   return `---
 title: ${name} · open loops
 summary: Short rolling notes on what ${name} was working on
 tags: [context, open-loops]
+${frontmatterDates(today)}
 ---
 
 # ${name} · open loops
 
 ## Active
 
-- (Keep to a few bullets. Clear when done.)
+- (Keep to a few bullets. Clear when done. Short-lived — not long-term Facts.)
+
+## Facts
+
+- (Optional project prefs with dates + weight; drop when the loop closes.)
 `;
 }
 
-export function personalStravaTemplate(slackUserId: string, displayName: string): string {
+export function personalStravaTemplate(
+  slackUserId: string,
+  displayName: string,
+  today: string,
+): string {
   const name = displayName.trim() || slackUserId;
   return `---
 title: ${name} · Strava
 summary: Training prefs for ${name} (units, goals, last notes)
 tags: [context, strava]
+${frontmatterDates(today)}
 ---
 
 # ${name} · Strava
 
+## Facts
+
+- Distance units: km · created: ${today} · updated: ${today} · weight: 1
+
 ## Preferences
 
-- Distance units: km (change if they prefer miles)
 - Goals: (race, base building, …)
 
 ## Notes

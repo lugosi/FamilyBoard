@@ -3,6 +3,7 @@
  * Writes under that prefix apply immediately (no Approve). Shared family wiki still.
  */
 
+import { getDefaultTimeZone } from "./google";
 import {
   extractSlackUserIdFromPage,
   normalizeSlackUserId,
@@ -35,13 +36,30 @@ export type PersonalContextBundle = {
 
 export {
   buildPersonalContextIndex,
+  bumpFactOnRecurrence,
+  CONTEXT_FACT_BASE_TTL_DAYS,
   CONTEXT_ROOT,
+  extractContextFacts,
+  factTtlDays,
+  formatContextFact,
+  isFactStale,
   isPersonalContextPath,
+  newContextFact,
+  parseContextFactLine,
   personalContextPaths,
   personalFolder,
   PERSONAL_ROOT,
   wikiWriteTargetsSilentContext,
 } from "./personal-context-format";
+
+function todayInFamilyZone(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: getDefaultTimeZone(),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
 
 async function ensurePage(
   path: string,
@@ -80,6 +98,7 @@ export async function preparePersonalContextForSlack(input: {
   if (!slackUserId) return null;
 
   try {
+    const today = todayInFamilyZone();
     const pages = await loadWikiPages({ bypassCache: true });
     const peoplePath = findPeoplePathForSlack(pages, slackUserId);
     const paths = personalContextPaths(slackUserId);
@@ -89,24 +108,24 @@ export async function preparePersonalContextForSlack(input: {
     const starters: { path: string; content: string; msg: string }[] = [
       {
         path: paths.index,
-        content: personalIndexTemplate(slackUserId, displayName),
+        content: personalIndexTemplate(slackUserId, displayName, today),
         msg: `context: seed ${paths.folder}/index`,
       },
       {
         path: paths.profile,
-        content: personalProfileTemplate(slackUserId, displayName, peoplePath),
+        content: personalProfileTemplate(slackUserId, displayName, peoplePath, today),
         msg: `context: seed ${paths.folder}/profile`,
       },
       {
         path: paths.openLoops,
-        content: personalOpenLoopsTemplate(slackUserId, displayName),
+        content: personalOpenLoopsTemplate(slackUserId, displayName, today),
         msg: `context: seed ${paths.folder}/open-loops`,
       },
     ];
     if (input.ensureStrava) {
       starters.push({
         path: paths.strava,
-        content: personalStravaTemplate(slackUserId, displayName),
+        content: personalStravaTemplate(slackUserId, displayName, today),
         msg: `context: seed ${paths.folder}/strava`,
       });
     }
@@ -117,7 +136,7 @@ export async function preparePersonalContextForSlack(input: {
     }
 
     const fresh = seeded.length ? await loadWikiPages({ bypassCache: true }) : pages;
-    const index = buildPersonalContextIndex(fresh, slackUserId);
+    const index = buildPersonalContextIndex(fresh, slackUserId, { today });
 
     return {
       slackUserId,

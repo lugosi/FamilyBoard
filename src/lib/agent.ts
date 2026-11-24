@@ -730,8 +730,8 @@ function buildSystemPrompt(input: {
         ? `This is a DM: you may read and update pages under \`${pc.folder}/\` when relevant.`
         : "This is a shared channel: prefer only profile.md unless they explicitly ask to use their personal notes; avoid dumping private prefs into the channel.",
       "If the ask matches a listed context page (Strava, open loops, profile, …), call read_wiki_page on that path before answering from it.",
-      `When they state a durable personal preference (units, goals, diet, “remember for next time”), call edit_wiki_section or create_wiki_page under \`${pc.folder}/\` immediately — those writes apply with NO Approve/Deny (silent continuity). Keep open-loops.md to a few short bullets. Do not announce wiki paths or “I saved to the wiki” unless they asked you to remember something.`,
-      "Family wiki pages outside `.context/` still need Approve for writes. Do not invent personal facts. Chat memory may be empty after ~30 minutes — rely on these pages for longer continuity.",
+      `When they state a durable personal preference (units, goals, diet, “remember for next time”), silently edit the ## Facts section under \`${pc.folder}/\` (NO Approve). Fact line format exactly: \`- <text> · created: YYYY-MM-DD · updated: YYYY-MM-DD · weight: N\`. New fact → created=updated=today, weight 1. Same fact again → bump weight by 1 (max 5) and set updated=today (recurrence = importance). Fresh for 30×weight days after updated — do NOT trust STALE facts; confirm with them or drop/refresh. Stamp page frontmatter updated when you edit. Keep open-loops.md short. Do not announce wiki paths unless they asked you to remember something.`,
+      "Family wiki pages outside `.context/` still need Approve for writes. Do not invent personal facts. Chat memory may be empty after ~30 minutes — rely on fresh context facts for longer continuity.",
       "=== PERSONAL INDEX ===",
       pc.index,
       "=== END PERSONAL INDEX ===",

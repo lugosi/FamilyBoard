@@ -3,19 +3,24 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
-  buildWikiIndex,
   CONTEXT_ROOT,
   existingWikiPath,
   isContextWikiPath,
   newWikiPath,
   normalizeSlackUserId,
+  parseFrontmatter,
   pathForNewPage,
 } from "../src/lib/wiki-format.ts";
-
-const CONTEXT_HELPERS = readFileSync(
-  new URL("../src/lib/personal-context-format.ts", import.meta.url),
-  "utf8",
-);
+import {
+  buildPersonalContextFactIndex,
+  bumpFactOnRecurrence,
+  CONTEXT_FACT_BASE_TTL_DAYS,
+  factTtlDays,
+  formatContextFact,
+  isFactStale,
+  newContextFact,
+  parseContextFactLine,
+} from "../src/lib/personal-context-facts.ts";
 
 test("context paths use .context/<SlackUserId>/…", () => {
   assert.equal(CONTEXT_ROOT, ".context");
@@ -36,46 +41,100 @@ test("normalizeSlackUserId preserves U… ids", () => {
   assert.equal(normalizeSlackUserId("<@U012ABCDEF>"), "U012ABCDEF");
 });
 
-test("personal index lists only that Slack user's pages", () => {
-  const folder = ".context/U012ABCDEF/";
+test("fact lines parse/format and TTL scales with weight", () => {
+  const fact = newContextFact("Prefers miles", "2026-01-01", 1);
+  assert.equal(fact.created, "2026-01-01");
+  assert.equal(fact.updated, "2026-01-01");
+  assert.equal(fact.weight, 1);
+  assert.equal(factTtlDays(1), CONTEXT_FACT_BASE_TTL_DAYS);
+  assert.equal(factTtlDays(3), 90);
+  assert.equal(isFactStale(fact, "2026-01-31"), false);
+  assert.equal(isFactStale(fact, "2026-02-01"), true);
+
+  const bumped = bumpFactOnRecurrence(fact, "2026-01-20");
+  assert.equal(bumped.weight, 2);
+  assert.equal(bumped.updated, "2026-01-20");
+  assert.equal(bumped.created, "2026-01-01");
+  assert.equal(isFactStale(bumped, "2026-03-20"), false);
+  assert.equal(isFactStale(bumped, "2026-03-22"), true);
+
+  const line = formatContextFact(bumped);
+  assert.equal(
+    line,
+    "- Prefers miles · created: 2026-01-01 · updated: 2026-01-20 · weight: 2",
+  );
+  assert.deepEqual(parseContextFactLine(line), bumped);
+
+  const heavy = bumpFactOnRecurrence(
+    bumpFactOnRecurrence(bumpFactOnRecurrence(bumped, "2026-02-01"), "2026-02-10"),
+    "2026-02-15",
+  );
+  assert.equal(heavy.weight, 5);
+  assert.equal(factTtlDays(5), 150);
+  assert.equal(isFactStale(heavy, "2026-07-14"), false);
+  assert.equal(isFactStale(heavy, "2026-07-16"), true);
+});
+
+test("index lists fresh facts and marks stale ones", () => {
   const pages = [
     {
       path: ".context/U012ABCDEF/profile.md",
       title: "Maya · profile",
       summary: "prefs",
-      tags: ["context"],
-      category: ".context",
-      size: 10,
+      created: "2026-01-01",
+      updated: "2026-03-01",
+      body: `## Facts
+
+- Prefers miles · created: 2026-01-01 · updated: 2026-03-01 · weight: 3
+- Old diet note · created: 2025-01-01 · updated: 2025-01-01 · weight: 1
+`,
     },
     {
       path: ".context/U999ZZZ/profile.md",
       title: "Alex · profile",
       summary: "other",
-      tags: ["context"],
-      category: ".context",
-      size: 10,
+      body: `- Secret · created: 2026-03-01 · updated: 2026-03-01 · weight: 5\n`,
     },
   ];
-  const mine = pages.filter((p) => p.path.startsWith(folder));
-  const index = buildWikiIndex(mine, 2500);
+  const index = buildPersonalContextFactIndex(pages, ".context/U012ABCDEF", {
+    today: "2026-03-15",
+    budget: 2500,
+  });
   assert.match(index, /\.context\/U012ABCDEF\/profile\.md/);
-  assert.doesNotMatch(index, /U999ZZZ/);
+  assert.match(index, /Fresh facts/);
+  assert.match(index, /Prefers miles/);
+  assert.match(index, /STALE/);
+  assert.match(index, /Old diet note/);
+  assert.doesNotMatch(index, /U999ZZZ|Secret/);
 });
 
-test("silent-write helper covers path and category", () => {
-  assert.match(CONTEXT_HELPERS, /wikiWriteTargetsSilentContext/);
-  assert.match(CONTEXT_HELPERS, /isPersonalContextPath/);
-  assert.match(CONTEXT_HELPERS, /CONTEXT_ROOT/);
+test("frontmatter keeps created alongside updated", () => {
+  const raw = `---
+title: Test
+created: 2026-01-10
+updated: 2026-02-01
+---
+
+# Test
+`;
+  const parsed = parseFrontmatter(raw);
+  assert.equal(parsed.meta.created, "2026-01-10");
+  assert.equal(parsed.meta.updated, "2026-02-01");
 });
 
-test("slack bot and agent wire silent .context personal context", () => {
+test("slack bot and agent wire silent .context facts with TTL", () => {
   const bot = readFileSync(new URL("../src/lib/slack-bot.ts", import.meta.url), "utf8");
   assert.match(bot, /preparePersonalContextForSlack/);
   assert.match(bot, /personalContext/);
-  assert.match(bot, /slackUserId: prepared\.slackUserId/);
   const agent = readFileSync(new URL("../src/lib/agent.ts", import.meta.url), "utf8");
   assert.match(agent, /PERSONAL CONTEXT/);
-  assert.match(agent, /personalContext/);
   assert.match(agent, /wikiWriteTargetsSilentContext/);
-  assert.match(agent, /NO Approve\/Deny/);
+  assert.match(agent, /30×weight/);
+  assert.match(agent, /STALE/);
+  const facts = readFileSync(
+    new URL("../src/lib/personal-context-facts.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(facts, /CONTEXT_FACT_BASE_TTL_DAYS = 30/);
+  assert.match(facts, /bumpFactOnRecurrence/);
 });
