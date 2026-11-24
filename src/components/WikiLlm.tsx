@@ -190,7 +190,7 @@ const QUICK_PROMPTS: QuickPrompt[] = [
   },
 ];
 
-type AiView = "chat" | "wiki";
+type AiView = "chat" | "wiki" | "tools";
 
 const VIEW_STORAGE_KEY = "familyboard-ai-view";
 const SESSION_STORAGE_KEY = "familyboard-chat-session";
@@ -363,7 +363,7 @@ function ApprovalCard({
 }
 
 function parseView(raw: string | null | undefined): AiView | null {
-  return raw === "chat" || raw === "wiki" ? raw : null;
+  return raw === "chat" || raw === "wiki" || raw === "tools" ? raw : null;
 }
 
 // Same rule as AppShell: query wins, else localStorage; never rewrite the URL.
@@ -444,7 +444,6 @@ export function WikiLlm({
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [chatStatus, setChatStatus] = useState<string | null>(null);
-  const [toolsOpen, setToolsOpen] = useState(false);
   const [monitors, setMonitors] = useState<AgentMonitorRow[]>([]);
   const [monitorsEnabled, setMonitorsEnabled] = useState(true);
   const [slackTargets, setSlackTargets] = useState<SlackDeliveryTarget[]>([]);
@@ -1116,7 +1115,7 @@ export function WikiLlm({
             aria-label="Assistant view"
             className="flex gap-1 rounded-md bg-slate-900 p-0.5"
           >
-            {(["chat", "wiki"] as const).map((v) => (
+            {(["chat", "wiki", "tools"] as const).map((v) => (
               <button
                 key={v}
                 type="button"
@@ -1127,7 +1126,12 @@ export function WikiLlm({
                 }`}
                 onClick={() => selectView(v)}
               >
-                {v === "chat" ? "Chat" : "Wiki"}
+                {v === "chat" ? "Chat" : v === "wiki" ? "Wiki" : "Tools"}
+                {v === "tools" && unprocessed > 0 ? (
+                  <span className="ml-1.5 inline-flex min-w-[1.15rem] justify-center rounded-md bg-sky-600 px-1 text-xs text-white">
+                    {unprocessed}
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
@@ -1158,15 +1162,29 @@ export function WikiLlm({
                     + New chat
                   </button>
                   <ChatSessionList
-                    className="max-h-64"
+                    className="max-h-56"
                     sessions={sessions}
                     sessionId={sessionId}
                     onSelect={(id) => {
                       setSessionsOpen(false);
+                      selectView("chat");
                       void loadSession(id);
                     }}
                     onDelete={(id) => void deleteSession(id)}
                   />
+                  {!isOverlay ? (
+                    <button
+                      type="button"
+                      className="block w-full border-t border-slate-800 px-3 py-2 text-left text-sm font-medium text-slate-200 hover:bg-slate-900"
+                      onClick={() => {
+                        setSessionsOpen(false);
+                        selectView("tools");
+                      }}
+                    >
+                      Tools
+                      {unprocessed > 0 ? ` · ${unprocessed}` : ""}
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
               <button
@@ -1195,13 +1213,13 @@ export function WikiLlm({
           {!isOverlay ? (
             <button
               type="button"
-              className={`relative rounded-md px-3 py-1.5 text-sm font-medium ${
-                toolsOpen
+              className={`relative rounded-md px-3 py-1.5 text-sm font-medium md:hidden ${
+                view === "tools"
                   ? "bg-slate-800 text-white"
                   : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
               }`}
-              onClick={() => setToolsOpen((o) => !o)}
-              aria-expanded={toolsOpen}
+              onClick={() => selectView(view === "tools" ? "chat" : "tools")}
+              aria-pressed={view === "tools"}
               aria-controls="ai-tools-panel"
             >
               Tools
@@ -1246,7 +1264,7 @@ export function WikiLlm({
       ) : null}
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        {!isOverlay && view === "chat" ? (
+        {!isOverlay && (view === "chat" || view === "tools") ? (
           <aside
             className="board-scrollbar hidden w-56 shrink-0 flex-col border-r border-slate-800/80 bg-slate-950/80 md:flex lg:w-64"
             aria-label="Chat sessions"
@@ -1257,22 +1275,49 @@ export function WikiLlm({
                 type="button"
                 className="rounded-md px-2 py-1 text-sm font-medium text-sky-200 hover:bg-slate-900 hover:text-sky-100 disabled:opacity-50"
                 disabled={busy === "chat"}
-                onClick={() => void startNewSession()}
+                onClick={() => {
+                  selectView("chat");
+                  void startNewSession();
+                }}
               >
                 + New
               </button>
             </div>
             <ChatSessionList
               sessions={sessions}
-              sessionId={sessionId}
-              onSelect={(id) => void loadSession(id)}
+              sessionId={view === "chat" ? sessionId : null}
+              onSelect={(id) => {
+                selectView("chat");
+                void loadSession(id);
+              }}
               onDelete={(id) => void deleteSession(id)}
             />
+            <div className="mt-auto border-t border-slate-800/80 p-2">
+              <button
+                type="button"
+                className={`flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm font-medium ${
+                  view === "tools"
+                    ? "bg-slate-800 text-white"
+                    : "text-slate-300 hover:bg-slate-900 hover:text-white"
+                }`}
+                onClick={() => selectView("tools")}
+                aria-current={view === "tools" ? "page" : undefined}
+              >
+                <span>Tools</span>
+                {unprocessed > 0 ? (
+                  <span className="inline-flex min-w-[1.25rem] justify-center rounded-md bg-sky-600 px-1.5 text-xs text-white">
+                    {unprocessed}
+                  </span>
+                ) : null}
+              </button>
+            </div>
           </aside>
         ) : null}
         <section
           className="relative flex min-h-0 min-w-0 flex-1 flex-col"
-          aria-label={view === "wiki" ? "Family wiki" : "Chat"}
+          aria-label={
+            view === "wiki" ? "Family wiki" : view === "tools" ? "Tools" : "Chat"
+          }
           onDragOver={(e) => {
             if (view !== "chat" || !status?.geminiConfigured || !e.dataTransfer.types.includes("Files"))
               return;
@@ -1320,6 +1365,865 @@ export function WikiLlm({
                   window.setTimeout(() => focusPrompt(), 0);
                 }}
               />
+            </div>
+          ) : view === "tools" && !isOverlay ? (
+            <div
+              id="ai-tools-panel"
+              className="board-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
+              aria-label="Tools"
+            >
+              <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="text-2xl font-semibold tracking-tight text-white">Tools</h2>
+                    <p className="mt-1 text-sm text-slate-400">
+                      Scheduled checks, inbox, Strava, and Slack — full width, not a side drawer.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-md px-3 py-1.5 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+                    onClick={() => selectView("chat")}
+                  >
+                    Back to chat
+                  </button>
+                </div>
+                <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+
+                  {status?.stravaConfigured ? (
+                    <section className="rounded-md border border-slate-800 bg-slate-900/40 p-3">
+                      <h3 className="text-base font-semibold text-white">Strava</h3>
+                      <p className="mt-1 text-sm leading-relaxed text-slate-400">
+                        Each person links their own account. Pick who you are on this display, then connect.
+                      </p>
+                      {status.stravaCallbackDomain ? (
+                        <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                          If Link opens Strava with <span className="text-rose-300">Bad Request</span>, set
+                          Strava → My API Application →{" "}
+                          <span className="text-slate-300">Authorization Callback Domain</span> to{" "}
+                          <code className="rounded bg-slate-950 px-1 text-sky-200">
+                            {status.stravaCallbackDomain}
+                          </code>{" "}
+                          (host only — no https://, no path). Full redirect used:{" "}
+                          <code className="break-all rounded bg-slate-950 px-1 text-slate-400">
+                            {status.stravaRedirectUri}
+                          </code>
+                          {!status.publicAppUrl ? (
+                            <>
+                              {" "}
+                              Tip: set <code className="text-slate-300">PUBLIC_APP_URL</code> to your board’s
+                              public URL so the redirect host stays stable.
+                            </>
+                          ) : null}
+                        </p>
+                      ) : null}
+                      <label className="mt-3 block text-sm text-slate-300">
+                        Who am I?
+                        <input
+                          className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-slate-400"
+                          placeholder="e.g. maya"
+                          value={stravaMember}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setStravaMember(v);
+                            try {
+                              if (v.trim()) localStorage.setItem(STRAVA_MEMBER_KEY, v.trim());
+                              else localStorage.removeItem(STRAVA_MEMBER_KEY);
+                            } catch {
+                              /* ignore */
+                            }
+                          }}
+                          list="strava-member-suggestions"
+                        />
+                      </label>
+                      <datalist id="strava-member-suggestions">
+                        {(status.stravaAccounts ?? [])
+                          .filter((a) => a.accountKey.startsWith("board:"))
+                          .map((a) => (
+                            <option key={a.accountKey} value={a.accountKey.slice(6)} />
+                          ))}
+                      </datalist>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <a
+                          className={`${sideBtn} inline-flex no-underline`}
+                          href={
+                            stravaMember.trim()
+                              ? `/api/auth/strava?member=${encodeURIComponent(stravaMember.trim())}&name=${encodeURIComponent(stravaMember.trim())}&return=${encodeURIComponent("/?tab=ai")}`
+                              : undefined
+                          }
+                          aria-disabled={!stravaMember.trim()}
+                          onClick={(e) => {
+                            if (!stravaMember.trim()) e.preventDefault();
+                          }}
+                        >
+                          Link Strava
+                        </a>
+                        {stravaMember.trim() &&
+                        (status.stravaAccounts ?? []).some(
+                          (a) => a.accountKey === `board:${stravaMember.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`,
+                        ) ? (
+                          <button
+                            type="button"
+                            className={sideBtn}
+                            onClick={() => {
+                              const id = stravaMember
+                                .trim()
+                                .toLowerCase()
+                                .replace(/[^a-z0-9]+/g, "-")
+                                .replace(/^-+|-+$/g, "");
+                              void (async () => {
+                                await fetch("/api/auth/strava/logout", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ account: `board:${id}` }),
+                                });
+                                void refresh();
+                              })();
+                            }}
+                          >
+                            Unlink
+                          </button>
+                        ) : null}
+                      </div>
+                      {status.wikilmGithubConfigured ? (
+                        <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm text-slate-400">
+                          {status.stravaTrainingSkillInWiki ? (
+                            <p>
+                              Training skill is in the wiki as{" "}
+                              <button
+                                type="button"
+                                className="text-sky-300 underline-offset-2 hover:underline"
+                                onClick={() => {
+                                  setWikiFocus({ path: "skills/strava-training.md", nonce: Date.now() });
+                                  setPickedView("wiki");
+                                  selectView("chat");
+                                }}
+                              >
+                                skills/strava-training.md
+                              </button>
+                              .
+                            </p>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="flex-1">
+                                Add the 30-day training analysis skill to the wiki (one click — no copy/paste).
+                              </p>
+                              <button
+                                type="button"
+                                className={sideBtn}
+                                disabled={busy === "strava-skill"}
+                                onClick={() => {
+                                  void (async () => {
+                                    setBusy("strava-skill");
+                                    setError(null);
+                                    try {
+                                      const res = await fetch("/api/wiki/control", {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ action: "ensure_strava_training_skill" }),
+                                      });
+                                      const json = (await res.json()) as {
+                                        status?: string;
+                                        path?: string;
+                                        error?: string;
+                                      };
+                                      if (!res.ok) throw new Error(json.error || `Failed (${res.status})`);
+                                      setNote(
+                                        json.status === "created"
+                                          ? `Added ${json.path ?? "skills/strava-training.md"} to the wiki`
+                                          : `Wiki already has ${json.path ?? "skills/strava-training.md"}`,
+                                      );
+                                      setWikiRefreshKey((k) => k + 1);
+                                      void refresh();
+                                    } catch (e) {
+                                      setError(e instanceof Error ? e.message : "Could not add skill");
+                                    } finally {
+                                      setBusy(null);
+                                    }
+                                  })();
+                                }}
+                              >
+                                {busy === "strava-skill" ? "Adding…" : "Add skill to wiki"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-xs text-slate-500">
+                          Link the family wiki to auto-install the training skill under{" "}
+                          <code className="text-slate-400">skills/</code>.
+                        </p>
+                      )}
+                      {(status.stravaAccounts ?? []).length > 0 ? (
+                        <ul className="mt-3 space-y-1 text-sm text-slate-400">
+                          {(status.stravaAccounts ?? []).map((a) => (
+                            <li key={a.accountKey}>
+                              {a.displayName}
+                              {a.athleteName ? ` · ${a.athleteName}` : ""}{" "}
+                              <span className="text-slate-600">({a.accountKey})</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </section>
+                  ) : null}
+
+                  <section>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <h3 className="text-base font-semibold text-white">
+                        Inbox
+                        {unprocessed ? (
+                          <span className="ml-2 text-sm font-normal text-slate-400">{unprocessed} new</span>
+                        ) : null}
+                      </h3>
+                      <button
+                        type="button"
+                        className={sideBtn}
+                        disabled={Boolean(busy) || !status?.gmailReady || !status?.geminiConfigured}
+                        onClick={() => void scanInbox()}
+                      >
+                        {busy === "scan" ? "Scanning…" : "Scan"}
+                      </button>
+                    </div>
+                    {!status?.googleConfigured ? (
+                      <p className="text-base leading-relaxed text-slate-400">
+                        Configure Google OAuth, then Link Google.
+                      </p>
+                    ) : !status?.gmailReady ? (
+                      <p className="text-base leading-relaxed text-slate-400">
+                        <a className="text-sky-300 underline" href="/api/auth/google">
+                          Link Google
+                        </a>{" "}
+                        for the inbox drop-box.
+                      </p>
+                    ) : (
+                      <ul className="space-y-2 text-base">
+                        {messages.length === 0 ? (
+                          <li className="text-slate-500">No mail yet.</li>
+                        ) : (
+                          messages.slice(0, 8).map((m) => (
+                            <li key={m.id} className="rounded-lg bg-slate-900/80 px-3 py-2.5">
+                              <div className="truncate font-medium text-slate-50">{m.subject}</div>
+                              <div className="truncate text-slate-400">{m.from}</div>
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                    )}
+                  </section>
+
+                  <section className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-3 text-base leading-relaxed text-slate-300">
+                    <h3 className="mb-1.5 font-semibold text-white">Todos</h3>
+                    {status?.wikilmGithubConfigured ? (
+                      <p>
+                        Live in the wiki as{" "}
+                        <button
+                          type="button"
+                          className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                          onClick={() => {
+                            selectView("chat");
+                            setWikiFocus((prev) => ({
+                              path: "todos/list.md",
+                              nonce: (prev?.nonce ?? 0) + 1,
+                            }));
+                            selectView("wiki");
+                          }}
+                        >
+                          Todos
+                        </button>{" "}
+                        (<code className="text-slate-200">todos/list.md</code>). Ask the assistant or open that
+                        page to check them off. Shopping / Black Friday adds without a link get an Amazon offer;
+                        ask about local stock near Santa Monica too.
+                      </p>
+                    ) : (
+                      <p>
+                        Ask the assistant to list or add todos. Link the GitHub wiki to keep them on{" "}
+                        <code className="text-slate-200">todos/list.md</code>.
+                      </p>
+                    )}
+                    {status?.wikilmGithubConfigured ? (
+                      <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm text-slate-400">
+                        {status.shoppingListsSkillInWiki ? (
+                          <p>
+                            Shopping skill is in the wiki as{" "}
+                            <button
+                              type="button"
+                              className="text-sky-300 underline-offset-2 hover:underline"
+                              onClick={() => {
+                                setWikiFocus({ path: "skills/shopping-lists.md", nonce: Date.now() });
+                                selectView("wiki");
+                                selectView("chat");
+                              }}
+                            >
+                              skills/shopping-lists.md
+                            </button>
+                            .
+                          </p>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="flex-1">
+                              Add the shopping / Black Friday + Santa Monica local-retail skill to the wiki.
+                            </p>
+                            <button
+                              type="button"
+                              className={sideBtn}
+                              disabled={busy === "shopping-skill"}
+                              onClick={() => {
+                                void (async () => {
+                                  setBusy("shopping-skill");
+                                  setError(null);
+                                  try {
+                                    const res = await fetch("/api/wiki/control", {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ action: "ensure_shopping_lists_skill" }),
+                                    });
+                                    const json = (await res.json()) as {
+                                      status?: string;
+                                      path?: string;
+                                      error?: string;
+                                    };
+                                    if (!res.ok) throw new Error(json.error || `Failed (${res.status})`);
+                                    setNote(
+                                      json.status === "created"
+                                        ? `Added ${json.path ?? "skills/shopping-lists.md"} to the wiki`
+                                        : `Wiki already has ${json.path ?? "skills/shopping-lists.md"}`,
+                                    );
+                                    setWikiRefreshKey((k) => k + 1);
+                                    void refresh();
+                                  } catch (e) {
+                                    setError(e instanceof Error ? e.message : "Could not add skill");
+                                  } finally {
+                                    setBusy(null);
+                                  }
+                                })();
+                              }}
+                            >
+                              {busy === "shopping-skill" ? "Adding…" : "Add skill to wiki"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-xs text-slate-500">
+                        Link the family wiki to auto-install the shopping skill under{" "}
+                        <code className="text-slate-400">skills/</code>.
+                      </p>
+                    )}
+                  </section>
+
+                  <section
+                    aria-label="Scheduled checks"
+                    className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-3 text-base leading-relaxed text-slate-300 lg:col-span-2"
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <h3 className="font-semibold text-white">Scheduled checks</h3>
+                      <button
+                        type="button"
+                        className={sideBtn}
+                        disabled={Boolean(busy) || !monitorForm.prompt.trim()}
+                        onClick={() => {
+                          void (async () => {
+                            setBusy("monitor-save");
+                            setError(null);
+                            try {
+                              const cron =
+                                monitorForm.schedule === "custom"
+                                  ? monitorForm.cron.trim()
+                                  : cronForSchedulePreset(monitorForm.schedule);
+                              const payload = {
+                                title:
+                                  monitorForm.title.trim() ||
+                                  monitorForm.prompt.trim().slice(0, 48) ||
+                                  "Price check",
+                                cron,
+                                prompt: monitorForm.prompt.trim(),
+                                deliverWeb: monitorForm.deliverWeb,
+                                deliverSlack: monitorForm.deliverSlack,
+                                slackUserIds: monitorForm.deliverSlack
+                                  ? monitorForm.slackUserIds
+                                  : [],
+                              };
+                              const res = editingMonitorId
+                                ? await fetch(
+                                    `/api/agent/monitors/${encodeURIComponent(editingMonitorId)}`,
+                                    {
+                                      method: "PATCH",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify(payload),
+                                    },
+                                  )
+                                : await fetch("/api/agent/monitors", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(payload),
+                                  });
+                              const json = (await res.json()) as { error?: string };
+                              if (!res.ok) throw new Error(json.error || `Failed (${res.status})`);
+                              const wasEdit = Boolean(editingMonitorId);
+                              setMonitorForm(DEFAULT_MONITOR_FORM);
+                              setEditingMonitorId(null);
+                              setNote(wasEdit ? "Check updated" : "Check saved — it’ll run on that schedule");
+                              await refreshMonitors();
+                            } catch (e) {
+                              setError(e instanceof Error ? e.message : "Could not save check");
+                            } finally {
+                              setBusy(null);
+                            }
+                          })();
+                        }}
+                      >
+                        {busy === "monitor-save"
+                          ? "Saving…"
+                          : editingMonitorId
+                            ? "Save"
+                            : "Start watching"}
+                      </button>
+                    </div>
+                    <p className="mb-3 text-sm text-slate-400">
+                      Morning brief is listed here like any other check — edit its time, notes, and who
+                      gets a Slack DM. Add more checks (price watch, etc.) the same way
+                      {monitorsEnabled ? "." : " · currently off (AGENT_MONITORS_ENABLED=0)."}
+                    </p>
+                    <div className="mb-3 grid gap-3">
+                      <label className="grid gap-1 text-sm">
+                        <span className="text-slate-500">Name</span>
+                        <input
+                          className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
+                          value={monitorForm.title}
+                          placeholder="AirPods price"
+                          onChange={(e) =>
+                            setMonitorForm((f) => ({ ...f, title: e.target.value }))
+                          }
+                        />
+                      </label>
+                      <label className="grid gap-1 text-sm">
+                        <span className="text-slate-500">
+                          {editingMonitorId &&
+                          monitors.find((m) => m.id === editingMonitorId)?.kind === "morning-brief"
+                            ? "What’s included / extra note"
+                            : "What should it check?"}
+                        </span>
+                        <textarea
+                          className="min-h-[5rem] rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
+                          value={monitorForm.prompt}
+                          placeholder={PRICE_WATCH_EXAMPLE}
+                          onChange={(e) =>
+                            setMonitorForm((f) => ({ ...f, prompt: e.target.value }))
+                          }
+                        />
+                      </label>
+                      {!monitorForm.prompt.trim() && !editingMonitorId ? (
+                        <button
+                          type="button"
+                          className="justify-self-start text-sm text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                          onClick={() =>
+                            setMonitorForm((f) => ({
+                              ...f,
+                              title: f.title || "Price watch",
+                              prompt: PRICE_WATCH_EXAMPLE,
+                            }))
+                          }
+                        >
+                          Use a price-tracking example
+                        </button>
+                      ) : null}
+                      <fieldset className="grid gap-1.5">
+                        <legend className="text-sm text-slate-500">How often?</legend>
+                        <div className="flex flex-wrap gap-1.5">
+                          {SCHEDULE_PRESETS.map((p) => {
+                            const active = monitorForm.schedule === p.id;
+                            return (
+                              <button
+                                key={p.id}
+                                type="button"
+                                title={p.hint}
+                                className={`rounded-md border px-2.5 py-1.5 text-sm ${
+                                  active
+                                    ? "border-sky-500/70 bg-sky-950/50 text-sky-50"
+                                    : "border-slate-700 bg-slate-950 text-slate-200 hover:border-slate-500"
+                                }`}
+                                onClick={() =>
+                                  setMonitorForm((f) => ({
+                                    ...f,
+                                    schedule: p.id,
+                                    cron: p.cron,
+                                  }))
+                                }
+                              >
+                                {p.label}
+                              </button>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            className={`rounded-md border px-2.5 py-1.5 text-sm ${
+                              monitorForm.schedule === "custom"
+                                ? "border-sky-500/70 bg-sky-950/50 text-sky-50"
+                                : "border-slate-700 bg-slate-950 text-slate-200 hover:border-slate-500"
+                            }`}
+                            onClick={() =>
+                              setMonitorForm((f) => ({ ...f, schedule: "custom" }))
+                            }
+                          >
+                            Custom…
+                          </button>
+                        </div>
+                        {monitorForm.schedule !== "custom" ? (
+                          <p className="text-xs text-slate-500">
+                            {SCHEDULE_PRESETS.find((p) => p.id === monitorForm.schedule)?.hint}
+                          </p>
+                        ) : (
+                          <label className="grid gap-1 text-sm">
+                            <span className="text-slate-500">Custom schedule</span>
+                            <input
+                              className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-slate-100"
+                              value={monitorForm.cron}
+                              placeholder="0 9 * * *"
+                              onChange={(e) =>
+                                setMonitorForm((f) => ({
+                                  ...f,
+                                  schedule: "custom",
+                                  cron: e.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                        )}
+                      </fieldset>
+                      <div className="flex flex-wrap gap-3 text-sm">
+                        <label className="inline-flex items-center gap-1.5 text-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={monitorForm.deliverWeb}
+                            onChange={(e) =>
+                              setMonitorForm((f) => ({ ...f, deliverWeb: e.target.checked }))
+                            }
+                          />
+                          Keep a chat history
+                        </label>
+                        <label className="inline-flex items-center gap-1.5 text-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={monitorForm.deliverSlack}
+                            onChange={(e) =>
+                              setMonitorForm((f) => ({ ...f, deliverSlack: e.target.checked }))
+                            }
+                            disabled={!status?.slackConfigured}
+                          />
+                          Slack DMs
+                        </label>
+                        {editingMonitorId ? (
+                          <button
+                            type="button"
+                            className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                            onClick={() => {
+                              setEditingMonitorId(null);
+                              setMonitorForm(DEFAULT_MONITOR_FORM);
+                            }}
+                          >
+                            Cancel edit
+                          </button>
+                        ) : input.trim() ? (
+                          <button
+                            type="button"
+                            className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                            onClick={() =>
+                              setMonitorForm((f) => ({
+                                ...f,
+                                prompt: input.trim(),
+                                title: f.title || input.trim().slice(0, 40),
+                              }))
+                            }
+                          >
+                            Use current chat prompt
+                          </button>
+                        ) : null}
+                      </div>
+                      {monitorForm.deliverSlack && status?.slackConfigured ? (
+                        <fieldset className="grid gap-1.5 rounded-md border border-slate-800 bg-slate-950/50 px-2.5 py-2">
+                          <legend className="px-1 text-sm text-slate-500">Who gets the DM?</legend>
+                          {slackTargets.length === 0 ? (
+                            <p className="text-xs text-slate-500">
+                              Add <code className="text-slate-400">slack: U…</code> to a wiki people page,
+                              or have someone DM the bot (they’ll show up as registered).
+                              {monitorForm.slackUserIds.length === 0
+                                ? " Empty selection → all registered morning-brief subscribers."
+                                : ""}
+                            </p>
+                          ) : (
+                            <>
+                              <p className="text-xs text-slate-500">
+                                Leave everyone unchecked to DM all registered subscribers. Wiki people
+                                need <code className="text-slate-400">slack: U…</code> in frontmatter.
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {slackTargets.map((t) => {
+                                  const checked = monitorForm.slackUserIds.includes(t.userId);
+                                  return (
+                                    <label
+                                      key={t.userId}
+                                      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-sm ${
+                                        checked
+                                          ? "border-sky-500/70 bg-sky-950/40 text-sky-50"
+                                          : "border-slate-700 text-slate-200"
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() =>
+                                          setMonitorForm((f) => ({
+                                            ...f,
+                                            slackUserIds: checked
+                                              ? f.slackUserIds.filter((id) => id !== t.userId)
+                                              : [...f.slackUserIds, t.userId],
+                                          }))
+                                        }
+                                      />
+                                      <span>{t.name}</span>
+                                      <span className="text-xs text-slate-500">
+                                        {t.source === "wiki" ? "wiki" : "Slack"}
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          )}
+                        </fieldset>
+                      ) : null}
+                    </div>
+                    {monitors.length === 0 ? (
+                      <p className="text-sm text-slate-500">
+                        Nothing scheduled yet — Morning brief should appear after refresh.
+                      </p>
+                    ) : (
+                      <ul className="grid gap-2">
+                        {monitors.map((m) => {
+                          const isBrief = m.kind === "morning-brief";
+                          const slackCount = m.slackUserIds?.length ?? 0;
+                          return (
+                          <li
+                            key={m.id}
+                            className="rounded-md border border-slate-800 bg-slate-950/60 px-2.5 py-2 text-sm"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="truncate font-medium text-slate-50">
+                                  {m.title}
+                                  {isBrief ? (
+                                    <span className="ml-1.5 text-xs font-normal text-sky-300/90">
+                                      built-in
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <div className="text-slate-400">
+                                  {m.cronLabel || m.cron}
+                                  {m.enabled ? "" : " · paused"}
+                                  {m.deliverWeb ? " · chat" : ""}
+                                  {m.deliverSlack
+                                    ? slackCount
+                                      ? ` · Slack (${slackCount})`
+                                      : " · Slack (all registered)"
+                                    : ""}
+                                </div>
+                                <div className="truncate text-slate-500" title={m.prompt}>
+                                  {m.prompt}
+                                </div>
+                                <div className="text-slate-500">
+                                  Last check:{" "}
+                                  {m.lastRunAt
+                                    ? new Date(m.lastRunAt).toLocaleString(undefined, {
+                                        month: "short",
+                                        day: "numeric",
+                                        hour: "numeric",
+                                        minute: "2-digit",
+                                      })
+                                    : "not yet"}
+                                  {m.lastError ? (
+                                    <span className="text-amber-200"> · {m.lastError}</span>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 flex-col items-end gap-1">
+                                <button
+                                  type="button"
+                                  className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                                  disabled={Boolean(busy)}
+                                  onClick={() => {
+                                    void (async () => {
+                                      setBusy(`monitor-toggle-${m.id}`);
+                                      try {
+                                        await fetch(`/api/agent/monitors/${encodeURIComponent(m.id)}`, {
+                                          method: "PATCH",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ enabled: !m.enabled }),
+                                        });
+                                        await refreshMonitors();
+                                        void refresh();
+                                      } finally {
+                                        setBusy(null);
+                                      }
+                                    })();
+                                  }}
+                                >
+                                  {m.enabled ? "Pause" : "Resume"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                                  disabled={Boolean(busy)}
+                                  onClick={() => {
+                                    void (async () => {
+                                      setBusy(`monitor-run-${m.id}`);
+                                      setError(null);
+                                      try {
+                                        const res = await fetch(
+                                          `/api/agent/monitors/${encodeURIComponent(m.id)}`,
+                                          {
+                                            method: "POST",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ action: "run_now" }),
+                                          },
+                                        );
+                                        const json = (await res.json()) as {
+                                          error?: string;
+                                          webSessionId?: string | null;
+                                          skipped?: string;
+                                        };
+                                        if (!res.ok) {
+                                          throw new Error(json.error || `Failed (${res.status})`);
+                                        }
+                                        setNote(
+                                          json.webSessionId
+                                            ? `${isBrief ? "Morning brief" : "Check"} ran · opened chat`
+                                            : json.skipped
+                                              ? `Skipped (${json.skipped})`
+                                              : `${isBrief ? "Morning brief" : "Check"} ran`,
+                                        );
+                                        await refreshMonitors();
+                                        await refreshSessionList();
+                                        if (json.webSessionId) {
+                                          selectView("chat");
+                                          await loadSession(json.webSessionId);
+                                        }
+                                      } catch (e) {
+                                        setError(
+                                          e instanceof Error ? e.message : "Could not run check",
+                                        );
+                                      } finally {
+                                        setBusy(null);
+                                      }
+                                    })();
+                                  }}
+                                >
+                                  {busy === `monitor-run-${m.id}`
+                                    ? isBrief
+                                      ? "Sending…"
+                                      : "Checking…"
+                                    : isBrief
+                                      ? "Send now"
+                                      : "Check now"}
+                                </button>
+                                {m.sessionId ? (
+                                  <button
+                                    type="button"
+                                    className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                                    disabled={Boolean(busy)}
+                                    onClick={() => {
+                                      void (async () => {
+                                        selectView("chat");
+                                        await loadSession(m.sessionId!);
+                                      })();
+                                    }}
+                                  >
+                                    Open chat
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
+                                  disabled={Boolean(busy)}
+                                  onClick={() => {
+                                    setEditingMonitorId(m.id);
+                                    setMonitorForm({
+                                      title: m.title,
+                                      schedule: schedulePresetForCron(m.cron),
+                                      cron: m.cron,
+                                      prompt: m.prompt,
+                                      deliverWeb: m.deliverWeb,
+                                      deliverSlack: m.deliverSlack,
+                                      slackUserIds: m.slackUserIds ?? [],
+                                    });
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                {!isBrief ? (
+                                  <button
+                                    type="button"
+                                    className="text-amber-200 underline underline-offset-2 hover:text-amber-100"
+                                    disabled={Boolean(busy)}
+                                    onClick={() => {
+                                      void (async () => {
+                                        setBusy(`monitor-del-${m.id}`);
+                                        try {
+                                          await fetch(
+                                            `/api/agent/monitors/${encodeURIComponent(m.id)}`,
+                                            { method: "DELETE" },
+                                          );
+                                          if (editingMonitorId === m.id) {
+                                            setEditingMonitorId(null);
+                                            setMonitorForm(DEFAULT_MONITOR_FORM);
+                                          }
+                                          await refreshMonitors();
+                                        } finally {
+                                          setBusy(null);
+                                        }
+                                      })();
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                ) : null}
+                              </div>
+                            </div>
+                          </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </section>
+
+                  <section aria-label="Slack">
+                    <h3 className="mb-2 text-base font-semibold text-white">Slack</h3>
+                    {!status?.slackConfigured ? (
+                      <p className="text-base text-slate-400">
+                        Set <code className="text-slate-200">SLACK_BOT_TOKEN</code> +{" "}
+                        <code className="text-slate-200">SLACK_APP_TOKEN</code>.
+                      </p>
+                    ) : !slack ? (
+                      <p className="text-base text-slate-500">Loading…</p>
+                    ) : (
+                      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-base">
+                        <dt className="text-slate-500">Workspace</dt>
+                        <dd className="text-slate-100">{slack.team || "—"}</dd>
+                        <dt className="text-slate-500">Bot</dt>
+                        <dd className="text-slate-100">{slack.botName ? `@${slack.botName}` : "—"}</dd>
+                        <dt className="text-slate-500">Connected</dt>
+                        <dd className={slack.bot?.connected ? "text-slate-100" : "text-amber-200"}>
+                          {slack.bot?.connected
+                            ? `yes · ${timeAgo(slack.bot.connectedAt)}`
+                            : slack.bot?.running
+                              ? "reconnecting…"
+                              : "no"}
+                        </dd>
+                      </dl>
+                    )}
+                  </section>
+                </div>
+              </div>
             </div>
           ) : !status?.geminiConfigured ? (
             <p className="m-auto max-w-lg px-6 text-center text-lg text-slate-300">
@@ -1642,865 +2546,6 @@ export function WikiLlm({
           )}
         </section>
 
-        {/* Tools drawer — inbox / todos / slack, off by default (full AI tab only) */}
-        {toolsOpen && !isOverlay ? (
-          <>
-            <button
-              type="button"
-              className="absolute inset-0 z-20 bg-black/40 lg:bg-transparent"
-              aria-label="Close tools"
-              onClick={() => setToolsOpen(false)}
-            />
-            <aside
-              id="ai-tools-panel"
-              className="board-scrollbar absolute inset-y-0 right-0 z-30 flex w-[min(100%,22rem)] flex-col gap-4 overflow-y-auto border-l border-slate-800 bg-slate-950 p-4 shadow-2xl"
-            >
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-white">Tools</h2>
-                <button
-                  type="button"
-                  className="rounded-md px-2 py-1 text-sm text-slate-400 hover:bg-slate-900 hover:text-white"
-                  onClick={() => setToolsOpen(false)}
-                >
-                  Close
-                </button>
-              </div>
-
-              {status?.stravaConfigured ? (
-                <section className="rounded-md border border-slate-800 bg-slate-900/40 p-3">
-                  <h3 className="text-base font-semibold text-white">Strava</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-400">
-                    Each person links their own account. Pick who you are on this display, then connect.
-                  </p>
-                  {status.stravaCallbackDomain ? (
-                    <p className="mt-2 text-xs leading-relaxed text-slate-500">
-                      If Link opens Strava with <span className="text-rose-300">Bad Request</span>, set
-                      Strava → My API Application →{" "}
-                      <span className="text-slate-300">Authorization Callback Domain</span> to{" "}
-                      <code className="rounded bg-slate-950 px-1 text-sky-200">
-                        {status.stravaCallbackDomain}
-                      </code>{" "}
-                      (host only — no https://, no path). Full redirect used:{" "}
-                      <code className="break-all rounded bg-slate-950 px-1 text-slate-400">
-                        {status.stravaRedirectUri}
-                      </code>
-                      {!status.publicAppUrl ? (
-                        <>
-                          {" "}
-                          Tip: set <code className="text-slate-300">PUBLIC_APP_URL</code> to your board’s
-                          public URL so the redirect host stays stable.
-                        </>
-                      ) : null}
-                    </p>
-                  ) : null}
-                  <label className="mt-3 block text-sm text-slate-300">
-                    Who am I?
-                    <input
-                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-white outline-none focus:border-slate-400"
-                      placeholder="e.g. maya"
-                      value={stravaMember}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setStravaMember(v);
-                        try {
-                          if (v.trim()) localStorage.setItem(STRAVA_MEMBER_KEY, v.trim());
-                          else localStorage.removeItem(STRAVA_MEMBER_KEY);
-                        } catch {
-                          /* ignore */
-                        }
-                      }}
-                      list="strava-member-suggestions"
-                    />
-                  </label>
-                  <datalist id="strava-member-suggestions">
-                    {(status.stravaAccounts ?? [])
-                      .filter((a) => a.accountKey.startsWith("board:"))
-                      .map((a) => (
-                        <option key={a.accountKey} value={a.accountKey.slice(6)} />
-                      ))}
-                  </datalist>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <a
-                      className={`${sideBtn} inline-flex no-underline`}
-                      href={
-                        stravaMember.trim()
-                          ? `/api/auth/strava?member=${encodeURIComponent(stravaMember.trim())}&name=${encodeURIComponent(stravaMember.trim())}&return=${encodeURIComponent("/?tab=ai")}`
-                          : undefined
-                      }
-                      aria-disabled={!stravaMember.trim()}
-                      onClick={(e) => {
-                        if (!stravaMember.trim()) e.preventDefault();
-                      }}
-                    >
-                      Link Strava
-                    </a>
-                    {stravaMember.trim() &&
-                    (status.stravaAccounts ?? []).some(
-                      (a) => a.accountKey === `board:${stravaMember.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`,
-                    ) ? (
-                      <button
-                        type="button"
-                        className={sideBtn}
-                        onClick={() => {
-                          const id = stravaMember
-                            .trim()
-                            .toLowerCase()
-                            .replace(/[^a-z0-9]+/g, "-")
-                            .replace(/^-+|-+$/g, "");
-                          void (async () => {
-                            await fetch("/api/auth/strava/logout", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ account: `board:${id}` }),
-                            });
-                            void refresh();
-                          })();
-                        }}
-                      >
-                        Unlink
-                      </button>
-                    ) : null}
-                  </div>
-                  {status.wikilmGithubConfigured ? (
-                    <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm text-slate-400">
-                      {status.stravaTrainingSkillInWiki ? (
-                        <p>
-                          Training skill is in the wiki as{" "}
-                          <button
-                            type="button"
-                            className="text-sky-300 underline-offset-2 hover:underline"
-                            onClick={() => {
-                              setWikiFocus({ path: "skills/strava-training.md", nonce: Date.now() });
-                              setPickedView("wiki");
-                              setToolsOpen(false);
-                            }}
-                          >
-                            skills/strava-training.md
-                          </button>
-                          .
-                        </p>
-                      ) : (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="flex-1">
-                            Add the 30-day training analysis skill to the wiki (one click — no copy/paste).
-                          </p>
-                          <button
-                            type="button"
-                            className={sideBtn}
-                            disabled={busy === "strava-skill"}
-                            onClick={() => {
-                              void (async () => {
-                                setBusy("strava-skill");
-                                setError(null);
-                                try {
-                                  const res = await fetch("/api/wiki/control", {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ action: "ensure_strava_training_skill" }),
-                                  });
-                                  const json = (await res.json()) as {
-                                    status?: string;
-                                    path?: string;
-                                    error?: string;
-                                  };
-                                  if (!res.ok) throw new Error(json.error || `Failed (${res.status})`);
-                                  setNote(
-                                    json.status === "created"
-                                      ? `Added ${json.path ?? "skills/strava-training.md"} to the wiki`
-                                      : `Wiki already has ${json.path ?? "skills/strava-training.md"}`,
-                                  );
-                                  setWikiRefreshKey((k) => k + 1);
-                                  void refresh();
-                                } catch (e) {
-                                  setError(e instanceof Error ? e.message : "Could not add skill");
-                                } finally {
-                                  setBusy(null);
-                                }
-                              })();
-                            }}
-                          >
-                            {busy === "strava-skill" ? "Adding…" : "Add skill to wiki"}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="mt-3 text-xs text-slate-500">
-                      Link the family wiki to auto-install the training skill under{" "}
-                      <code className="text-slate-400">skills/</code>.
-                    </p>
-                  )}
-                  {(status.stravaAccounts ?? []).length > 0 ? (
-                    <ul className="mt-3 space-y-1 text-sm text-slate-400">
-                      {(status.stravaAccounts ?? []).map((a) => (
-                        <li key={a.accountKey}>
-                          {a.displayName}
-                          {a.athleteName ? ` · ${a.athleteName}` : ""}{" "}
-                          <span className="text-slate-600">({a.accountKey})</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </section>
-              ) : null}
-
-              <section>
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <h3 className="text-base font-semibold text-white">
-                    Inbox
-                    {unprocessed ? (
-                      <span className="ml-2 text-sm font-normal text-slate-400">{unprocessed} new</span>
-                    ) : null}
-                  </h3>
-                  <button
-                    type="button"
-                    className={sideBtn}
-                    disabled={Boolean(busy) || !status?.gmailReady || !status?.geminiConfigured}
-                    onClick={() => void scanInbox()}
-                  >
-                    {busy === "scan" ? "Scanning…" : "Scan"}
-                  </button>
-                </div>
-                {!status?.googleConfigured ? (
-                  <p className="text-base leading-relaxed text-slate-400">
-                    Configure Google OAuth, then Link Google.
-                  </p>
-                ) : !status?.gmailReady ? (
-                  <p className="text-base leading-relaxed text-slate-400">
-                    <a className="text-sky-300 underline" href="/api/auth/google">
-                      Link Google
-                    </a>{" "}
-                    for the inbox drop-box.
-                  </p>
-                ) : (
-                  <ul className="space-y-2 text-base">
-                    {messages.length === 0 ? (
-                      <li className="text-slate-500">No mail yet.</li>
-                    ) : (
-                      messages.slice(0, 8).map((m) => (
-                        <li key={m.id} className="rounded-lg bg-slate-900/80 px-3 py-2.5">
-                          <div className="truncate font-medium text-slate-50">{m.subject}</div>
-                          <div className="truncate text-slate-400">{m.from}</div>
-                        </li>
-                      ))
-                    )}
-                  </ul>
-                )}
-              </section>
-
-              <section className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-3 text-base leading-relaxed text-slate-300">
-                <h3 className="mb-1.5 font-semibold text-white">Todos</h3>
-                {status?.wikilmGithubConfigured ? (
-                  <p>
-                    Live in the wiki as{" "}
-                    <button
-                      type="button"
-                      className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
-                      onClick={() => {
-                        setToolsOpen(false);
-                        setWikiFocus((prev) => ({
-                          path: "todos/list.md",
-                          nonce: (prev?.nonce ?? 0) + 1,
-                        }));
-                        selectView("wiki");
-                      }}
-                    >
-                      Todos
-                    </button>{" "}
-                    (<code className="text-slate-200">todos/list.md</code>). Ask the assistant or open that
-                    page to check them off. Shopping / Black Friday adds without a link get an Amazon offer;
-                    ask about local stock near Santa Monica too.
-                  </p>
-                ) : (
-                  <p>
-                    Ask the assistant to list or add todos. Link the GitHub wiki to keep them on{" "}
-                    <code className="text-slate-200">todos/list.md</code>.
-                  </p>
-                )}
-                {status?.wikilmGithubConfigured ? (
-                  <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm text-slate-400">
-                    {status.shoppingListsSkillInWiki ? (
-                      <p>
-                        Shopping skill is in the wiki as{" "}
-                        <button
-                          type="button"
-                          className="text-sky-300 underline-offset-2 hover:underline"
-                          onClick={() => {
-                            setWikiFocus({ path: "skills/shopping-lists.md", nonce: Date.now() });
-                            selectView("wiki");
-                            setToolsOpen(false);
-                          }}
-                        >
-                          skills/shopping-lists.md
-                        </button>
-                        .
-                      </p>
-                    ) : (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="flex-1">
-                          Add the shopping / Black Friday + Santa Monica local-retail skill to the wiki.
-                        </p>
-                        <button
-                          type="button"
-                          className={sideBtn}
-                          disabled={busy === "shopping-skill"}
-                          onClick={() => {
-                            void (async () => {
-                              setBusy("shopping-skill");
-                              setError(null);
-                              try {
-                                const res = await fetch("/api/wiki/control", {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ action: "ensure_shopping_lists_skill" }),
-                                });
-                                const json = (await res.json()) as {
-                                  status?: string;
-                                  path?: string;
-                                  error?: string;
-                                };
-                                if (!res.ok) throw new Error(json.error || `Failed (${res.status})`);
-                                setNote(
-                                  json.status === "created"
-                                    ? `Added ${json.path ?? "skills/shopping-lists.md"} to the wiki`
-                                    : `Wiki already has ${json.path ?? "skills/shopping-lists.md"}`,
-                                );
-                                setWikiRefreshKey((k) => k + 1);
-                                void refresh();
-                              } catch (e) {
-                                setError(e instanceof Error ? e.message : "Could not add skill");
-                              } finally {
-                                setBusy(null);
-                              }
-                            })();
-                          }}
-                        >
-                          {busy === "shopping-skill" ? "Adding…" : "Add skill to wiki"}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <p className="mt-3 text-xs text-slate-500">
-                    Link the family wiki to auto-install the shopping skill under{" "}
-                    <code className="text-slate-400">skills/</code>.
-                  </p>
-                )}
-              </section>
-
-              <section
-                aria-label="Scheduled checks"
-                className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-3 text-base leading-relaxed text-slate-300"
-              >
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <h3 className="font-semibold text-white">Scheduled checks</h3>
-                  <button
-                    type="button"
-                    className={sideBtn}
-                    disabled={Boolean(busy) || !monitorForm.prompt.trim()}
-                    onClick={() => {
-                      void (async () => {
-                        setBusy("monitor-save");
-                        setError(null);
-                        try {
-                          const cron =
-                            monitorForm.schedule === "custom"
-                              ? monitorForm.cron.trim()
-                              : cronForSchedulePreset(monitorForm.schedule);
-                          const payload = {
-                            title:
-                              monitorForm.title.trim() ||
-                              monitorForm.prompt.trim().slice(0, 48) ||
-                              "Price check",
-                            cron,
-                            prompt: monitorForm.prompt.trim(),
-                            deliverWeb: monitorForm.deliverWeb,
-                            deliverSlack: monitorForm.deliverSlack,
-                            slackUserIds: monitorForm.deliverSlack
-                              ? monitorForm.slackUserIds
-                              : [],
-                          };
-                          const res = editingMonitorId
-                            ? await fetch(
-                                `/api/agent/monitors/${encodeURIComponent(editingMonitorId)}`,
-                                {
-                                  method: "PATCH",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify(payload),
-                                },
-                              )
-                            : await fetch("/api/agent/monitors", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify(payload),
-                              });
-                          const json = (await res.json()) as { error?: string };
-                          if (!res.ok) throw new Error(json.error || `Failed (${res.status})`);
-                          const wasEdit = Boolean(editingMonitorId);
-                          setMonitorForm(DEFAULT_MONITOR_FORM);
-                          setEditingMonitorId(null);
-                          setNote(wasEdit ? "Check updated" : "Check saved — it’ll run on that schedule");
-                          await refreshMonitors();
-                        } catch (e) {
-                          setError(e instanceof Error ? e.message : "Could not save check");
-                        } finally {
-                          setBusy(null);
-                        }
-                      })();
-                    }}
-                  >
-                    {busy === "monitor-save"
-                      ? "Saving…"
-                      : editingMonitorId
-                        ? "Save"
-                        : "Start watching"}
-                  </button>
-                </div>
-                <p className="mb-3 text-sm text-slate-400">
-                  Morning brief is listed here like any other check — edit its time, notes, and who
-                  gets a Slack DM. Add more checks (price watch, etc.) the same way
-                  {monitorsEnabled ? "." : " · currently off (AGENT_MONITORS_ENABLED=0)."}
-                </p>
-                <div className="mb-3 grid gap-3">
-                  <label className="grid gap-1 text-sm">
-                    <span className="text-slate-500">Name</span>
-                    <input
-                      className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
-                      value={monitorForm.title}
-                      placeholder="AirPods price"
-                      onChange={(e) =>
-                        setMonitorForm((f) => ({ ...f, title: e.target.value }))
-                      }
-                    />
-                  </label>
-                  <label className="grid gap-1 text-sm">
-                    <span className="text-slate-500">
-                      {editingMonitorId &&
-                      monitors.find((m) => m.id === editingMonitorId)?.kind === "morning-brief"
-                        ? "What’s included / extra note"
-                        : "What should it check?"}
-                    </span>
-                    <textarea
-                      className="min-h-[5rem] rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
-                      value={monitorForm.prompt}
-                      placeholder={PRICE_WATCH_EXAMPLE}
-                      onChange={(e) =>
-                        setMonitorForm((f) => ({ ...f, prompt: e.target.value }))
-                      }
-                    />
-                  </label>
-                  {!monitorForm.prompt.trim() && !editingMonitorId ? (
-                    <button
-                      type="button"
-                      className="justify-self-start text-sm text-sky-300 underline underline-offset-2 hover:text-sky-200"
-                      onClick={() =>
-                        setMonitorForm((f) => ({
-                          ...f,
-                          title: f.title || "Price watch",
-                          prompt: PRICE_WATCH_EXAMPLE,
-                        }))
-                      }
-                    >
-                      Use a price-tracking example
-                    </button>
-                  ) : null}
-                  <fieldset className="grid gap-1.5">
-                    <legend className="text-sm text-slate-500">How often?</legend>
-                    <div className="flex flex-wrap gap-1.5">
-                      {SCHEDULE_PRESETS.map((p) => {
-                        const active = monitorForm.schedule === p.id;
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            title={p.hint}
-                            className={`rounded-md border px-2.5 py-1.5 text-sm ${
-                              active
-                                ? "border-sky-500/70 bg-sky-950/50 text-sky-50"
-                                : "border-slate-700 bg-slate-950 text-slate-200 hover:border-slate-500"
-                            }`}
-                            onClick={() =>
-                              setMonitorForm((f) => ({
-                                ...f,
-                                schedule: p.id,
-                                cron: p.cron,
-                              }))
-                            }
-                          >
-                            {p.label}
-                          </button>
-                        );
-                      })}
-                      <button
-                        type="button"
-                        className={`rounded-md border px-2.5 py-1.5 text-sm ${
-                          monitorForm.schedule === "custom"
-                            ? "border-sky-500/70 bg-sky-950/50 text-sky-50"
-                            : "border-slate-700 bg-slate-950 text-slate-200 hover:border-slate-500"
-                        }`}
-                        onClick={() =>
-                          setMonitorForm((f) => ({ ...f, schedule: "custom" }))
-                        }
-                      >
-                        Custom…
-                      </button>
-                    </div>
-                    {monitorForm.schedule !== "custom" ? (
-                      <p className="text-xs text-slate-500">
-                        {SCHEDULE_PRESETS.find((p) => p.id === monitorForm.schedule)?.hint}
-                      </p>
-                    ) : (
-                      <label className="grid gap-1 text-sm">
-                        <span className="text-slate-500">Custom schedule</span>
-                        <input
-                          className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-slate-100"
-                          value={monitorForm.cron}
-                          placeholder="0 9 * * *"
-                          onChange={(e) =>
-                            setMonitorForm((f) => ({
-                              ...f,
-                              schedule: "custom",
-                              cron: e.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                    )}
-                  </fieldset>
-                  <div className="flex flex-wrap gap-3 text-sm">
-                    <label className="inline-flex items-center gap-1.5 text-slate-200">
-                      <input
-                        type="checkbox"
-                        checked={monitorForm.deliverWeb}
-                        onChange={(e) =>
-                          setMonitorForm((f) => ({ ...f, deliverWeb: e.target.checked }))
-                        }
-                      />
-                      Keep a chat history
-                    </label>
-                    <label className="inline-flex items-center gap-1.5 text-slate-200">
-                      <input
-                        type="checkbox"
-                        checked={monitorForm.deliverSlack}
-                        onChange={(e) =>
-                          setMonitorForm((f) => ({ ...f, deliverSlack: e.target.checked }))
-                        }
-                        disabled={!status?.slackConfigured}
-                      />
-                      Slack DMs
-                    </label>
-                    {editingMonitorId ? (
-                      <button
-                        type="button"
-                        className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
-                        onClick={() => {
-                          setEditingMonitorId(null);
-                          setMonitorForm(DEFAULT_MONITOR_FORM);
-                        }}
-                      >
-                        Cancel edit
-                      </button>
-                    ) : input.trim() ? (
-                      <button
-                        type="button"
-                        className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
-                        onClick={() =>
-                          setMonitorForm((f) => ({
-                            ...f,
-                            prompt: input.trim(),
-                            title: f.title || input.trim().slice(0, 40),
-                          }))
-                        }
-                      >
-                        Use current chat prompt
-                      </button>
-                    ) : null}
-                  </div>
-                  {monitorForm.deliverSlack && status?.slackConfigured ? (
-                    <fieldset className="grid gap-1.5 rounded-md border border-slate-800 bg-slate-950/50 px-2.5 py-2">
-                      <legend className="px-1 text-sm text-slate-500">Who gets the DM?</legend>
-                      {slackTargets.length === 0 ? (
-                        <p className="text-xs text-slate-500">
-                          Add <code className="text-slate-400">slack: U…</code> to a wiki people page,
-                          or have someone DM the bot (they’ll show up as registered).
-                          {monitorForm.slackUserIds.length === 0
-                            ? " Empty selection → all registered morning-brief subscribers."
-                            : ""}
-                        </p>
-                      ) : (
-                        <>
-                          <p className="text-xs text-slate-500">
-                            Leave everyone unchecked to DM all registered subscribers. Wiki people
-                            need <code className="text-slate-400">slack: U…</code> in frontmatter.
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {slackTargets.map((t) => {
-                              const checked = monitorForm.slackUserIds.includes(t.userId);
-                              return (
-                                <label
-                                  key={t.userId}
-                                  className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-sm ${
-                                    checked
-                                      ? "border-sky-500/70 bg-sky-950/40 text-sky-50"
-                                      : "border-slate-700 text-slate-200"
-                                  }`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() =>
-                                      setMonitorForm((f) => ({
-                                        ...f,
-                                        slackUserIds: checked
-                                          ? f.slackUserIds.filter((id) => id !== t.userId)
-                                          : [...f.slackUserIds, t.userId],
-                                      }))
-                                    }
-                                  />
-                                  <span>{t.name}</span>
-                                  <span className="text-xs text-slate-500">
-                                    {t.source === "wiki" ? "wiki" : "Slack"}
-                                  </span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </>
-                      )}
-                    </fieldset>
-                  ) : null}
-                </div>
-                {monitors.length === 0 ? (
-                  <p className="text-sm text-slate-500">
-                    Nothing scheduled yet — Morning brief should appear after refresh.
-                  </p>
-                ) : (
-                  <ul className="grid gap-2">
-                    {monitors.map((m) => {
-                      const isBrief = m.kind === "morning-brief";
-                      const slackCount = m.slackUserIds?.length ?? 0;
-                      return (
-                      <li
-                        key={m.id}
-                        className="rounded-md border border-slate-800 bg-slate-950/60 px-2.5 py-2 text-sm"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="truncate font-medium text-slate-50">
-                              {m.title}
-                              {isBrief ? (
-                                <span className="ml-1.5 text-xs font-normal text-sky-300/90">
-                                  built-in
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="text-slate-400">
-                              {m.cronLabel || m.cron}
-                              {m.enabled ? "" : " · paused"}
-                              {m.deliverWeb ? " · chat" : ""}
-                              {m.deliverSlack
-                                ? slackCount
-                                  ? ` · Slack (${slackCount})`
-                                  : " · Slack (all registered)"
-                                : ""}
-                            </div>
-                            <div className="truncate text-slate-500" title={m.prompt}>
-                              {m.prompt}
-                            </div>
-                            <div className="text-slate-500">
-                              Last check:{" "}
-                              {m.lastRunAt
-                                ? new Date(m.lastRunAt).toLocaleString(undefined, {
-                                    month: "short",
-                                    day: "numeric",
-                                    hour: "numeric",
-                                    minute: "2-digit",
-                                  })
-                                : "not yet"}
-                              {m.lastError ? (
-                                <span className="text-amber-200"> · {m.lastError}</span>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 flex-col items-end gap-1">
-                            <button
-                              type="button"
-                              className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
-                              disabled={Boolean(busy)}
-                              onClick={() => {
-                                void (async () => {
-                                  setBusy(`monitor-toggle-${m.id}`);
-                                  try {
-                                    await fetch(`/api/agent/monitors/${encodeURIComponent(m.id)}`, {
-                                      method: "PATCH",
-                                      headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify({ enabled: !m.enabled }),
-                                    });
-                                    await refreshMonitors();
-                                    void refresh();
-                                  } finally {
-                                    setBusy(null);
-                                  }
-                                })();
-                              }}
-                            >
-                              {m.enabled ? "Pause" : "Resume"}
-                            </button>
-                            <button
-                              type="button"
-                              className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
-                              disabled={Boolean(busy)}
-                              onClick={() => {
-                                void (async () => {
-                                  setBusy(`monitor-run-${m.id}`);
-                                  setError(null);
-                                  try {
-                                    const res = await fetch(
-                                      `/api/agent/monitors/${encodeURIComponent(m.id)}`,
-                                      {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({ action: "run_now" }),
-                                      },
-                                    );
-                                    const json = (await res.json()) as {
-                                      error?: string;
-                                      webSessionId?: string | null;
-                                      skipped?: string;
-                                    };
-                                    if (!res.ok) {
-                                      throw new Error(json.error || `Failed (${res.status})`);
-                                    }
-                                    setNote(
-                                      json.webSessionId
-                                        ? `${isBrief ? "Morning brief" : "Check"} ran · opened chat`
-                                        : json.skipped
-                                          ? `Skipped (${json.skipped})`
-                                          : `${isBrief ? "Morning brief" : "Check"} ran`,
-                                    );
-                                    await refreshMonitors();
-                                    await refreshSessionList();
-                                    if (json.webSessionId) {
-                                      setToolsOpen(false);
-                                      await loadSession(json.webSessionId);
-                                    }
-                                  } catch (e) {
-                                    setError(
-                                      e instanceof Error ? e.message : "Could not run check",
-                                    );
-                                  } finally {
-                                    setBusy(null);
-                                  }
-                                })();
-                              }}
-                            >
-                              {busy === `monitor-run-${m.id}`
-                                ? isBrief
-                                  ? "Sending…"
-                                  : "Checking…"
-                                : isBrief
-                                  ? "Send now"
-                                  : "Check now"}
-                            </button>
-                            {m.sessionId ? (
-                              <button
-                                type="button"
-                                className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
-                                disabled={Boolean(busy)}
-                                onClick={() => {
-                                  void (async () => {
-                                    setToolsOpen(false);
-                                    await loadSession(m.sessionId!);
-                                  })();
-                                }}
-                              >
-                                Open chat
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
-                              disabled={Boolean(busy)}
-                              onClick={() => {
-                                setEditingMonitorId(m.id);
-                                setMonitorForm({
-                                  title: m.title,
-                                  schedule: schedulePresetForCron(m.cron),
-                                  cron: m.cron,
-                                  prompt: m.prompt,
-                                  deliverWeb: m.deliverWeb,
-                                  deliverSlack: m.deliverSlack,
-                                  slackUserIds: m.slackUserIds ?? [],
-                                });
-                              }}
-                            >
-                              Edit
-                            </button>
-                            {!isBrief ? (
-                              <button
-                                type="button"
-                                className="text-amber-200 underline underline-offset-2 hover:text-amber-100"
-                                disabled={Boolean(busy)}
-                                onClick={() => {
-                                  void (async () => {
-                                    setBusy(`monitor-del-${m.id}`);
-                                    try {
-                                      await fetch(
-                                        `/api/agent/monitors/${encodeURIComponent(m.id)}`,
-                                        { method: "DELETE" },
-                                      );
-                                      if (editingMonitorId === m.id) {
-                                        setEditingMonitorId(null);
-                                        setMonitorForm(DEFAULT_MONITOR_FORM);
-                                      }
-                                      await refreshMonitors();
-                                    } finally {
-                                      setBusy(null);
-                                    }
-                                  })();
-                                }}
-                              >
-                                Delete
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
-                      </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </section>
-
-              <section aria-label="Slack">
-                <h3 className="mb-2 text-base font-semibold text-white">Slack</h3>
-                {!status?.slackConfigured ? (
-                  <p className="text-base text-slate-400">
-                    Set <code className="text-slate-200">SLACK_BOT_TOKEN</code> +{" "}
-                    <code className="text-slate-200">SLACK_APP_TOKEN</code>.
-                  </p>
-                ) : !slack ? (
-                  <p className="text-base text-slate-500">Loading…</p>
-                ) : (
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-base">
-                    <dt className="text-slate-500">Workspace</dt>
-                    <dd className="text-slate-100">{slack.team || "—"}</dd>
-                    <dt className="text-slate-500">Bot</dt>
-                    <dd className="text-slate-100">{slack.botName ? `@${slack.botName}` : "—"}</dd>
-                    <dt className="text-slate-500">Connected</dt>
-                    <dd className={slack.bot?.connected ? "text-slate-100" : "text-amber-200"}>
-                      {slack.bot?.connected
-                        ? `yes · ${timeAgo(slack.bot.connectedAt)}`
-                        : slack.bot?.running
-                          ? "reconnecting…"
-                          : "no"}
-                    </dd>
-                  </dl>
-                )}
-              </section>
-            </aside>
-          </>
-        ) : null}
       </div>
     </div>
   );
