@@ -45,6 +45,16 @@ Pages directly under the wiki folder still work (shown as **Unfiled**); ask the 
 
 When someone DMs the bot, FamilyBoard seeds `.context/<SlackUserId>/` (profile, open-loops, Strava when linked). The Slack assistant gets an **index** of those pages each turn and should `read_wiki_page` matching ones so chats still feel continuous after Slack’s short memory expires. Writes under `.context/` apply **silently** (no Approve). Link people pages with `slack: U…` when useful. Still shared-repo storage — not private; Layer B personal GitHub later.
 
+**Facts** (under `## Facts`) use dated, weighted lines so prefs don’t go stale unnoticed:
+
+```markdown
+- Prefers miles · created: 2026-01-15 · updated: 2026-03-01 · weight: 3
+```
+
+- `created` / `updated`: YYYY-MM-DD (page frontmatter also has `created` + `updated`)
+- `weight` 1–5: bump by 1 when the same preference recurs (importance)
+- Fresh for **30 × weight** days after `updated` (weight 1 ≈ 30 days; weight 5 ≈ 150 days). Stale facts are listed in the Slack index but must be confirmed or dropped before use.
+
 ## Page template
 
 ```markdown

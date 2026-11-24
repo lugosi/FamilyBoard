@@ -54,6 +54,8 @@ export type WikiFrontmatter = {
   title?: string;
   summary?: string;
   tags?: string[];
+  /** First-created date (YYYY-MM-DD); used on `.context` pages. */
+  created?: string;
   updated?: string;
   /** Slack user id (U…) for DMs / scheduled checks — set on people pages. */
   slack?: string;
@@ -72,6 +74,7 @@ export type WikiPageMeta = {
   title: string;
   summary: string;
   tags: string[];
+  created?: string;
   updated?: string;
   /** First folder under the wiki root ("" for top-level pages). */
   category: string;
@@ -155,7 +158,7 @@ export function parseFrontmatter(raw: string): ParsedPage {
     const key = kv[1].toLowerCase();
     const value = kv[2];
     listKey = null;
-    if (key === "title" || key === "summary" || key === "updated") {
+    if (key === "title" || key === "summary" || key === "updated" || key === "created") {
       meta[key] = unquote(value);
     } else if (key === "tags") {
       meta.tags = value.trim() ? parseInlineList(value) : [];
@@ -204,6 +207,7 @@ export function renderFrontmatter(meta: WikiFrontmatter, extra: string[] = []): 
   if (meta.summary?.trim()) lines.push(`summary: ${yamlScalar(meta.summary)}`);
   const tags = normalizeTags(meta.tags);
   if (tags.length) lines.push(`tags: [${tags.join(", ")}]`);
+  if (meta.created?.trim()) lines.push(`created: ${meta.created.trim()}`);
   if (meta.updated?.trim()) lines.push(`updated: ${meta.updated.trim()}`);
   const slack = normalizeSlackUserId(meta.slack);
   if (slack) lines.push(`slack: ${slack}`);
@@ -431,6 +435,7 @@ export function toWikiPage(path: string, content: string, sha?: string): WikiPag
       titleFromPath(path),
     summary: parsed.meta.summary?.trim() || deriveSummary(parsed.body),
     tags: parsed.meta.tags ?? [],
+    created: parsed.meta.created,
     updated: parsed.meta.updated,
     category: categoryOf(path),
     sha,
@@ -442,8 +447,8 @@ export function toWikiPage(path: string, content: string, sha?: string): WikiPag
 }
 
 export function toMeta(page: WikiPage): WikiPageMeta {
-  const { path, title, summary, tags, updated, category, sha, size } = page;
-  return { path, title, summary, tags, updated, category, sha, size };
+  const { path, title, summary, tags, created, updated, category, sha, size } = page;
+  return { path, title, summary, tags, created, updated, category, sha, size };
 }
 
 // ---------- section edits ----------
