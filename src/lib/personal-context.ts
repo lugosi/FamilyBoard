@@ -1,9 +1,12 @@
 /**
- * Slack continuity POC (Layer A.5): personal wiki folders under personal/<slug>/.
- * Index is injected into the agent prompt; page bodies load via read_wiki_page.
- * Lives in the shared family wiki (not private GitHub).
+ * Slack continuity POC (Layer A.5): hidden `.context/<SlackUserId>/` wiki folders.
+ * Writes under that prefix apply immediately (no Approve). Shared family wiki still.
  */
 
+import {
+  extractSlackUserIdFromPage,
+  normalizeSlackUserId,
+} from "./wiki-format";
 import {
   buildPersonalContextIndex,
   personalContextPaths,
@@ -11,7 +14,6 @@ import {
   personalOpenLoopsTemplate,
   personalProfileTemplate,
   personalStravaTemplate,
-  resolvePersonalSlug,
   type PersonalContextDepth,
 } from "./personal-context-format";
 import {
@@ -22,22 +24,23 @@ import {
 
 export type { PersonalContextDepth };
 export type PersonalContextBundle = {
-  slug: string;
+  /** Slack user id (U…) — folder name under `.context/`. */
+  slackUserId: string;
   peoplePath: string | null;
   folder: string;
   depth: PersonalContextDepth;
-  /** Compact index lines for the system prompt (no page bodies). */
   index: string;
   seeded: string[];
 };
 
 export {
   buildPersonalContextIndex,
+  CONTEXT_ROOT,
   isPersonalContextPath,
   personalContextPaths,
   personalFolder,
   PERSONAL_ROOT,
-  resolvePersonalSlug,
+  wikiWriteTargetsSilentContext,
 } from "./personal-context-format";
 
 async function ensurePage(
@@ -49,52 +52,62 @@ async function ensurePage(
   return { status: result.status, path: result.path };
 }
 
+function findPeoplePathForSlack(
+  pages: { path: string; content: string }[],
+  slackUserId: string,
+): string | null {
+  const want = normalizeSlackUserId(slackUserId);
+  if (!want) return null;
+  for (const page of pages) {
+    if (!page.path.toLowerCase().startsWith("people/")) continue;
+    if (extractSlackUserIdFromPage(page.content) === want) return page.path;
+  }
+  return null;
+}
+
 /**
- * Resolve slug, seed missing starter pages, return index for the system prompt.
+ * Seed missing starter pages under `.context/<SlackUserId>/`, return index for the prompt.
  * Best-effort: wiki failures return null so Slack chat still works.
  */
 export async function preparePersonalContextForSlack(input: {
   slackUserId: string;
   displayName?: string | null;
   depth: PersonalContextDepth;
-  /** When true, also seed strava.md if missing. */
   ensureStrava?: boolean;
 }): Promise<PersonalContextBundle | null> {
   if (!isWikilmGithubConfigured()) return null;
+  const slackUserId = normalizeSlackUserId(input.slackUserId);
+  if (!slackUserId) return null;
 
   try {
     const pages = await loadWikiPages({ bypassCache: true });
-    const { slug, peoplePath } = resolvePersonalSlug({
-      slackUserId: input.slackUserId,
-      displayName: input.displayName,
-      pages,
-    });
-    const paths = personalContextPaths(slug);
-    const displayName = input.displayName?.trim() || slug;
+    const peoplePath = findPeoplePathForSlack(pages, slackUserId);
+    const paths = personalContextPaths(slackUserId);
+    const displayName = input.displayName?.trim() || slackUserId;
     const seeded: string[] = [];
 
     const starters: { path: string; content: string; msg: string }[] = [
       {
         path: paths.index,
-        content: personalIndexTemplate(slug, displayName),
-        msg: `wiki: seed personal/${slug}/index`,
+        content: personalIndexTemplate(slackUserId, displayName),
+        msg: `context: seed ${paths.folder}/index`,
       },
       {
         path: paths.profile,
-        content: personalProfileTemplate(slug, displayName, peoplePath),
-        msg: `wiki: seed personal/${slug}/profile`,
+        content: personalProfileTemplate(slackUserId, displayName, peoplePath),
+        msg: `context: seed ${paths.folder}/profile`,
       },
       {
         path: paths.openLoops,
-        content: personalOpenLoopsTemplate(slug, displayName),
-        msg: `wiki: seed personal/${slug}/open-loops`,
+        content: personalOpenLoopsTemplate(slackUserId, displayName),
+        msg: `context: seed ${paths.folder}/open-loops`,
       },
     ];
     if (input.ensureStrava) {
       starters.push({
         path: paths.strava,
-        content: personalStravaTemplate(slug, displayName),
-        msg: `wiki: seed personal/${slug}/strava`,
+        content: personalStravaTemplate(slackUserId, displayName),
+        msg: `context: seed ${paths.folder}/strava`,
       });
     }
 
@@ -104,10 +117,10 @@ export async function preparePersonalContextForSlack(input: {
     }
 
     const fresh = seeded.length ? await loadWikiPages({ bypassCache: true }) : pages;
-    const index = buildPersonalContextIndex(fresh, slug);
+    const index = buildPersonalContextIndex(fresh, slackUserId);
 
     return {
-      slug,
+      slackUserId,
       peoplePath,
       folder: paths.folder,
       depth: input.depth,

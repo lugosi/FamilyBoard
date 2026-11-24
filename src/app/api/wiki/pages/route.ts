@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { WIKI_CATEGORIES } from "@/lib/wiki-format";
+import { isContextWikiPath, WIKI_CATEGORIES } from "@/lib/wiki-format";
 import {
   isWikilmGithubConfigured,
   listWikiPages,
@@ -23,12 +23,16 @@ export async function GET(request: Request) {
   try {
     const categories = WIKI_CATEGORIES;
     if (q) {
-      const results = await searchWiki(q, { category, limit: 25 });
+      const results = (await searchWiki(q, { category, limit: 25 })).filter(
+        (r) => !isContextWikiPath(r.path),
+      );
       return NextResponse.json({ query: q, results, categories });
     }
-    const pages = await listWikiPages({
-      bypassCache: url.searchParams.get("fresh") === "1",
-    });
+    const pages = (
+      await listWikiPages({
+        bypassCache: url.searchParams.get("fresh") === "1",
+      })
+    ).filter((p) => !isContextWikiPath(p.path));
     return NextResponse.json({ pages, categories });
   } catch (e) {
     const message = e instanceof Error ? e.message : "wiki_error";

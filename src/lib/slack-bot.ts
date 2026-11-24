@@ -353,9 +353,9 @@ async function handle(msg: Incoming): Promise<void> {
     const turns: GeminiMessage[] = [...(await getChatHistory(key)), userTurn];
 
     const { isStravaConfigured, slackAccountKey } = await import("./strava");
-    // Layer A.5 POC: personal/<slug>/ wiki folder for continuity past chat TTL.
+    // Layer A.5 POC: `.context/<SlackUserId>/` wiki folder for continuity past chat TTL.
     let personalContext: {
-      slug: string;
+      slackUserId: string;
       folder: string;
       depth: "dm" | "channel";
       index: string;
@@ -372,14 +372,14 @@ async function handle(msg: Incoming): Promise<void> {
         });
         if (prepared) {
           personalContext = {
-            slug: prepared.slug,
+            slackUserId: prepared.slackUserId,
             folder: prepared.folder,
             depth: prepared.depth,
             index: prepared.index,
           };
           if (prepared.seeded.length) {
             console.log(
-              `[personal-context] seeded for ${prepared.slug}: ${prepared.seeded.join(", ")}`,
+              `[personal-context] seeded for ${prepared.slackUserId}: ${prepared.seeded.join(", ")}`,
             );
           }
         }

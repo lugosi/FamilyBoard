@@ -105,8 +105,7 @@ export const wikiTools: AgentTool[] = [
         properties: {
           category: {
             type: "string",
-            enum: pageCategories.map((c) => c.id),
-            description: pageCategories.map((c) => `${c.id}: ${c.hint}`).join("; "),
+            description: `${pageCategories.map((c) => `${c.id}: ${c.hint}`).join("; ")}. For Slack continuity only: \`.context/<SlackUserId>\` (silent write, no Approve).`,
           },
           title: { type: "string", description: "Short page title, e.g. 'Maya' or 'Wi-Fi'" },
           summary: { type: "string", description: "One line describing what the page holds" },

@@ -153,6 +153,8 @@ test("paths: new pages are slugified, existing paths keep case, traversal is rej
   assert.throws(() => existingWikiPath("a/.git/config", "wiki"));
   assert.throws(() => newWikiPath("a/b/c/d.md"));
   assert.throws(() => pathForNewPage("people", "!!!"));
+  assert.equal(newWikiPath(".context/U012ABCDEF/profile"), ".context/U012ABCDEF/profile.md");
+  assert.equal(pathForNewPage(".context/U012ABCDEF", "Open Loops"), ".context/U012ABCDEF/open-loops.md");
 });
 
 test("search ranks title/tag hits, matches body text, and returns snippets", () => {
