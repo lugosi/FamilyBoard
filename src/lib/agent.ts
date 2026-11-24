@@ -64,7 +64,14 @@ import {
 } from "./agent-pending-writes";
 import { wikiTools } from "./agent-wiki-tools";
 import { readGoogleSheet } from "./sheets";
-import { buildWikiIndex, isSkillPath, SKILLS_FOLDER, WIKI_CATEGORIES } from "./wiki-format";
+import { wikiWriteTargetsSilentContext } from "./personal-context-format";
+import {
+  buildWikiIndex,
+  CONTEXT_ROOT,
+  isSkillPath,
+  SKILLS_FOLDER,
+  WIKI_CATEGORIES,
+} from "./wiki-format";
 import { isWikilmGithubConfigured, listWikiPages } from "./wikilm-github";
 
 const MAX_TOOL_ROUNDS = 10;
@@ -637,9 +644,9 @@ function buildSystemPrompt(input: {
   stravaConfigured?: boolean;
   actor?: AgentActor;
   senderName?: string;
-  /** Slack continuity: personal/<slug>/ index (no bodies). */
+  /** Slack continuity: `.context/<SlackUserId>/` index (no bodies). */
   personalContext?: {
-    slug: string;
+    slackUserId: string;
     folder: string;
     depth: "dm" | "channel";
     index: string;
@@ -718,13 +725,13 @@ function buildSystemPrompt(input: {
     const dm = pc.depth === "dm";
     lines.push(
       "=== PERSONAL CONTEXT (this Slack person) ===",
-      `Durable notes for continuity live under \`${pc.folder}/\` (survive Slack chat memory expiry). Index only — no bodies below.`,
+      `Durable notes for continuity live under \`${pc.folder}/\` (hidden \`.context\` folder; survive Slack chat memory expiry). Index only — no bodies below.`,
       dm
-        ? "This is a DM: you may read and update any personal/<slug> page when relevant."
+        ? `This is a DM: you may read and update pages under \`${pc.folder}/\` when relevant.`
         : "This is a shared channel: prefer only profile.md unless they explicitly ask to use their personal notes; avoid dumping private prefs into the channel.",
-      "If the ask matches a listed personal page (Strava, recipes, open loops, profile), call read_wiki_page on that path before answering from it.",
-      "When they state a durable personal preference (units, goals, diet, “remember for next time”), propose edit_wiki_section / create_wiki_page under their personal folder (Approve still required). Keep open-loops.md to a few short bullets.",
-      "Do not invent personal facts. Chat memory may be empty after ~30 minutes — rely on these pages for longer continuity.",
+      "If the ask matches a listed context page (Strava, open loops, profile, …), call read_wiki_page on that path before answering from it.",
+      `When they state a durable personal preference (units, goals, diet, “remember for next time”), call edit_wiki_section or create_wiki_page under \`${pc.folder}/\` immediately — those writes apply with NO Approve/Deny (silent continuity). Keep open-loops.md to a few short bullets. Do not announce wiki paths or “I saved to the wiki” unless they asked you to remember something.`,
+      "Family wiki pages outside `.context/` still need Approve for writes. Do not invent personal facts. Chat memory may be empty after ~30 minutes — rely on these pages for longer continuity.",
       "=== PERSONAL INDEX ===",
       pc.index,
       "=== END PERSONAL INDEX ===",
@@ -820,7 +827,16 @@ async function collectAgentTools(): Promise<{
     try {
       const pages = await listWikiPages({ bypassCache: true });
       const skills = pages.filter((p) => isSkillPath(p.path));
-      wikiIndex = buildWikiIndex(pages.filter((p) => !isSkillPath(p.path)), WIKI_INDEX_BUDGET);
+      // Hide `.context/` from the shared family index (Slack gets a personal index separately).
+      wikiIndex = buildWikiIndex(
+        pages.filter(
+          (p) =>
+            !isSkillPath(p.path) &&
+            p.category !== CONTEXT_ROOT &&
+            !p.path.startsWith(`${CONTEXT_ROOT}/`),
+        ),
+        WIKI_INDEX_BUDGET,
+      );
       skillsIndex = skills.length ? buildWikiIndex(skills, SKILLS_INDEX_BUDGET) : null;
     } catch {
       wikiIndex = null;
@@ -862,9 +878,9 @@ export async function runFamilyAgent(input: {
   conversationKey?: string;
   /** When true, calendar/wiki write tools run immediately (approve path). */
   skipWriteApproval?: boolean;
-  /** Slack personal wiki folder index (Layer A.5 continuity POC). */
+  /** Slack `.context/<user>/` folder index (Layer A.5 continuity POC). */
   personalContext?: {
-    slug: string;
+    slackUserId: string;
     folder: string;
     depth: "dm" | "channel";
     index: string;
@@ -941,7 +957,8 @@ export async function runFamilyAgent(input: {
         response = { error: `Tool ${call.name} is not available` };
       } else if (
         WRITE_TOOLS_NEEDING_APPROVAL.has(call.name) &&
-        !ctx.skipWriteApproval
+        !ctx.skipWriteApproval &&
+        !wikiWriteTargetsSilentContext(call.args ?? {})
       ) {
         const args = call.args ?? {};
         const label = previewWriteLabel(call.name, args, ctx.timeZone);

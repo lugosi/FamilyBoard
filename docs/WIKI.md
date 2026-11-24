@@ -37,13 +37,13 @@ One page per person or topic, in a folder:
 | `travel/` | Trips, packing lists, documents, loyalty numbers |
 | `notes/` | Anything else |
 | `todos/` | Open family tasks — especially `todos/list.md` (inbox scan + assistant keep this checklist current) |
-| `personal/` | Per-person Slack continuity folders (`personal/<name>/profile.md`, `strava.md`, …). POC before private GitHub — **readable by anyone with wiki access** |
+| `.context/` | Hidden Slack continuity folders (`.context/<SlackUserId>/…`). Not listed in the board Wiki browser. POC before private GitHub — still in the shared repo |
 
 Pages directly under the wiki folder still work (shown as **Unfiled**); ask the assistant to file them, or use **Move**. Subfolders up to three levels deep are fine (`school/maya/soccer.md`).
 
-### Personal folders (Slack continuity POC)
+### Hidden `.context/` folders (Slack continuity POC)
 
-When someone DMs the bot, FamilyBoard seeds `personal/<slug>/` (linked via `slack: U…` on their `people/` page when present). The assistant gets an **index** of those pages each turn and should `read_wiki_page` matching ones (Strava prefs, open loops, …) so chats still feel continuous after Slack’s short memory expires. Sensitive isolation later = personal GitHub, not this shared folder.
+When someone DMs the bot, FamilyBoard seeds `.context/<SlackUserId>/` (profile, open-loops, Strava when linked). The Slack assistant gets an **index** of those pages each turn and should `read_wiki_page` matching ones so chats still feel continuous after Slack’s short memory expires. Writes under `.context/` apply **silently** (no Approve). Link people pages with `slack: U…` when useful. Still shared-repo storage — not private; Layer B personal GitHub later.
 
 ## Page template
 

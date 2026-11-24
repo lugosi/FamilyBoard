@@ -215,7 +215,11 @@ export function WikiBrowser({
     if (!pages) return [];
     const order = categories.map((c) => c.id);
     const byCat = new Map<string, WikiPageMeta[]>();
-    for (const p of pages) byCat.set(p.category, [...(byCat.get(p.category) ?? []), p]);
+    // Hide Slack continuity `.context/` folders from the board Wiki browser.
+    for (const p of pages) {
+      if (p.category === ".context" || p.path.startsWith(".context/")) continue;
+      byCat.set(p.category, [...(byCat.get(p.category) ?? []), p]);
+    }
     const keys = [...byCat.keys()].sort((a, b) => {
       const ia = a ? (order.includes(a) ? order.indexOf(a) : order.length) : order.length + 1;
       const ib = b ? (order.includes(b) ? order.indexOf(b) : order.length) : order.length + 1;

@@ -1,35 +1,39 @@
 /**
- * Pure helpers for personal/<slug>/ continuity folders (no I/O).
+ * Pure helpers for .context/<SlackUserId>/ continuity folders (no I/O).
  */
 
 import {
   buildWikiIndex,
-  extractSlackUserIdFromPage,
+  CONTEXT_ROOT,
   normalizeSlackUserId,
   slugify,
-  type WikiPage,
   type WikiPageMeta,
 } from "./wiki-format";
 
-export const PERSONAL_ROOT = "personal";
+export { CONTEXT_ROOT };
+
 export const PERSONAL_INDEX_BUDGET = 2_500;
+
+/** @deprecated use CONTEXT_ROOT — kept as alias for older call sites/tests */
+export const PERSONAL_ROOT = CONTEXT_ROOT;
 
 export type PersonalContextDepth = "dm" | "channel";
 
-export function personalFolder(slug: string): string {
-  const s = slugify(slug);
-  if (!s) throw new Error("personal_slug_required");
-  return `${PERSONAL_ROOT}/${s}`;
+/** Folder for one Slack user: `.context/U012ABCDEF`. */
+export function personalFolder(slackUserId: string): string {
+  const id = normalizeSlackUserId(slackUserId);
+  if (!id) throw new Error("slack_user_required");
+  return `${CONTEXT_ROOT}/${id}`;
 }
 
-export function personalContextPaths(slug: string): {
+export function personalContextPaths(slackUserId: string): {
   folder: string;
   index: string;
   profile: string;
   strava: string;
   openLoops: string;
 } {
-  const folder = personalFolder(slug);
+  const folder = personalFolder(slackUserId);
   return {
     folder,
     index: `${folder}/index.md`,
@@ -39,80 +43,87 @@ export function personalContextPaths(slug: string): {
   };
 }
 
-/** Prefer people/<name>.md stem when slack: matches; else display name / user fallback. */
-export function resolvePersonalSlug(input: {
-  slackUserId: string;
-  displayName?: string | null;
-  pages: readonly Pick<WikiPage, "path" | "title" | "content">[];
-}): { slug: string; peoplePath: string | null } {
-  const want = normalizeSlackUserId(input.slackUserId);
-  if (want) {
-    for (const page of input.pages) {
-      if (!page.path.toLowerCase().startsWith("people/")) continue;
-      const id = extractSlackUserIdFromPage(page.content);
-      if (id !== want) continue;
-      const stem = page.path.replace(/^people\//i, "").replace(/\.md$/i, "");
-      const slug = slugify(stem) || slugify(page.title);
-      if (slug) return { slug, peoplePath: page.path };
+export function isPersonalContextPath(path: string, slackUserId?: string): boolean {
+  const p = path.replace(/^\/+/, "");
+  if (slackUserId) {
+    const id = normalizeSlackUserId(slackUserId);
+    if (!id) return false;
+    return p === `${CONTEXT_ROOT}/${id}` || p.startsWith(`${CONTEXT_ROOT}/${id}/`);
+  }
+  return p === CONTEXT_ROOT || p.startsWith(`${CONTEXT_ROOT}/`);
+}
+
+/**
+ * True when a wiki write tool args targets `.context/…` — those apply immediately
+ * (no Approve) so continuity can update silently.
+ */
+export function wikiWriteTargetsSilentContext(args: Record<string, unknown>): boolean {
+  for (const key of ["path", "newPath"] as const) {
+    const raw = args[key];
+    if (typeof raw === "string" && isPersonalContextPath(raw)) return true;
+  }
+  if (typeof args.category === "string") {
+    const cat = args.category.trim().replace(/^\/+|\/+$/g, "");
+    if (
+      cat === CONTEXT_ROOT ||
+      cat === "context" ||
+      cat.startsWith(`${CONTEXT_ROOT}/`) ||
+      cat.startsWith("context/")
+    ) {
+      return true;
     }
   }
-  const fromName = slugify(input.displayName ?? "");
-  if (fromName) return { slug: fromName, peoplePath: null };
-  const tail = (want ?? input.slackUserId).replace(/[^a-z0-9]/gi, "").slice(-6).toLowerCase();
-  return { slug: `user-${tail || "unknown"}`, peoplePath: null };
+  return false;
 }
 
-export function isPersonalContextPath(path: string, slug?: string): boolean {
-  const p = path.replace(/^\/+/, "").toLowerCase();
-  if (slug) return p.startsWith(`${PERSONAL_ROOT}/${slugify(slug).toLowerCase()}/`);
-  return p.startsWith(`${PERSONAL_ROOT}/`);
-}
-
-/** Build a compact index of pages under personal/<slug>/. */
+/** Build a compact index of pages under `.context/<SlackUserId>/`. */
 export function buildPersonalContextIndex(
   pages: readonly WikiPageMeta[],
-  slug: string,
+  slackUserId: string,
   budget = PERSONAL_INDEX_BUDGET,
 ): string {
-  const folder = personalFolder(slug).toLowerCase() + "/";
-  const mine = pages.filter((p) => p.path.toLowerCase().startsWith(folder));
-  if (!mine.length) return `(no personal pages yet under personal/${slugify(slug)}/)`;
+  const folder = personalFolder(slackUserId) + "/";
+  const mine = pages.filter((p) => p.path.startsWith(folder) || p.path === folder.slice(0, -1));
+  if (!mine.length) {
+    return `(no personal pages yet under ${personalFolder(slackUserId)}/)`;
+  }
   return buildWikiIndex(mine, budget);
 }
 
-export function personalIndexTemplate(slug: string, displayName: string): string {
-  const name = displayName.trim() || slug;
+export function personalIndexTemplate(slackUserId: string, displayName: string): string {
+  const name = displayName.trim() || slackUserId;
+  const folder = personalFolder(slackUserId);
   return `---
-title: ${name} · personal index
-summary: Personal context folder for ${name} (Slack continuity)
-tags: [personal, context]
+title: ${name} · context index
+summary: Hidden Slack continuity folder for ${name}
+tags: [context]
 ---
 
-# ${name} · personal
+# ${name} · context
 
-Context files the assistant may load when chatting with ${name} on Slack.
+Private-ish continuity files for Slack (path \`${folder}/\`). Not listed in the board Wiki browser.
 
 ## Contexts
 
 - [profile.md](./profile.md) — how to address them, durable prefs
 - [open-loops.md](./open-loops.md) — short notes on in-flight projects
-- [strava.md](./strava.md) — training prefs (units, goals) when Strava is linked
+- [strava.md](./strava.md) — training prefs when Strava is linked
 `;
 }
 
 export function personalProfileTemplate(
-  slug: string,
+  slackUserId: string,
   displayName: string,
   peoplePath: string | null,
 ): string {
-  const name = displayName.trim() || slug;
+  const name = displayName.trim() || slackUserId;
   const peopleLine = peoplePath
     ? `- Family wiki person page: \`${peoplePath}\``
     : "- (No people/ page linked yet — add `slack: U…` on their people page.)";
   return `---
 title: ${name} · profile
 summary: Durable personal prefs for ${name}
-tags: [personal, profile]
+tags: [context, profile]
 ---
 
 # ${name} · profile
@@ -120,6 +131,7 @@ tags: [personal, profile]
 ## About
 
 - Preferred name: ${name}
+- Slack: ${normalizeSlackUserId(slackUserId) ?? slackUserId}
 ${peopleLine}
 
 ## Preferences
@@ -128,12 +140,12 @@ ${peopleLine}
 `;
 }
 
-export function personalOpenLoopsTemplate(slug: string, displayName: string): string {
-  const name = displayName.trim() || slug;
+export function personalOpenLoopsTemplate(slackUserId: string, displayName: string): string {
+  const name = displayName.trim() || slackUserId;
   return `---
 title: ${name} · open loops
 summary: Short rolling notes on what ${name} was working on
-tags: [personal, open-loops]
+tags: [context, open-loops]
 ---
 
 # ${name} · open loops
@@ -144,12 +156,12 @@ tags: [personal, open-loops]
 `;
 }
 
-export function personalStravaTemplate(slug: string, displayName: string): string {
-  const name = displayName.trim() || slug;
+export function personalStravaTemplate(slackUserId: string, displayName: string): string {
+  const name = displayName.trim() || slackUserId;
   return `---
 title: ${name} · Strava
 summary: Training prefs for ${name} (units, goals, last notes)
-tags: [personal, strava]
+tags: [context, strava]
 ---
 
 # ${name} · Strava
@@ -163,4 +175,10 @@ tags: [personal, strava]
 
 - (Last recap highlights the assistant should remember.)
 `;
+}
+
+/** Optional people-page slug helper (display only). */
+export function peopleStemSlug(path: string, title: string): string {
+  const stem = path.replace(/^people\//i, "").replace(/\.md$/i, "");
+  return slugify(stem) || slugify(title);
 }

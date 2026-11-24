@@ -40,11 +40,6 @@ export const WIKI_CATEGORIES: WikiCategory[] = [
     label: "Skills",
     hint: "saved how-tos the assistant reruns, e.g. turning a schedule spreadsheet into calendar events",
   },
-  {
-    id: "personal",
-    label: "Personal",
-    hint: "per-person Slack continuity folders (profile, Strava prefs, open loops) — shared wiki POC",
-  },
 ];
 
 export const DEFAULT_WIKI_CATEGORY = "notes";
@@ -540,6 +535,19 @@ export function slugify(input: string, max = 60): string {
     .replace(/-+$/g, "");
 }
 
+/** Hidden Slack continuity folder (dot-prefix; allowed as the only leading-dot segment). */
+export const CONTEXT_ROOT = ".context";
+
+/** True for `.context` and anything under it (board UI / family index should hide these). */
+export function isContextWikiPath(path: string): boolean {
+  const p = path.replace(/^\/+/, "");
+  return p === CONTEXT_ROOT || p.startsWith(`${CONTEXT_ROOT}/`);
+}
+
+function isAllowedDotSegment(s: string): boolean {
+  return s === CONTEXT_ROOT;
+}
+
 function splitRelative(input: string, basePath: string): string[] {
   let p = input.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
   if (basePath && (p === basePath || p.startsWith(`${basePath}/`))) {
@@ -551,34 +559,59 @@ function splitRelative(input: string, basePath: string): string[] {
     throw new WikiPathError(`Page paths can be at most ${MAX_PATH_DEPTH} levels deep`);
   }
   for (const s of segs) {
-    if (s === "." || s === ".." || s.startsWith(".") || /[\u0000-\u001f]/.test(s)) {
+    if (s === "." || s === ".." || /[\u0000-\u001f]/.test(s)) {
+      throw new WikiPathError(`Invalid page path: ${input}`);
+    }
+    if (s.startsWith(".") && !isAllowedDotSegment(s)) {
       throw new WikiPathError(`Invalid page path: ${input}`);
     }
   }
   return segs;
 }
 
+/** Normalize path segments for `.context/<SlackUserId>/…` without slugifying those parts away. */
+function mapWikiPathSegment(s: string, index: number, all: string[], mode: "new" | "existing"): string {
+  const raw = index === all.length - 1 ? s.replace(/\.md$/i, "") : s;
+  if (index === 0 && (raw === CONTEXT_ROOT || raw === "context")) return CONTEXT_ROOT;
+  if (index === 1 && (all[0] === CONTEXT_ROOT || all[0] === "context" || all[0] === ".context")) {
+    const id = raw.trim().toUpperCase().replace(/^<@/, "").replace(/>$/, "");
+    if (/^U[A-Z0-9]+$/.test(id)) return id;
+  }
+  if (mode === "existing") return raw;
+  const slug = slugify(raw);
+  if (!slug) throw new WikiPathError(`Invalid page path segment: ${s}`);
+  return slug;
+}
+
 /** Path of an existing page, relative to the wiki root (case and spelling preserved). */
 export function existingWikiPath(input: string, basePath = ""): string {
-  const segs = splitRelative(input, basePath);
-  const last = segs.length - 1;
-  if (!/\.md$/i.test(segs[last])) segs[last] = `${segs[last]}.md`;
-  return segs.join("/");
+  const rawSegs = splitRelative(input, basePath);
+  const segs = rawSegs.map((s, i) => mapWikiPathSegment(s, i, rawSegs, "existing"));
+  return `${segs.join("/")}.md`;
 }
 
 /** Slugified path for a new page or a move target, relative to the wiki root. */
 export function newWikiPath(input: string, basePath = ""): string {
-  const segs = splitRelative(input, basePath).map((s, i, all) =>
-    slugify(i === all.length - 1 ? s.replace(/\.md$/i, "") : s),
-  );
+  const rawSegs = splitRelative(input, basePath);
+  const segs = rawSegs.map((s, i) => mapWikiPathSegment(s, i, rawSegs, "new"));
   if (segs.some((s) => !s)) throw new WikiPathError(`Invalid page path: ${input}`);
   return `${segs.join("/")}.md`;
 }
 
 export function pathForNewPage(category: string | undefined, title: string): string {
-  const cat = slugify(category ?? "") || DEFAULT_WIKI_CATEGORY;
+  const raw = (category ?? "").trim().replace(/^\/+|\/+$/g, "");
   const name = slugify(title);
   if (!name) throw new WikiPathError("A page title is required");
+  // Preserve `.context/<SlackUserId>/…` (slugify would strip the leading dot / uppercase id).
+  if (
+    raw === CONTEXT_ROOT ||
+    raw === "context" ||
+    raw.startsWith(`${CONTEXT_ROOT}/`) ||
+    raw.startsWith("context/")
+  ) {
+    return newWikiPath(`${raw}/${name}`);
+  }
+  const cat = slugify(raw) || DEFAULT_WIKI_CATEGORY;
   return `${cat}/${name}.md`;
 }
 
