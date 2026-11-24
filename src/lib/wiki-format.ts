@@ -40,6 +40,11 @@ export const WIKI_CATEGORIES: WikiCategory[] = [
     label: "Skills",
     hint: "saved how-tos the assistant reruns, e.g. turning a schedule spreadsheet into calendar events",
   },
+  {
+    id: "personal",
+    label: "Personal",
+    hint: "per-person Slack continuity folders (profile, Strava prefs, open loops) — shared wiki POC",
+  },
 ];
 
 export const DEFAULT_WIKI_CATEGORY = "notes";

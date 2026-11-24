@@ -637,6 +637,13 @@ function buildSystemPrompt(input: {
   stravaConfigured?: boolean;
   actor?: AgentActor;
   senderName?: string;
+  /** Slack continuity: personal/<slug>/ index (no bodies). */
+  personalContext?: {
+    slug: string;
+    folder: string;
+    depth: "dm" | "channel";
+    index: string;
+  } | null;
 }): string {
   const lines = [
     "You are the FamilyBoard home assistant for one family. Be brief, warm, and practical.",
@@ -705,6 +712,24 @@ function buildSystemPrompt(input: {
       "In a shared channel thread, each user message starts with the speaker's name.",
     );
     if (input.senderName) lines.push(`The person messaging you is ${input.senderName}.`);
+  }
+  if (input.personalContext?.index) {
+    const pc = input.personalContext;
+    const dm = pc.depth === "dm";
+    lines.push(
+      "=== PERSONAL CONTEXT (this Slack person) ===",
+      `Durable notes for continuity live under \`${pc.folder}/\` (survive Slack chat memory expiry). Index only — no bodies below.`,
+      dm
+        ? "This is a DM: you may read and update any personal/<slug> page when relevant."
+        : "This is a shared channel: prefer only profile.md unless they explicitly ask to use their personal notes; avoid dumping private prefs into the channel.",
+      "If the ask matches a listed personal page (Strava, recipes, open loops, profile), call read_wiki_page on that path before answering from it.",
+      "When they state a durable personal preference (units, goals, diet, “remember for next time”), propose edit_wiki_section / create_wiki_page under their personal folder (Approve still required). Keep open-loops.md to a few short bullets.",
+      "Do not invent personal facts. Chat memory may be empty after ~30 minutes — rely on these pages for longer continuity.",
+      "=== PERSONAL INDEX ===",
+      pc.index,
+      "=== END PERSONAL INDEX ===",
+      "=== END PERSONAL CONTEXT ===",
+    );
   }
   if (input.petlibroConfigured) {
     lines.push(
@@ -837,6 +862,13 @@ export async function runFamilyAgent(input: {
   conversationKey?: string;
   /** When true, calendar/wiki write tools run immediately (approve path). */
   skipWriteApproval?: boolean;
+  /** Slack personal wiki folder index (Layer A.5 continuity POC). */
+  personalContext?: {
+    slug: string;
+    folder: string;
+    depth: "dm" | "channel";
+    index: string;
+  } | null;
 }): Promise<AgentResult> {
   const channel = input.channel ?? "board";
   const packed = await collectAgentTools();
@@ -853,6 +885,7 @@ export async function runFamilyAgent(input: {
     stravaConfigured: packed.stravaConfigured,
     actor: input.actor,
     senderName: input.senderName,
+    personalContext: input.personalContext,
   });
   const ctx: ToolContext = {
     redirectUri: input.redirectUri,
