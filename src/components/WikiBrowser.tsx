@@ -81,13 +81,13 @@ function toChatAttachment(name: string, summary: string, text: string): ChatAtta
 }
 
 const inputClass =
-  "w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3.5 py-2.5 text-lg text-white outline-none placeholder:text-slate-500 focus:border-slate-500";
+  "w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3.5 py-2.5 text-xl text-white outline-none placeholder:text-slate-500 focus:border-slate-500";
 const btn =
-  "rounded-md border border-slate-600/80 bg-slate-800/90 px-3.5 py-2 text-base font-medium text-slate-100 hover:border-slate-500 hover:bg-slate-700 disabled:opacity-50";
+  "rounded-md border border-slate-600/80 bg-slate-800/90 px-3.5 py-2 text-lg font-medium text-slate-100 hover:border-slate-500 hover:bg-slate-700 disabled:opacity-50";
 const primaryBtn =
-  "rounded-md bg-slate-100 px-3.5 py-2 text-base font-semibold text-slate-900 hover:bg-white disabled:opacity-50";
+  "rounded-md bg-slate-100 px-3.5 py-2 text-lg font-semibold text-slate-900 hover:bg-white disabled:opacity-50";
 const ghostBtn =
-  "rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50";
+  "rounded-md px-2.5 py-1.5 text-base font-medium text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50";
 
 export function WikiBrowser({
   active,
@@ -120,8 +120,10 @@ export function WikiBrowser({
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set());
-  const [collapsedCats, setCollapsedCats] = useState<Set<string>>(() => new Set());
+  /** Empty = all ## sections collapsed (default). */
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set());
+  /** Empty = all sidebar categories collapsed (default). */
+  const [expandedCats, setExpandedCats] = useState<Set<string>>(() => new Set());
   const selectedRef = useRef<string | null>(null);
   const lastFocusNonceRef = useRef<number | undefined>(undefined);
 
@@ -144,7 +146,7 @@ export function WikiBrowser({
     setError(null);
     setConflict(false);
     setNotice(null);
-    setCollapsedSections(new Set());
+    setExpandedSections(new Set());
     setBusy("open");
     try {
       const json = await wikiFetch<{ page: WikiPage }>(`/api/wiki/page?path=${encodeURIComponent(path)}`);
@@ -152,6 +154,14 @@ export function WikiBrowser({
       setPage(json.page);
       selectedRef.current = json.page.path;
       setSelected(json.page.path);
+      // Reveal the category that owns this page; keep sections collapsed.
+      const catKey = json.page.category || "_root";
+      setExpandedCats((prev) => {
+        if (prev.has(catKey)) return prev;
+        const next = new Set(prev);
+        next.add(catKey);
+        return next;
+      });
     } catch (e) {
       if (selectedRef.current !== path) return;
       setPage(null);
@@ -287,7 +297,7 @@ export function WikiBrowser({
   }
 
   function toggleSection(title: string) {
-    setCollapsedSections((prev) => {
+    setExpandedSections((prev) => {
       const next = new Set(prev);
       if (next.has(title)) next.delete(title);
       else next.add(title);
@@ -296,7 +306,7 @@ export function WikiBrowser({
   }
 
   function toggleCat(key: string) {
-    setCollapsedCats((prev) => {
+    setExpandedCats((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -392,12 +402,12 @@ export function WikiBrowser({
           ) : (
             groups.map((g) => {
               const catKey = g.key || "_root";
-              const catOpen = !collapsedCats.has(catKey);
+              const catOpen = expandedCats.has(catKey);
               return (
                 <div key={catKey} className="mb-1.5">
                   <button
                     type="button"
-                    className="flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+                    className="flex w-full items-center gap-1.5 rounded-lg px-2 py-2.5 text-left text-sm font-semibold uppercase tracking-wider text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
                     aria-expanded={catOpen}
                     onClick={() => toggleCat(catKey)}
                   >
@@ -419,7 +429,7 @@ export function WikiBrowser({
           )}
         </div>
         {pages ? (
-          <p className="px-1 text-sm text-slate-500 tabular-nums">
+          <p className="px-1 text-base text-slate-500 tabular-nums">
             {pages.length} page{pages.length === 1 ? "" : "s"} ·{" "}
             <button type="button" className="underline decoration-slate-600 hover:text-slate-300" onClick={() => void loadList(true)}>
               reload
@@ -682,16 +692,16 @@ export function WikiBrowser({
                     <button
                       type="button"
                       className={ghostBtn}
-                      onClick={() => setCollapsedSections(new Set())}
+                      onClick={() =>
+                        setExpandedSections(new Set(sections.map((s) => s.title)))
+                      }
                     >
                       Expand all
                     </button>
                     <button
                       type="button"
                       className={ghostBtn}
-                      onClick={() =>
-                        setCollapsedSections(new Set(sections.map((s) => s.title)))
-                      }
+                      onClick={() => setExpandedSections(new Set())}
                     >
                       Collapse all
                     </button>
@@ -709,7 +719,7 @@ export function WikiBrowser({
                 {sections.length ? (
                   <div className="space-y-2.5">
                     {sections.map((section) => {
-                      const open = !collapsedSections.has(section.title);
+                      const open = expandedSections.has(section.title);
                       return (
                         <section
                           key={`${page.path}:${section.title}`}
@@ -718,12 +728,12 @@ export function WikiBrowser({
                           <div className="flex items-stretch gap-1 border-b border-slate-800/80">
                             <button
                               type="button"
-                              className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left hover:bg-slate-900/50"
+                              className="flex min-w-0 flex-1 items-center gap-2 px-3 py-3 text-left hover:bg-slate-900/50"
                               aria-expanded={open}
                               onClick={() => toggleSection(section.title)}
                             >
                               <Chevron open={open} />
-                              <span className="min-w-0 flex-1 truncate text-lg font-semibold text-white">
+                              <span className="min-w-0 flex-1 truncate text-xl font-semibold text-white">
                                 {section.title}
                               </span>
                             </button>
@@ -922,8 +932,8 @@ function PageItem({
       >
         <WikiCategoryIcon id={page.category} className="mt-0.5 h-3.5 w-3.5 opacity-90" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-base font-medium">{page.title}</span>
-          <span className="mt-0.5 block line-clamp-2 text-sm leading-snug text-slate-400">
+          <span className="block truncate text-lg font-medium">{page.title}</span>
+          <span className="mt-0.5 block line-clamp-2 text-base leading-snug text-slate-400">
             {page.snippet || page.summary || page.path}
           </span>
         </span>

@@ -1102,7 +1102,7 @@ export function WikiLlm({
   }
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-slate-950 text-lg leading-relaxed text-slate-50">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-slate-950 text-xl leading-relaxed text-slate-50">
       {/* Slim toolbar — no second “Assistant” title on the full AI tab. */}
       <header className="flex shrink-0 items-center gap-2 border-b border-slate-800/80 px-3 py-2 sm:px-5">
         {isOverlay ? (
@@ -2274,8 +2274,8 @@ export function WikiLlm({
                       <div
                         className={`max-w-[min(100%,42rem)] px-1 py-0.5 ${
                           m.role === "user"
-                            ? "rounded-2xl bg-slate-800 px-4 py-3.5 text-lg leading-relaxed text-white whitespace-pre-wrap"
-                            : "text-[1.125rem] leading-[1.65] text-slate-50"
+                            ? "rounded-2xl bg-slate-800 px-4 py-3.5 text-xl leading-relaxed text-white whitespace-pre-wrap"
+                            : "text-[1.25rem] leading-[1.7] text-slate-50"
                         }`}
                       >
                         {m.actions?.length ? (
@@ -2491,7 +2491,7 @@ export function WikiLlm({
                 <textarea
                   ref={promptRef}
                   rows={1}
-                  className="max-h-40 min-h-[3.25rem] min-w-0 flex-1 resize-none rounded-md border border-slate-600 bg-slate-900 px-4 py-3.5 text-lg leading-relaxed text-white outline-none placeholder:text-slate-500 focus:border-slate-400"
+                  className="max-h-40 min-h-[3.25rem] min-w-0 flex-1 resize-none rounded-md border border-slate-600 bg-slate-900 px-4 py-3.5 text-xl leading-relaxed text-white outline-none placeholder:text-slate-500 focus:border-slate-400"
                   placeholder={
                     busy === "chat"
                       ? "Add to this reply (e.g. include HIIT)…"
