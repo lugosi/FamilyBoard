@@ -43,8 +43,6 @@ const SLACK_APPROVAL_LEAD_CHARS = Math.min(SLACK_SECTION_TEXT_CHARS, 2400);
 
 const SLACK_ACTION_FOOTER_MAX = 12;
 const SLACK_APPROVAL_BULLETS = 15;
-/** Prose in the Approve message section — leave room for the review blocks. */
-const SLACK_APPROVAL_LEAD_CHARS = Math.min(SLACK_SECTION_TEXT_CHARS, 2400);
 
 function slackActionFooter(
   actions: { ok: boolean; label: string }[],
