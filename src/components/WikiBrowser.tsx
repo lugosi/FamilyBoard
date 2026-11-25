@@ -361,7 +361,7 @@ export function WikiBrowser({
   };
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-[17.5rem_minmax(0,1fr)]">
+    <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-[20rem_minmax(0,1fr)] lg:grid-cols-[22rem_minmax(0,1fr)]">
       <aside className="flex min-h-0 flex-col gap-3">
         <div className="flex gap-2">
           <input
@@ -411,7 +411,7 @@ export function WikiBrowser({
                 <div key={catKey} className="mb-1.5">
                   <button
                     type="button"
-                    className="flex w-full items-center gap-1.5 rounded-lg px-2 py-2.5 text-left text-sm font-semibold uppercase tracking-wider text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-3 text-left text-base font-semibold uppercase tracking-wider text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
                     aria-expanded={catOpen}
                     onClick={() => toggleCat(catKey)}
                   >
@@ -928,16 +928,16 @@ function PageItem({
       <button
         type="button"
         onClick={() => onOpen(page.path)}
-        className={`flex w-full items-start gap-2 rounded-xl px-2.5 py-2 text-left transition-colors ${
+        className={`flex w-full items-start gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors ${
           active
             ? "bg-sky-500/15 text-white ring-1 ring-inset ring-sky-500/40"
             : "text-slate-200 hover:bg-slate-800/70"
         }`}
       >
-        <WikiCategoryIcon id={page.category} className="mt-0.5 h-3.5 w-3.5 opacity-90" />
+        <WikiCategoryIcon id={page.category} className="mt-1 h-4 w-4 opacity-90" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-lg font-medium">{page.title}</span>
-          <span className="mt-0.5 block line-clamp-2 text-base leading-snug text-slate-400">
+          <span className="block truncate text-xl font-medium">{page.title}</span>
+          <span className="mt-0.5 block line-clamp-2 text-lg leading-snug text-slate-400">
             {page.snippet || page.summary || page.path}
           </span>
         </span>
