@@ -24,6 +24,7 @@ import { cronMatches, cronSlotKey, describeCron, zonedCronParts } from "./cron";
 import { runDailyBrief } from "./daily-brief";
 import { readDailyBriefStore } from "./daily-brief-store";
 import { isGeminiConfigured } from "./gemini";
+import { getDefaultTimeZone } from "./google";
 import { markdownTablesForSlack } from "./markdown-slack";
 import { isSlackConfigured, postSlackMessage } from "./slack";
 import { listSlackDeliveryTargets, type SlackDeliveryTarget } from "./wiki-slack-people";
@@ -81,12 +82,16 @@ export async function resolveMonitorSlackUserIds(monitor: AgentMonitor): Promise
 async function deliverSlack(
   userIds: string[],
   text: string,
+  timeZone = getDefaultTimeZone(),
 ): Promise<AgentMonitorRunResult["slack"]> {
   if (!isSlackConfigured() || !userIds.length) return [];
   const out: AgentMonitorRunResult["slack"] = [];
   for (const userId of userIds) {
     try {
-      await postSlackMessage({ channel: userId, text: markdownTablesForSlack(text) });
+      await postSlackMessage({
+        channel: userId,
+        text: markdownTablesForSlack(text, { timeZone }),
+      });
       out.push({ userId, ok: true });
     } catch (e) {
       out.push({
@@ -318,7 +323,11 @@ export async function runAgentMonitor(
     if (monitor.deliverSlack) {
       try {
         const userIds = await resolveMonitorSlackUserIds(monitor);
-        slack = await deliverSlack(userIds, formatSlackDelivery(monitor, result.reply));
+        slack = await deliverSlack(
+          userIds,
+          formatSlackDelivery(monitor, result.reply),
+          monitor.timeZone || getDefaultTimeZone(),
+        );
       } catch (e) {
         console.warn(
           "[agent-monitors] slack failed:",

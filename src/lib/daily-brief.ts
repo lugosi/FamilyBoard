@@ -125,7 +125,10 @@ async function deliverSlack(
   for (const userId of userIds) {
     try {
       // chat.postMessage accepts a user id and opens/uses the DM channel.
-      await postSlackMessage({ channel: userId, text: markdownTablesForSlack(text) });
+      await postSlackMessage({
+        channel: userId,
+        text: markdownTablesForSlack(text, { timeZone: getDefaultTimeZone() }),
+      });
       out.push({ userId, ok: true });
     } catch (e) {
       out.push({
