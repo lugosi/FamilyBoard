@@ -257,7 +257,11 @@ export async function postSlackText(input: {
   text: string;
   threadTs?: string;
 }): Promise<{ ts: string; channel: string }> {
-  const chunks = splitSlackText(input.text);
+  // Dynamic import keeps this file loadable by node:test (extensionless
+  // static imports break under Node ESM). Idempotent if caller already rewrote.
+  const { markdownTablesForSlack } = await import("./markdown-slack");
+  const text = markdownTablesForSlack(input.text);
+  const chunks = splitSlackText(text);
   const first = await postSlackMessage({
     channel: input.channel,
     text: chunks[0]!,

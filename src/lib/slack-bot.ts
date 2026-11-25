@@ -429,7 +429,7 @@ async function handle(msg: Incoming): Promise<void> {
       ...extractChatChartsFromText(result.reply),
     ].filter((c, i, arr) => arr.findIndex((x) => x.title === c.title) === i);
     // Same ```chart payload as the AI tab — upload PNGs, strip fences from text.
-    // Slack can't render GFM tables; rewrite them for mrkdwn (also applied in postSlackText).
+    // Slack can't render GFM tables; rewrite before Block Kit (postSlackMessage also rewrites).
     const body = markdownTablesForSlack(
       stripChatChartFences(raw, charts.length ? "remove" : "caption"),
     );
