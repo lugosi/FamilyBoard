@@ -89,16 +89,20 @@ const components: Components = {
     );
   },
   table: ({ children }) => (
-    <div className="board-scrollbar my-3 overflow-x-auto">
-      <table className="w-full border-collapse text-left text-[0.95em] tabular-nums">{children}</table>
+    <div className="board-scrollbar my-3 overflow-x-auto rounded-lg border border-slate-700/80 bg-slate-900/40">
+      <table className="w-full min-w-[16rem] border-collapse text-left text-[0.95em] tabular-nums">
+        {children}
+      </table>
     </div>
   ),
+  thead: ({ children }) => <thead className="bg-slate-800/80">{children}</thead>,
   th: ({ children }) => (
-    <th className="border-b border-slate-700 px-2.5 py-2 font-semibold text-slate-200">{children}</th>
+    <th className="border-b border-slate-600 px-3 py-2.5 font-semibold text-slate-100">{children}</th>
   ),
   td: ({ children }) => (
-    <td className="border-b border-slate-800 px-2.5 py-2 align-top">{children}</td>
+    <td className="border-b border-slate-800 px-3 py-2.5 align-top text-slate-50">{children}</td>
   ),
+  tr: ({ children }) => <tr className="even:bg-slate-950/30">{children}</tr>,
   input: ({ checked }) => (
     <input type="checkbox" checked={Boolean(checked)} readOnly disabled className="mr-1.5 align-middle" />
   ),

@@ -30,9 +30,16 @@ import {
   setSlackReaction,
   slackAuthTest,
   slackTextToPlain,
+  splitSlackText,
   updateSlackMessage,
   uploadSlackFile,
+  SLACK_SAFE_TEXT_CHARS,
+  SLACK_SECTION_TEXT_CHARS,
 } from "./slack";
+import { markdownTablesForSlack } from "./markdown-slack";
+
+/** Prose in the Approve message section — leave room for the review blocks. */
+const SLACK_APPROVAL_LEAD_CHARS = Math.min(SLACK_SECTION_TEXT_CHARS, 2400);
 
 const SLACK_ACTION_FOOTER_MAX = 12;
 const SLACK_APPROVAL_BULLETS = 15;
@@ -422,7 +429,10 @@ async function handle(msg: Incoming): Promise<void> {
       ...extractChatChartsFromText(result.reply),
     ].filter((c, i, arr) => arr.findIndex((x) => x.title === c.title) === i);
     // Same ```chart payload as the AI tab — upload PNGs, strip fences from text.
-    const body = stripChatChartFences(raw, charts.length ? "remove" : "caption");
+    // Slack can't render GFM tables; rewrite them for mrkdwn (also applied in postSlackText).
+    const body = markdownTablesForSlack(
+      stripChatChartFences(raw, charts.length ? "remove" : "caption"),
+    );
     // Thread parent for follow-ups (charts, long overflow). Top-level DMs use the
     // first bot message ts so details hang under the main reply.
     let followUpTs = msg.threadTs ?? null;
@@ -437,15 +447,18 @@ async function handle(msg: Incoming): Promise<void> {
         { maxBullets: SLACK_APPROVAL_BULLETS },
       );
       const n = result.pendingApproval.items.length;
-      const shortBody = body.trim().length > 0 && body.trim().length <= 500;
-      const lead = shortBody
-        ? clipSlackText(body)
-        : `I staged *${n}* change${n === 1 ? "" : "s"}. Full summary is in the thread — Approve applies all.`;
-      // Main message carries Approve/Deny; long prose is threaded underneath.
+      // Keep the reply on the main Approve message until near Slack's section cap;
+      // only overflow goes to the thread (not a stub + everything threaded).
+      const prose =
+        body.trim() ||
+        `I staged *${n}* change${n === 1 ? "" : "s"}. Tap Approve to apply.`;
+      const chunks = splitSlackText(prose, SLACK_APPROVAL_LEAD_CHARS);
+      const lead = clipSlackText(chunks[0]!, SLACK_APPROVAL_LEAD_CHARS);
       const main = await postSlackMessage({
         channel: msg.channel,
         text: clipSlackText(
-          `⏸ ${n} change${n === 1 ? "" : "s"} staged — tap Approve / Deny (or reply *approve* / *deny*)`,
+          `⏸ ${n} change${n === 1 ? "" : "s"} staged — tap Approve / Deny (or reply *approve* / *deny*)\n\n${lead}`,
+          SLACK_SAFE_TEXT_CHARS,
         ),
         threadTs: msg.threadTs,
         blocks: [
@@ -454,10 +467,10 @@ async function handle(msg: Incoming): Promise<void> {
         ],
       });
       followUpTs = msg.threadTs || main.ts;
-      if (!shortBody && body.trim()) {
+      if (chunks.length > 1) {
         await postSlackText({
           channel: msg.channel,
-          text: body,
+          text: chunks.slice(1).join("\n\n"),
           threadTs: followUpTs,
         });
       }
@@ -527,23 +540,29 @@ async function handleInteractive(payload: SlackInteractivePayload): Promise<void
       redirectUri: getBackgroundGoogleRedirectUri(),
     });
     const footer = slackActionFooter(result.actions);
-    const text = `${result.reply}${footer}`;
+    const text = markdownTablesForSlack(`${result.reply}${footer}`);
     const statusLine = approve ? "✅ *Approved* — changes applied." : "🚫 *Denied* — nothing was written.";
-    // chat.update hard-fails above ~4k (msg_too_long); keep the button message short.
+    // chat.update hard-fails above ~4k. Fit as much as possible on the main message;
+    // only overflow goes to the thread.
+    const combined = `${statusLine}\n${text}`;
+    const chunks = splitSlackText(combined, SLACK_SECTION_TEXT_CHARS);
     await updateSlackMessage({
       channel,
       ts: messageTs,
-      text: clipSlackText(`${statusLine}\n${text}`, 3500),
+      text: clipSlackText(chunks[0]!, SLACK_SAFE_TEXT_CHARS),
       blocks: [
         {
           type: "section",
-          text: { type: "mrkdwn", text: clipSlackText(`${statusLine}\n${text}`) },
+          text: { type: "mrkdwn", text: clipSlackText(chunks[0]!) },
         },
       ],
     });
-    // Spill the full result into the thread when it won't fit on the updated message.
-    if (text.length > 2500) {
-      await postSlackText({ channel, text, threadTs: messageTs });
+    if (chunks.length > 1) {
+      await postSlackText({
+        channel,
+        text: chunks.slice(1).join("\n\n"),
+        threadTs: messageTs,
+      });
     }
     state.handled += 1;
   } catch (e) {
