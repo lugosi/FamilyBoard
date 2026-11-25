@@ -134,9 +134,11 @@ test("slack bot and agent wire silent .context facts with TTL", () => {
   assert.match(agent, /30×weight/);
   assert.match(agent, /STALE/);
   assert.match(agent, /open-loops\.md/);
-  assert.match(agent, /pets\.md/);
+  assert.match(agent, /Topic-agnostic/);
+  assert.match(agent, /create_wiki_page with category/);
   assert.match(agent, /MUST have called a silent/);
   assert.match(agent, /apply immediately with NO Approve/);
+  assert.match(agent, /hikes, trips, work/);
   const facts = readFileSync(
     new URL("../src/lib/personal-context-facts.ts", import.meta.url),
     "utf8",
