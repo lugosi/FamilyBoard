@@ -43,7 +43,7 @@ Pages directly under the wiki folder still work (shown as **Unfiled**); ask the 
 
 ### Hidden `.context/` folders (Slack continuity POC)
 
-When someone DMs the bot, FamilyBoard seeds `.context/<SlackUserId>/` (profile, open-loops, Strava when linked). The Slack assistant gets an **index** of those pages each turn and should `read_wiki_page` matching ones so chats still feel continuous after Slack’s short memory expires. Writes under `.context/` apply **silently** (no Approve). Link people pages with `slack: U…` when useful. Still shared-repo storage — not private; Layer B personal GitHub later.
+When someone DMs the bot, FamilyBoard seeds `.context/<SlackUserId>/` (profile, open-loops, pets, Strava when linked). The Slack assistant gets an **index** of those pages each turn and should `read_wiki_page` matching ones so chats still feel continuous after Slack’s short memory expires. Writes under `.context/` apply **silently** (no Approve) and should cover durable **events** (e.g. pet illness) as well as prefs — not only when someone says “remember”. Shared person/pet wiki pages still need Approve. Link people pages with `slack: U…` when useful. Still shared-repo storage — not private; Layer B personal GitHub later.
 
 **Facts** (under `## Facts`) use dated, weighted lines so prefs don’t go stale unnoticed:
 

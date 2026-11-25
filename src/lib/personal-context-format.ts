@@ -52,6 +52,7 @@ export function personalContextPaths(slackUserId: string): {
   index: string;
   profile: string;
   strava: string;
+  pets: string;
   openLoops: string;
 } {
   const folder = personalFolder(slackUserId);
@@ -60,6 +61,7 @@ export function personalContextPaths(slackUserId: string): {
     index: `${folder}/index.md`,
     profile: `${folder}/profile.md`,
     strava: `${folder}/strava.md`,
+    pets: `${folder}/pets.md`,
     openLoops: `${folder}/open-loops.md`,
   };
 }
@@ -134,7 +136,8 @@ Private-ish continuity files for Slack (path \`${folder}/\`). Not listed in the 
 ## Contexts
 
 - [profile.md](./profile.md) — how to address them, durable prefs + Facts
-- [open-loops.md](./open-loops.md) — short notes on in-flight projects
+- [open-loops.md](./open-loops.md) — short notes on in-flight situations (illness, plans)
+- [pets.md](./pets.md) — pet health episodes + prefs when pets are linked
 - [strava.md](./strava.md) — training prefs when Strava is linked
 
 ## Fact format
@@ -143,7 +146,7 @@ Use under \`## Facts\` on context pages:
 
 \`- Prefer miles · created: ${today} · updated: ${today} · weight: 1\`
 
-Weight 1–${CONTEXT_FACT_MAX_WEIGHT} (bump on recurrence). Fresh for ${CONTEXT_FACT_BASE_TTL_DAYS} × weight days after \`updated\`.
+Also for episodes (pet sick, vet visit), not only prefs. Weight 1–${CONTEXT_FACT_MAX_WEIGHT} (bump on recurrence). Fresh for ${CONTEXT_FACT_BASE_TTL_DAYS} × weight days after \`updated\`.
 `;
 }
 
@@ -199,11 +202,36 @@ ${frontmatterDates(today)}
 
 ## Active
 
-- (Keep to a few bullets. Clear when done. Short-lived — not long-term Facts.)
+- (Keep to a few bullets: pet illness, house issues, travel, open decisions. Clear when done.)
 
 ## Facts
 
-- (Optional project prefs with dates + weight; drop when the loop closes.)
+- (Optional project prefs / episode notes with dates + weight; drop when the loop closes.)
+`;
+}
+
+export function personalPetsTemplate(
+  slackUserId: string,
+  displayName: string,
+  today: string,
+): string {
+  const name = displayName.trim() || slackUserId;
+  return `---
+title: ${name} · pets
+summary: Pet health episodes and prefs for ${name}
+tags: [context, pets]
+${frontmatterDates(today)}
+---
+
+# ${name} · pets
+
+## Facts
+
+- (Illness, appetite changes, vet plans — dated weighted lines.)
+
+## Notes
+
+- (Free-form. Prefer Facts for anything they may ask about later.)
 `;
 }
 

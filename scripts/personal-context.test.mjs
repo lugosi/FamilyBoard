@@ -126,15 +126,27 @@ test("slack bot and agent wire silent .context facts with TTL", () => {
   const bot = readFileSync(new URL("../src/lib/slack-bot.ts", import.meta.url), "utf8");
   assert.match(bot, /preparePersonalContextForSlack/);
   assert.match(bot, /personalContext/);
+  assert.match(bot, /ensurePets:\s*true/);
   const agent = readFileSync(new URL("../src/lib/agent.ts", import.meta.url), "utf8");
   assert.match(agent, /PERSONAL CONTEXT/);
+  assert.match(agent, /WRITE-BACK REQUIRED/);
   assert.match(agent, /wikiWriteTargetsSilentContext/);
   assert.match(agent, /30×weight/);
   assert.match(agent, /STALE/);
+  assert.match(agent, /open-loops\.md/);
+  assert.match(agent, /pets\.md/);
+  assert.match(agent, /MUST have called a silent/);
+  assert.match(agent, /apply immediately with NO Approve/);
   const facts = readFileSync(
     new URL("../src/lib/personal-context-facts.ts", import.meta.url),
     "utf8",
   );
   assert.match(facts, /CONTEXT_FACT_BASE_TTL_DAYS = 30/);
   assert.match(facts, /bumpFactOnRecurrence/);
+  const format = readFileSync(
+    new URL("../src/lib/personal-context-format.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(format, /personalPetsTemplate/);
+  assert.match(format, /pets\.md/);
 });

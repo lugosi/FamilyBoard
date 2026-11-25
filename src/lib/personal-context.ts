@@ -13,6 +13,7 @@ import {
   personalContextPaths,
   personalIndexTemplate,
   personalOpenLoopsTemplate,
+  personalPetsTemplate,
   personalProfileTemplate,
   personalStravaTemplate,
   type PersonalContextDepth,
@@ -92,6 +93,8 @@ export async function preparePersonalContextForSlack(input: {
   displayName?: string | null;
   depth: PersonalContextDepth;
   ensureStrava?: boolean;
+  /** Seed pets.md when CatLink / Petlibro (or similar) is configured. */
+  ensurePets?: boolean;
 }): Promise<PersonalContextBundle | null> {
   if (!isWikilmGithubConfigured()) return null;
   const slackUserId = normalizeSlackUserId(input.slackUserId);
@@ -127,6 +130,14 @@ export async function preparePersonalContextForSlack(input: {
         path: paths.strava,
         content: personalStravaTemplate(slackUserId, displayName, today),
         msg: `context: seed ${paths.folder}/strava`,
+      });
+    }
+    // Always seed pets.md (family pets come up often; CatLink/Petlibro only makes it likelier).
+    if (input.ensurePets !== false) {
+      starters.push({
+        path: paths.pets,
+        content: personalPetsTemplate(slackUserId, displayName, today),
+        msg: `context: seed ${paths.folder}/pets`,
       });
     }
 
