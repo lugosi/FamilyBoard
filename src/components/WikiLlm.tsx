@@ -227,23 +227,23 @@ function ChatSessionList({
       aria-label="Chat sessions"
     >
       {sessions.length === 0 ? (
-        <li className="px-3 py-2 text-sm text-slate-500">No saved chats yet</li>
+        <li className="px-3 py-2.5 text-base text-slate-500">No saved chats yet</li>
       ) : (
         sessions.map((s) => (
-          <li key={s.id} className="flex items-stretch gap-0.5 px-1">
+          <li key={s.id} className="flex items-stretch gap-0.5 px-1.5">
             <button
               type="button"
               role="option"
               aria-selected={s.id === sessionId}
-              className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-sm ${
+              className={`min-w-0 flex-1 rounded-md px-2.5 py-2 text-left text-base leading-snug ${
                 s.id === sessionId
                   ? "bg-slate-800 text-white"
                   : "text-slate-300 hover:bg-slate-900 hover:text-white"
               }`}
               onClick={() => onSelect(s.id)}
             >
-              <span className="block truncate">{s.title}</span>
-              <span className="block text-xs text-slate-500">
+              <span className="block truncate font-medium">{s.title}</span>
+              <span className="mt-0.5 block text-sm text-slate-500">
                 {new Date(s.updatedAt).toLocaleString(undefined, {
                   month: "short",
                   day: "numeric",
@@ -254,7 +254,7 @@ function ChatSessionList({
             </button>
             <button
               type="button"
-              className="shrink-0 rounded-md px-2 text-slate-500 hover:bg-rose-950/50 hover:text-rose-200"
+              className="shrink-0 rounded-md px-2.5 text-lg leading-none text-slate-500 hover:bg-rose-950/50 hover:text-rose-200"
               aria-label={`Delete ${s.title}`}
               onClick={() => onDelete(s.id)}
             >
@@ -1142,7 +1142,7 @@ export function WikiLlm({
               {/* Compact session menu — always on overlay; mobile fallback on AI tab. */}
               <button
                 type="button"
-                className={`max-w-[10rem] truncate rounded-md border border-slate-700 px-2.5 py-1.5 text-sm text-slate-200 hover:border-slate-500 hover:bg-slate-900 sm:max-w-[14rem] ${
+                className={`max-w-[12rem] truncate rounded-md border border-slate-700 px-3 py-1.5 text-base text-slate-200 hover:border-slate-500 hover:bg-slate-900 sm:max-w-[16rem] ${
                   isOverlay ? "" : "md:hidden"
                 }`}
                 onClick={() => setSessionsOpen((o) => !o)}
@@ -1153,16 +1153,16 @@ export function WikiLlm({
                 {activeSessionTitle}
               </button>
               {sessionsOpen ? (
-                <div className="absolute right-0 top-full z-20 mt-1 flex w-[min(100vw-2rem,18rem)] flex-col overflow-hidden rounded-md border border-slate-700 bg-slate-950 shadow-xl">
+                <div className="absolute right-0 top-full z-20 mt-1 flex w-[min(100vw-2rem,22rem)] flex-col overflow-hidden rounded-md border border-slate-700 bg-slate-950 shadow-xl">
                   <button
                     type="button"
-                    className="block w-full border-b border-slate-800 px-3 py-2 text-left text-sm font-medium text-sky-200 hover:bg-slate-900"
+                    className="block w-full border-b border-slate-800 px-3.5 py-2.5 text-left text-base font-medium text-sky-200 hover:bg-slate-900"
                     onClick={() => void startNewSession()}
                   >
                     + New chat
                   </button>
                   <ChatSessionList
-                    className="max-h-56"
+                    className="max-h-64"
                     sessions={sessions}
                     sessionId={sessionId}
                     onSelect={(id) => {
@@ -1175,7 +1175,7 @@ export function WikiLlm({
                   {!isOverlay ? (
                     <button
                       type="button"
-                      className="block w-full border-t border-slate-800 px-3 py-2 text-left text-sm font-medium text-slate-200 hover:bg-slate-900"
+                      className="block w-full border-t border-slate-800 px-3.5 py-2.5 text-left text-base font-medium text-slate-200 hover:bg-slate-900"
                       onClick={() => {
                         setSessionsOpen(false);
                         selectView("tools");
@@ -1189,7 +1189,7 @@ export function WikiLlm({
               ) : null}
               <button
                 type="button"
-                className="rounded-md px-3 py-1.5 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200 disabled:opacity-50"
+                className="rounded-md px-3 py-1.5 text-base text-slate-400 hover:bg-slate-900 hover:text-slate-200 disabled:opacity-50"
                 disabled={busy === "chat"}
                 onClick={() => void startNewSession()}
               >
@@ -1266,14 +1266,14 @@ export function WikiLlm({
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {!isOverlay && (view === "chat" || view === "tools") ? (
           <aside
-            className="board-scrollbar hidden w-56 shrink-0 flex-col border-r border-slate-800/80 bg-slate-950/80 md:flex lg:w-64"
+            className="board-scrollbar hidden w-64 shrink-0 flex-col border-r border-slate-800/80 bg-slate-950/80 md:flex lg:w-72"
             aria-label="Chat sessions"
           >
-            <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 px-3 py-2.5">
-              <p className="text-sm font-semibold tracking-wide text-slate-200">Sessions</p>
+            <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 px-3.5 py-3">
+              <p className="text-base font-semibold tracking-wide text-slate-200">Sessions</p>
               <button
                 type="button"
-                className="rounded-md px-2 py-1 text-sm font-medium text-sky-200 hover:bg-slate-900 hover:text-sky-100 disabled:opacity-50"
+                className="rounded-md px-2.5 py-1.5 text-base font-medium text-sky-200 hover:bg-slate-900 hover:text-sky-100 disabled:opacity-50"
                 disabled={busy === "chat"}
                 onClick={() => {
                   selectView("chat");
@@ -1292,10 +1292,10 @@ export function WikiLlm({
               }}
               onDelete={(id) => void deleteSession(id)}
             />
-            <div className="mt-auto border-t border-slate-800/80 p-2">
+            <div className="mt-auto border-t border-slate-800/80 p-2.5">
               <button
                 type="button"
-                className={`flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm font-medium ${
+                className={`flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-base font-medium ${
                   view === "tools"
                     ? "bg-slate-800 text-white"
                     : "text-slate-300 hover:bg-slate-900 hover:text-white"
@@ -1305,7 +1305,7 @@ export function WikiLlm({
               >
                 <span>Tools</span>
                 {unprocessed > 0 ? (
-                  <span className="inline-flex min-w-[1.25rem] justify-center rounded-md bg-sky-600 px-1.5 text-xs text-white">
+                  <span className="inline-flex min-w-[1.35rem] justify-center rounded-md bg-sky-600 px-1.5 text-sm text-white">
                     {unprocessed}
                   </span>
                 ) : null}
