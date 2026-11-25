@@ -24,6 +24,7 @@ import { cronMatches, cronSlotKey, describeCron, zonedCronParts } from "./cron";
 import { runDailyBrief } from "./daily-brief";
 import { readDailyBriefStore } from "./daily-brief-store";
 import { isGeminiConfigured } from "./gemini";
+import { markdownTablesForSlack } from "./markdown-slack";
 import { isSlackConfigured, postSlackMessage } from "./slack";
 import { listSlackDeliveryTargets, type SlackDeliveryTarget } from "./wiki-slack-people";
 
@@ -85,7 +86,7 @@ async function deliverSlack(
   const out: AgentMonitorRunResult["slack"] = [];
   for (const userId of userIds) {
     try {
-      await postSlackMessage({ channel: userId, text });
+      await postSlackMessage({ channel: userId, text: markdownTablesForSlack(text) });
       out.push({ userId, ok: true });
     } catch (e) {
       out.push({
