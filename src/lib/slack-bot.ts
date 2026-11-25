@@ -36,6 +36,7 @@ import {
   SLACK_SAFE_TEXT_CHARS,
   SLACK_SECTION_TEXT_CHARS,
 } from "./slack";
+import { getDefaultTimeZone } from "./google";
 import { markdownTablesForSlack } from "./markdown-slack";
 
 /** Prose in the Approve message section — leave room for the review blocks. */
@@ -429,9 +430,10 @@ async function handle(msg: Incoming): Promise<void> {
       ...extractChatChartsFromText(result.reply),
     ].filter((c, i, arr) => arr.findIndex((x) => x.title === c.title) === i);
     // Same ```chart payload as the AI tab — upload PNGs, strip fences from text.
-    // Slack can't render GFM tables; rewrite before Block Kit (postSlackMessage also rewrites).
+    // Slack can't render GFM tables → mobile bullets (+ Cal day link when date known).
     const body = markdownTablesForSlack(
       stripChatChartFences(raw, charts.length ? "remove" : "caption"),
+      { timeZone: getDefaultTimeZone() },
     );
     // Thread parent for follow-ups (charts, long overflow). Top-level DMs use the
     // first bot message ts so details hang under the main reply.
@@ -540,7 +542,9 @@ async function handleInteractive(payload: SlackInteractivePayload): Promise<void
       redirectUri: getBackgroundGoogleRedirectUri(),
     });
     const footer = slackActionFooter(result.actions);
-    const text = markdownTablesForSlack(`${result.reply}${footer}`);
+    const text = markdownTablesForSlack(`${result.reply}${footer}`, {
+      timeZone: getDefaultTimeZone(),
+    });
     const statusLine = approve ? "✅ *Approved* — changes applied." : "🚫 *Denied* — nothing was written.";
     // chat.update hard-fails above ~4k (msg_too_long). Put as much as fits on the
     // main message; only the overflow goes to the thread (no full duplicate).
