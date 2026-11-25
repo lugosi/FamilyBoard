@@ -36,6 +36,10 @@ import {
   SLACK_SAFE_TEXT_CHARS,
   SLACK_SECTION_TEXT_CHARS,
 } from "./slack";
+import { markdownTablesForSlack } from "./markdown-slack";
+
+/** Prose in the Approve message section — leave room for the review blocks. */
+const SLACK_APPROVAL_LEAD_CHARS = Math.min(SLACK_SECTION_TEXT_CHARS, 2400);
 
 const SLACK_ACTION_FOOTER_MAX = 12;
 const SLACK_APPROVAL_BULLETS = 15;
@@ -427,7 +431,10 @@ async function handle(msg: Incoming): Promise<void> {
       ...extractChatChartsFromText(result.reply),
     ].filter((c, i, arr) => arr.findIndex((x) => x.title === c.title) === i);
     // Same ```chart payload as the AI tab — upload PNGs, strip fences from text.
-    const body = stripChatChartFences(raw, charts.length ? "remove" : "caption");
+    // Slack can't render GFM tables; rewrite them for mrkdwn (also applied in postSlackText).
+    const body = markdownTablesForSlack(
+      stripChatChartFences(raw, charts.length ? "remove" : "caption"),
+    );
     // Thread parent for follow-ups (charts, long overflow). Top-level DMs use the
     // first bot message ts so details hang under the main reply.
     let followUpTs = msg.threadTs ?? null;
@@ -535,7 +542,7 @@ async function handleInteractive(payload: SlackInteractivePayload): Promise<void
       redirectUri: getBackgroundGoogleRedirectUri(),
     });
     const footer = slackActionFooter(result.actions);
-    const text = `${result.reply}${footer}`;
+    const text = markdownTablesForSlack(`${result.reply}${footer}`);
     const statusLine = approve ? "✅ *Approved* — changes applied." : "🚫 *Denied* — nothing was written.";
     // chat.update hard-fails above ~4k (msg_too_long). Put as much as fits on the
     // main message; only the overflow goes to the thread (no full duplicate).
