@@ -52,6 +52,7 @@ export function personalContextPaths(slackUserId: string): {
   index: string;
   profile: string;
   strava: string;
+  pets: string;
   openLoops: string;
 } {
   const folder = personalFolder(slackUserId);
@@ -60,6 +61,7 @@ export function personalContextPaths(slackUserId: string): {
     index: `${folder}/index.md`,
     profile: `${folder}/profile.md`,
     strava: `${folder}/strava.md`,
+    pets: `${folder}/pets.md`,
     openLoops: `${folder}/open-loops.md`,
   };
 }
@@ -133,17 +135,20 @@ Private-ish continuity files for Slack (path \`${folder}/\`). Not listed in the 
 
 ## Contexts
 
-- [profile.md](./profile.md) — how to address them, durable prefs + Facts
-- [open-loops.md](./open-loops.md) — short notes on in-flight projects
-- [strava.md](./strava.md) — training prefs when Strava is linked
+- [profile.md](./profile.md) — how to address them, standing prefs
+- [open-loops.md](./open-loops.md) — default bucket for any in-flight topic
+- [pets.md](./pets.md) — pet health (seeded; create other topic pages as needed)
+- [strava.md](./strava.md) — training (when Strava is linked)
+
+Create more topic pages under this folder when useful (\`hike\`, \`travel\`, \`work\`, …) — silent, no Approve.
 
 ## Fact format
 
-Use under \`## Facts\` on context pages:
+Under \`## Facts\`:
 
 \`- Prefer miles · created: ${today} · updated: ${today} · weight: 1\`
 
-Weight 1–${CONTEXT_FACT_MAX_WEIGHT} (bump on recurrence). Fresh for ${CONTEXT_FACT_BASE_TTL_DAYS} × weight days after \`updated\`.
+Use for prefs **and** episodes (trip plans, pet sick, work deadlines). Weight 1–${CONTEXT_FACT_MAX_WEIGHT}. Fresh for ${CONTEXT_FACT_BASE_TTL_DAYS} × weight days after \`updated\`.
 `;
 }
 
@@ -199,11 +204,36 @@ ${frontmatterDates(today)}
 
 ## Active
 
-- (Keep to a few bullets. Clear when done. Short-lived — not long-term Facts.)
+- (Any in-flight topic: hike prep, trips, work, pets, house, shopping. One short bullet each. Clear when done.)
 
 ## Facts
 
-- (Optional project prefs with dates + weight; drop when the loop closes.)
+- (Optional dated weighted lines while a loop is open; move lasting detail to a topic page.)
+`;
+}
+
+export function personalPetsTemplate(
+  slackUserId: string,
+  displayName: string,
+  today: string,
+): string {
+  const name = displayName.trim() || slackUserId;
+  return `---
+title: ${name} · pets
+summary: Pet health episodes and prefs for ${name}
+tags: [context, pets]
+${frontmatterDates(today)}
+---
+
+# ${name} · pets
+
+## Facts
+
+- (Illness, appetite changes, vet plans — dated weighted lines.)
+
+## Notes
+
+- (Free-form. Prefer Facts for anything they may ask about later.)
 `;
 }
 

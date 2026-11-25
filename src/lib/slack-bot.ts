@@ -369,6 +369,7 @@ async function handle(msg: Incoming): Promise<void> {
           displayName: name,
           depth: msg.threadTs ? "channel" : "dm",
           ensureStrava: isStravaConfigured(),
+          ensurePets: true,
         });
         if (prepared) {
           personalContext = {
