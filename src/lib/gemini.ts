@@ -1,20 +1,24 @@
-/** Gemini 4 Hydrogen — free + paid AI Studio / Gemini API. Override with GEMINI_MODEL. */
-const DEFAULT_MODEL = "gemini-4-hydrogen";
+import { readBoardSettings } from "./board-settings-store";
+import { DEFAULT_GEMINI_MODEL, resolveGeminiModelId } from "./board-settings";
+
+/** Gemini 3.5 Flash-Lite by default. Picked in the Settings widget or overridden with GEMINI_MODEL. */
+const DEFAULT_MODEL = DEFAULT_GEMINI_MODEL;
 /**
- * Prefer models that still offer Google Search grounding when the key allows them.
- * Gemini 4+ Search grounding needs billing; free keys fall back to DuckDuckGo (+ ESPN).
+ * Prefer cheap models that still offer Google Search grounding when the key allows them.
+ * Gemini 4+ (Hydrogen) is expensive and Search grounding needs billing, so it is tried last;
+ * free keys fall back to DuckDuckGo (+ ESPN).
  */
 const DEFAULT_SEARCH_MODELS = [
-  "gemini-4-hydrogen",
-  "gemini-3.8-flash",
-  "gemini-3.6-flash",
   "gemini-3.5-flash-lite",
+  "gemini-3.6-flash",
+  "gemini-3.8-flash",
   "gemini-2.5-flash",
+  "gemini-4-hydrogen",
 ];
 const DEFAULT_API_BASE = "https://generativelanguage.googleapis.com";
 const MAX_RETRY_DELAY_MS = 12_000;
 
-/** Hydrogen thinking levels (GenerateContent uses UPPERCASE). */
+/** Thinking levels (GenerateContent uses UPPERCASE). */
 const THINKING_LEVELS = new Set(["LOW", "MEDIUM", "HIGH", "XHIGH"]);
 
 export function getGeminiApiKey(): string | null {
@@ -25,8 +29,17 @@ export function isGeminiConfigured(): boolean {
   return Boolean(getGeminiApiKey());
 }
 
+/** Env/default model only; prefer resolveGeminiModel() so the Settings widget choice applies. */
 export function getGeminiModel(): string {
   return process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
+}
+
+/** Settings widget choice → GEMINI_MODEL → default. */
+export async function resolveGeminiModel(): Promise<string> {
+  return resolveGeminiModelId(
+    await readBoardSettings(),
+    process.env.GEMINI_MODEL,
+  );
 }
 
 export function getGeminiSearchModels(): string[] {
@@ -37,7 +50,7 @@ export function getGeminiSearchModels(): string[] {
 
 /**
  * Optional GEMINI_THINKING_LEVEL override (low|medium|high|xhigh).
- * When unset, the API default applies (HIGH on gemini-4-hydrogen).
+ * When unset, the API default applies. Ignored for Gemini 2.x (no thinkingLevel).
  */
 export function getGeminiThinkingLevel(): string | undefined {
   const raw = process.env.GEMINI_THINKING_LEVEL?.trim();
@@ -177,7 +190,7 @@ export async function generateGeminiContent(input: {
   if (!key) throw new Error("gemini_not_configured");
   if (input.contents.length === 0) throw new Error("empty_messages");
 
-  const model = input.model?.trim() || getGeminiModel();
+  const model = input.model?.trim() || (await resolveGeminiModel());
   const url = `${getGeminiApiBase()}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
 
   const body: Record<string, unknown> = { contents: input.contents };
@@ -196,20 +209,24 @@ export async function generateGeminiContent(input: {
     }
   }
 
-  // Hydrogen rejects temperature/topP/topK customization; use thinkingLevel instead.
+  // Gemini 4 (Hydrogen) rejects temperature/topP/topK customization; use thinkingLevel instead.
   // Chat history is often rebuilt from text-only turns (no thought signatures), so DROP
-  // prefix mismatches rather than 400 on multi-turn / compacted histories.
-  const thinkingConfig: Record<string, unknown> = {
-    prefixMismatchBehavior: "DROP",
-  };
+  // prefix mismatches rather than 400 on multi-turn / compacted histories (Gemini 4 only).
+  const thinkingConfig: Record<string, unknown> = {};
+  if (/^gemini-4/i.test(model)) thinkingConfig.prefixMismatchBehavior = "DROP";
   const thinkingLevel =
     input.thinkingLevel?.trim().toUpperCase() || getGeminiThinkingLevel();
-  if (thinkingLevel && THINKING_LEVELS.has(thinkingLevel)) {
+  if (
+    thinkingLevel &&
+    THINKING_LEVELS.has(thinkingLevel) &&
+    !/^gemini-2/i.test(model)
+  ) {
     thinkingConfig.thinkingLevel = thinkingLevel;
   }
-  const generationConfig: Record<string, unknown> = {
-    thinkingConfig,
-  };
+  const generationConfig: Record<string, unknown> = {};
+  if (Object.keys(thinkingConfig).length > 0) {
+    generationConfig.thinkingConfig = thinkingConfig;
+  }
   if (input.responseMimeType?.trim()) {
     generationConfig.responseMimeType = input.responseMimeType.trim();
   }
@@ -344,8 +361,9 @@ export async function searchWebWithGemini(
   ]
     .filter(Boolean)
     .join("\n\n");
+  const fallbackModel = await resolveGeminiModel();
   const summarized = await generateGeminiContent({
-    model: getGeminiModel(),
+    model: fallbackModel,
     thinkingLevel: "LOW",
     system:
       "You are a family home assistant. Answer ONLY from the provided search/scoreboard excerpts. Be brief. For sports, give the score and status. If the excerpts don't contain the answer, say you couldn't find it — never invent scores.",
@@ -359,7 +377,7 @@ export async function searchWebWithGemini(
   });
   const answer = textFromParts(summarized.parts);
   if (!answer) throw new Error("Search fallback returned an empty answer");
-  return { answer, queries: [q], sources, model: `fallback+${getGeminiModel()}` };
+  return { answer, queries: [q], sources, model: `fallback+${fallbackModel}` };
 }
 
 export function textFromParts(parts: GeminiPart[]): string {

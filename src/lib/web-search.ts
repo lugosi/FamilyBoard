@@ -1,6 +1,6 @@
 /**
  * Free web lookup fallback when Gemini Google Search grounding isn't available
- * (Gemini 4 Hydrogen Search grounding is paid-tier only).
+ * (Gemini 4+ Search grounding is paid-tier only).
  */
 
 export type WebHit = { title: string; uri: string; snippet: string };
