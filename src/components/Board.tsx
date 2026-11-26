@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import { CompactCalendarGrid } from "@/components/calendar/CompactCalendarGrid";
 import { EventDateTimePicker } from "@/components/calendar/EventDateTimePicker";
@@ -43,7 +44,7 @@ import {
 } from "@/lib/weather";
 import { wmoLabel } from "@/lib/wmo";
 import { IndoorClimateCharts } from "@/components/IndoorClimateCharts";
-import { BoardSettingsWidget } from "@/components/BoardSettingsWidget";
+import { BoardSettingsWidget, GearIcon } from "@/components/BoardSettingsWidget";
 import { useBoardSettings } from "@/components/useBoardSettings";
 import type { ClimateHistorySample } from "@/lib/nest-climate-history";
 import {
@@ -542,7 +543,12 @@ function WidgetsExpandToggle({
   );
 }
 
-export function Board() {
+export function Board({
+  navActionsSlot,
+}: {
+  /** Right side of the app top row; the widgets page puts its controls here. */
+  navActionsSlot?: HTMLElement | null;
+} = {}) {
   const search = useSearchParams();
   const [status, setStatus] = useState<Status | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -2622,14 +2628,41 @@ export function Board() {
                 />
               </div>
             ) : null}
+            {widgetsExpanded ? (
+              navActionsSlot
+                ? createPortal(
+                    <div className="ml-auto flex items-center gap-2">
+                      <WidgetsExpandToggle
+                        expanded
+                        onToggle={() => setWidgetsExpanded(false)}
+                        className="h-9 w-9 lg:hidden"
+                      />
+                      <button
+                        type="button"
+                        className={`inline-flex h-9 w-9 items-center justify-center rounded-md border ${
+                          widgetArrangeMode
+                            ? "border-sky-500 bg-sky-600 text-white hover:bg-sky-500"
+                            : "border-slate-700 bg-slate-900/80 text-slate-300 hover:border-slate-500 hover:text-white"
+                        }`}
+                        onClick={() => setWidgetArrangeMode((v) => !v)}
+                        aria-pressed={widgetArrangeMode}
+                        aria-label={
+                          widgetArrangeMode ? "Done arranging widgets" : "Arrange widgets"
+                        }
+                        title={
+                          widgetArrangeMode ? "Done arranging widgets" : "Arrange widgets"
+                        }
+                      >
+                        <GearIcon className="h-5 w-5" />
+                      </button>
+                    </div>,
+                    navActionsSlot,
+                  )
+                : null
+            ) : (
             <div className="sticky top-0 z-10 flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/95 p-2 shadow-lg shadow-slate-950/40 backdrop-blur sm:p-2.5">
-              <WidgetsExpandToggle
-                expanded={widgetsExpanded}
-                onToggle={() => setWidgetsExpanded((v) => !v)}
-                className="h-9 w-9 lg:hidden"
-              />
               <p className="min-w-0 flex-1 truncate text-sm font-medium text-slate-300 sm:text-base">
-                {widgetsExpanded ? "All widgets" : "Board widgets"}
+                Board widgets
               </p>
               <button
                 type="button"
@@ -2643,6 +2676,7 @@ export function Board() {
                 {widgetArrangeMode ? "Done" : "Arrange"}
               </button>
             </div>
+            )}
             {(() => {
               const widgetNodes: Record<BoardWidgetKey, ReactNode> = {
               clock: (
@@ -4086,9 +4120,9 @@ export function Board() {
               if (widgetsExpanded) {
                 const keys = widgetLayout.order;
                 return (
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2 lg:grid-cols-3 lg:gap-2 xl:grid-cols-3 2xl:grid-cols-4">
+                  <div className="columns-1 gap-x-3 sm:columns-2 lg:columns-3 2xl:columns-4">
                     {keys.map((key) => (
-                      <div key={key} className="min-w-0">
+                      <div key={key} className="mb-3 min-w-0 break-inside-avoid">
                         {arrangeChrome(key)}
                         {widgetNodes[key]}
                       </div>

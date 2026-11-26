@@ -66,6 +66,7 @@ export function AppShell() {
   const [pickedTab, setPickedTab] = useState<AppTab | null>(null);
   const tab = pickedTab ?? storedTab;
   const [boardChatOpen, setBoardChatOpen] = useState(false);
+  const [navActionsSlot, setNavActionsSlot] = useState<HTMLElement | null>(null);
 
   const selectTab = useCallback((next: AppTab) => {
     setPickedTab(next);
@@ -140,6 +141,7 @@ export function AppShell() {
             <span className="hidden sm:inline">Ask</span>
           </button>
         ) : null}
+        <div ref={setNavActionsSlot} className="ml-auto flex items-center" />
       </nav>
       <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         <div
@@ -150,7 +152,7 @@ export function AppShell() {
           }
           aria-hidden={tab !== "board"}
         >
-          <Board />
+          <Board navActionsSlot={tab === "board" ? navActionsSlot : null} />
         </div>
 
         <div
