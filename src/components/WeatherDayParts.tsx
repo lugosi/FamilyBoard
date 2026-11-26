@@ -28,36 +28,34 @@ export function WeatherDayParts({ parts, className = "" }: Props) {
             title={`${part.label}: ${Math.round(part.temperatureF)}°F, ${wmoLabel(part.code)}${
               precip != null ? `, ${precip}% rain` : ""
             }`}
-            className={`flex min-w-0 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 ${
+            className={`flex min-w-0 flex-col items-center rounded-lg px-1 py-1 leading-tight ${
               part.isCurrent
                 ? "border border-sky-500/40 bg-sky-950/35"
                 : "border border-slate-800/80 bg-slate-950/40"
             }`}
           >
             <span
-              className={`text-[11px] font-medium sm:text-xs ${
-                part.isCurrent ? "text-sky-100" : "text-slate-400"
+              className={`text-xs font-medium sm:text-sm ${
+                part.isCurrent ? "text-sky-100" : "text-slate-300"
               }`}
             >
               {part.label}
             </span>
-            <WeatherIcon
-              code={part.code}
-              isNight={part.part === "night"}
-              className="h-6 w-6 text-slate-100 sm:h-7 sm:w-7"
-            />
-            <span className="text-sm font-semibold tabular-nums text-white sm:text-base">
-              {Math.round(part.temperatureF)}°
+            <span className="flex items-center gap-1">
+              <WeatherIcon
+                code={part.code}
+                isNight={part.part === "night"}
+                className="h-5 w-5 shrink-0 text-slate-100 sm:h-6 sm:w-6"
+              />
+              <span className="text-base font-semibold tabular-nums text-white sm:text-lg">
+                {Math.round(part.temperatureF)}°
+              </span>
             </span>
-            <span
-              className={`text-[10px] tabular-nums sm:text-[11px] ${
-                precip != null && precip >= 30
-                  ? "font-medium text-sky-300"
-                  : "text-slate-600"
-              }`}
-            >
-              {precip != null ? `${precip}%` : "—"}
-            </span>
+            {precip != null && precip >= 20 ? (
+              <span className="text-xs tabular-nums text-sky-300 sm:text-sm">
+                {precip}%
+              </span>
+            ) : null}
           </div>
         );
       })}

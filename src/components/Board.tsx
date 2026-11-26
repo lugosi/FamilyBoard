@@ -30,7 +30,6 @@ import {
   type CalendarRangeKeys,
   type GEvent,
 } from "@/lib/calendar-layout";
-import { WeatherDailyStrip } from "@/components/WeatherDailyStrip";
 import { WeatherDayParts } from "@/components/WeatherDayParts";
 import { WeatherIcon } from "@/components/WeatherIcon";
 import {
@@ -2179,11 +2178,6 @@ export function Board({
     () => summarizeWeatherDayParts(hourlyNext18, clockNow, 3),
     [hourlyNext18, clockNow],
   );
-  const upcomingDaily = useMemo(() => {
-    if (!daily?.length) return [];
-    const startIdx = daily.findIndex((d) => d.date >= todayDateKey);
-    return daily.slice(startIdx >= 0 ? startIdx : 0);
-  }, [daily, todayDateKey]);
   const catlinkCatName =
     typeof catlink?.catName === "string" && catlink.catName ? catlink.catName : null;
   const catlinkCatWeightKg =
@@ -2824,7 +2818,7 @@ export function Board({
                     </p>
                   ) : current ? (
                     <div className="mt-2 space-y-2">
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-3">
                         <p className="text-4xl font-semibold leading-none tabular-nums text-white sm:text-5xl">
                           {Math.round(current.temperatureF ?? 0)}°
                         </p>
@@ -2833,54 +2827,36 @@ export function Board({
                           isNight={weatherIconIsNight}
                           className="h-9 w-9 shrink-0 text-sky-200 sm:h-10 sm:w-10"
                         />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-slate-200 sm:text-base">
+                        <div className="min-w-0 flex-1 leading-tight">
+                          <p className="truncate text-base font-medium text-slate-100 sm:text-lg">
                             {wmoLabel(Number(current.code ?? 0))}
                           </p>
                           {todayForecast &&
                           typeof todayForecast.minF === "number" &&
                           typeof todayForecast.maxF === "number" ? (
-                            <p className="mt-0.5 truncate text-xs tabular-nums text-slate-400 sm:text-sm">
-                              <span className="text-slate-500">H </span>
-                              <span className="font-semibold text-slate-100">
+                            <p className="truncate text-sm tabular-nums text-slate-300 sm:text-base">
+                              <span className="font-semibold text-white">
                                 {Math.round(todayForecast.maxF)}°
                               </span>
-                              <span className="mx-1 text-slate-600">·</span>
-                              <span className="text-slate-500">L </span>
-                              <span className="font-semibold text-slate-200">
-                                {Math.round(todayForecast.minF)}°
-                              </span>
-                              {typeof todayForecast.precipChance === "number" ? (
-                                <>
-                                  <span className="mx-1 text-slate-600">·</span>
-                                  <span
-                                    className={
-                                      todayForecast.precipChance >= 30
-                                        ? "text-sky-300"
-                                        : undefined
-                                    }
-                                  >
-                                    {todayForecast.precipChance}%
-                                  </span>
-                                </>
+                              <span className="text-slate-500"> / </span>
+                              <span>{Math.round(todayForecast.minF)}°</span>
+                              {typeof todayForecast.precipChance === "number" &&
+                              todayForecast.precipChance >= 20 ? (
+                                <span className="ml-2 text-sky-300">
+                                  {todayForecast.precipChance}% rain
+                                </span>
                               ) : null}
                             </p>
                           ) : null}
-                          <p className="mt-0.5 truncate text-[11px] tabular-nums text-slate-500 sm:text-xs">
-                            Humidity {Math.round(current.humidity ?? 0)}% · Wind{" "}
-                            {Math.round(current.windMph ?? 0)} mph
-                          </p>
                         </div>
                       </div>
                       {weatherDayParts.length > 0 ? (
                         <WeatherDayParts parts={weatherDayParts} />
                       ) : null}
-                      {upcomingDaily.length > 0 ? (
-                        <WeatherDailyStrip
-                          days={upcomingDaily}
-                          todayKey={todayDateKey}
-                        />
-                      ) : null}
+                      <p className="truncate text-xs tabular-nums text-slate-400 sm:text-sm">
+                        Humidity {Math.round(current.humidity ?? 0)}% · Wind{" "}
+                        {Math.round(current.windMph ?? 0)} mph
+                      </p>
                     </div>
                   ) : (
                     <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading weather…</p>

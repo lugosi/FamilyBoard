@@ -71,7 +71,7 @@ Never conflate these.
 
 ## Weather
 
-- Compact board widget: temp + condition + H/L/rain, `WeatherDayParts` (Morning/Afternoon/Night), `WeatherDailyStrip` (4 days with range bars)
+- Compact board widget: temp + condition + H/L/rain, `WeatherDayParts` (Morning/Afternoon/Night); no multi-day strip (the calendar already shows daily weather)
 - `summarizeWeatherDayParts(hourlyNext18)` collapses hours into day parts; daily/hourly include optional `precipChance`
 - Legacy chart: `WeatherHourlyChart` still available
 - Open-Meteo, no API key; needs `WEATHER_LAT` / `WEATHER_LON`
