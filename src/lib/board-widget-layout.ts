@@ -8,6 +8,7 @@ export const BOARD_WIDGET_KEYS = [
   "spotify",
   "hue",
   "nest",
+  "settings",
 ] as const;
 
 export type BoardWidgetKey = (typeof BOARD_WIDGET_KEYS)[number];
@@ -23,6 +24,7 @@ export const BOARD_WIDGET_META: Record<
   spotify: { title: "Spotify", short: "Music" },
   hue: { title: "Hue", short: "Lights" },
   nest: { title: "Indoor", short: "Climate" },
+  settings: { title: "Settings", short: "Config" },
 };
 
 export type BoardWidgetLayout = {

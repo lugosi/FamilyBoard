@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { Geist, Geist_Mono, Noto_Color_Emoji } from "next/font/google";
+import { readBoardSettings } from "@/lib/board-settings-store";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -25,14 +27,17 @@ export const metadata: Metadata = {
   description: "Calendar, weather, and Hue lights for your home display.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  await connection();
+  const { theme } = await readBoardSettings();
   return (
     <html
       lang="en"
+      data-theme={theme}
       className={`${geistSans.variable} ${geistMono.variable} ${notoEmoji.variable} h-full antialiased`}
     >
       <body className="flex min-h-dvh flex-col">{children}</body>

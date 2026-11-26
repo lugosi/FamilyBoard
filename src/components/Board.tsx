@@ -43,6 +43,8 @@ import {
 } from "@/lib/weather";
 import { wmoLabel } from "@/lib/wmo";
 import { IndoorClimateCharts } from "@/components/IndoorClimateCharts";
+import { BoardSettingsWidget } from "@/components/BoardSettingsWidget";
+import { useBoardSettings } from "@/components/useBoardSettings";
 import type { ClimateHistorySample } from "@/lib/nest-climate-history";
 import {
   BOARD_WIDGET_META,
@@ -695,7 +697,10 @@ export function Board() {
     nest: false,
     hue: false,
     spotify: false,
+    settings: true,
   });
+  const boardSettings = useBoardSettings();
+  const nightModeEnabled = boardSettings.settings?.nightMode ?? true;
   const [widgetLayout, setWidgetLayout] = useState<BoardWidgetLayout>(() =>
     defaultBoardWidgetLayout(),
   );
@@ -2363,7 +2368,7 @@ export function Board() {
     <div
       className={`flex h-full max-h-full min-h-0 flex-col overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-base text-slate-100 sm:text-lg ${
         // Keep color when the waste bin needs attention so the red blink reads clearly.
-        nightGreyscale && !catlinkWasteBinFull ? "grayscale" : ""
+        nightModeEnabled && nightGreyscale && !catlinkWasteBinFull ? "grayscale" : ""
       }`}
     >
       <div className="box-border flex min-h-0 w-full min-w-0 flex-1 flex-col gap-2 overflow-hidden px-2 py-2 sm:gap-3 sm:px-4 sm:py-3 md:gap-4 lg:px-6 lg:py-4 xl:px-8 xl:py-5 2xl:px-10">
@@ -4024,6 +4029,16 @@ export function Board() {
                     <p className="mt-3 text-base text-slate-400 sm:text-lg">Loading indoor climate…</p>
                   )}
                 </section>
+              ),
+              settings: (
+                <BoardSettingsWidget
+                  collapsed={collapsedWidgets.settings}
+                  onToggleCollapse={() => toggleWidgetCollapse("settings")}
+                  snapshot={boardSettings.snapshot}
+                  error={boardSettings.error}
+                  saving={boardSettings.saving}
+                  onChange={(patch) => void boardSettings.update(patch)}
+                />
               ),
               };
 

@@ -140,7 +140,7 @@ Env: `PETLIBRO_EMAIL`, `PETLIBRO_PASSWORD`, optional `PETLIBRO_REGION`, `PETLIBR
 ## WikiLLM + Gmail drop-box
 
 - UI: `AppShell` → `WikiLlm.tsx` (AI tab). Knowledge: private GitHub repo (`WIKILM_GITHUB_TOKEN` required; repo defaults to `lugosi/family-wiki`, optional `WIKILM_GITHUB_PATH=wiki`).
-- Gemini: `GEMINI_API_KEY` / optional `GEMINI_MODEL` (default `gemini-4-hydrogen`) / optional `GEMINI_THINKING_LEVEL`. Chat routes under `/api/agent/*`.
+- Gemini: `GEMINI_API_KEY` / optional `GEMINI_MODEL` (default `gemini-3.5-flash-lite`; the board Settings widget choice wins over the env var) / optional `GEMINI_THINKING_LEVEL`. Chat routes under `/api/agent/*`.
 - Google scopes include `gmail.readonly` + `gmail.modify`. Enable Gmail API; **re-link Google** after deploy.
 - Flow: forward mail to linked inbox → **Scan inbox** (button, agent `scan_inbox`, or `GMAIL_AUTO_SCAN_MINUTES`) → Gemini extracts todos + events → `todos.json` + Google Calendar. No send-from-board in v1.
 - Do not put wiki markdown or the GitHub PAT in `DATA_DIR` session files.

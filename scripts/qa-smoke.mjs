@@ -194,6 +194,7 @@ async function main() {
 
   await check("GET /api/todos", "/api/todos", new Set([200]));
   await check("GET /api/board/widgets", "/api/board/widgets", new Set([200]));
+  await check("GET /api/settings", "/api/settings", new Set([200]));
 
   /** @type {Set<number>} */
   let gmailAllowed;

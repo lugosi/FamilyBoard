@@ -18,6 +18,12 @@ Feature: Right-column widgets
     And expanding shows every widget in a multi-column scrolling layout
     And the same control collapses back to the board column
 
+  Scenario: Settings widget configures model, night mode, and theme
+    Then the "Settings" widget is present (collapsed by default)
+    And GET "/api/settings" returns settings, geminiModels, and themes
+    And choosing a theme sets html[data-theme] and persists across reload
+    And turning Night mode off removes the greyscale filter at night
+
   Scenario: Clock widget renders
     Then the "Clock" widget section is present
 

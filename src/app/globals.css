@@ -27,6 +27,107 @@ body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
+/* Board color themes: remap the slate surface scale and the sky accent scale. */
+html[data-theme="midnight"] {
+  --color-slate-50: oklch(98.4% 0.003 278);
+  --color-slate-100: oklch(96.8% 0.008 278);
+  --color-slate-200: oklch(92.9% 0.015 278);
+  --color-slate-300: oklch(86.9% 0.025 278);
+  --color-slate-400: oklch(70.4% 0.046 278);
+  --color-slate-500: oklch(55.4% 0.053 278);
+  --color-slate-600: oklch(44.6% 0.049 278);
+  --color-slate-700: oklch(37.2% 0.051 278);
+  --color-slate-800: oklch(27.9% 0.047 278);
+  --color-slate-900: oklch(20.8% 0.048 278);
+  --color-slate-950: oklch(12.9% 0.048 278);
+  --color-sky-50: oklch(97.7% 0.013 285);
+  --color-sky-100: oklch(95.1% 0.026 285);
+  --color-sky-200: oklch(90.1% 0.058 285);
+  --color-sky-300: oklch(82.8% 0.111 285);
+  --color-sky-400: oklch(74.6% 0.16 285);
+  --color-sky-500: oklch(68.5% 0.169 285);
+  --color-sky-600: oklch(58.8% 0.158 285);
+  --color-sky-700: oklch(50% 0.134 285);
+  --color-sky-800: oklch(44.3% 0.11 285);
+  --color-sky-900: oklch(39.1% 0.09 285);
+  --color-sky-950: oklch(29.3% 0.066 285);
+}
+
+html[data-theme="forest"] {
+  --color-slate-50: oklch(98.4% 0.003 160);
+  --color-slate-100: oklch(96.8% 0.006 160);
+  --color-slate-200: oklch(92.9% 0.011 160);
+  --color-slate-300: oklch(86.9% 0.019 160);
+  --color-slate-400: oklch(70.4% 0.034 160);
+  --color-slate-500: oklch(55.4% 0.039 160);
+  --color-slate-600: oklch(44.6% 0.037 160);
+  --color-slate-700: oklch(37.2% 0.037 160);
+  --color-slate-800: oklch(27.9% 0.035 160);
+  --color-slate-900: oklch(20.8% 0.036 160);
+  --color-slate-950: oklch(12.9% 0.036 160);
+  --color-sky-50: oklch(97.7% 0.013 158);
+  --color-sky-100: oklch(95.1% 0.026 158);
+  --color-sky-200: oklch(90.1% 0.058 158);
+  --color-sky-300: oklch(82.8% 0.111 158);
+  --color-sky-400: oklch(74.6% 0.16 158);
+  --color-sky-500: oklch(68.5% 0.169 158);
+  --color-sky-600: oklch(58.8% 0.158 158);
+  --color-sky-700: oklch(50% 0.134 158);
+  --color-sky-800: oklch(44.3% 0.11 158);
+  --color-sky-900: oklch(39.1% 0.09 158);
+  --color-sky-950: oklch(29.3% 0.066 158);
+}
+
+html[data-theme="ember"] {
+  --color-slate-50: oklch(98.4% 0.002 55);
+  --color-slate-100: oklch(96.8% 0.006 55);
+  --color-slate-200: oklch(92.9% 0.01 55);
+  --color-slate-300: oklch(86.9% 0.018 55);
+  --color-slate-400: oklch(70.4% 0.032 55);
+  --color-slate-500: oklch(55.4% 0.037 55);
+  --color-slate-600: oklch(44.6% 0.034 55);
+  --color-slate-700: oklch(37.2% 0.035 55);
+  --color-slate-800: oklch(27.9% 0.033 55);
+  --color-slate-900: oklch(20.8% 0.034 55);
+  --color-slate-950: oklch(12.9% 0.034 55);
+  --color-sky-50: oklch(97.7% 0.013 60);
+  --color-sky-100: oklch(95.1% 0.026 60);
+  --color-sky-200: oklch(90.1% 0.058 60);
+  --color-sky-300: oklch(82.8% 0.111 60);
+  --color-sky-400: oklch(74.6% 0.16 60);
+  --color-sky-500: oklch(68.5% 0.169 60);
+  --color-sky-600: oklch(58.8% 0.158 60);
+  --color-sky-700: oklch(50% 0.134 60);
+  --color-sky-800: oklch(44.3% 0.11 60);
+  --color-sky-900: oklch(39.1% 0.09 60);
+  --color-sky-950: oklch(29.3% 0.066 60);
+}
+
+html[data-theme="plum"] {
+  --color-slate-50: oklch(98.4% 0.003 325);
+  --color-slate-100: oklch(96.8% 0.007 325);
+  --color-slate-200: oklch(92.9% 0.013 325);
+  --color-slate-300: oklch(86.9% 0.022 325);
+  --color-slate-400: oklch(70.4% 0.04 325);
+  --color-slate-500: oklch(55.4% 0.046 325);
+  --color-slate-600: oklch(44.6% 0.043 325);
+  --color-slate-700: oklch(37.2% 0.044 325);
+  --color-slate-800: oklch(27.9% 0.041 325);
+  --color-slate-900: oklch(20.8% 0.042 325);
+  --color-slate-950: oklch(12.9% 0.042 325);
+  --color-sky-50: oklch(97.7% 0.013 345);
+  --color-sky-100: oklch(95.1% 0.026 345);
+  --color-sky-200: oklch(90.1% 0.058 345);
+  --color-sky-300: oklch(82.8% 0.111 345);
+  --color-sky-400: oklch(74.6% 0.16 345);
+  --color-sky-500: oklch(68.5% 0.169 345);
+  --color-sky-600: oklch(58.8% 0.158 345);
+  --color-sky-700: oklch(50% 0.134 345);
+  --color-sky-800: oklch(44.3% 0.11 345);
+  --color-sky-900: oklch(39.1% 0.09 345);
+  --color-sky-950: oklch(29.3% 0.066 345);
+}
+
 /**
  * Slim, pill-shaped scrollbars for dark board surfaces (widgets column, calendar, etc.).
  * Firefox: scrollbar-width/color. WebKit: pseudo-elements.
