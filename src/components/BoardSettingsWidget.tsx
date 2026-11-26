@@ -147,7 +147,7 @@ export function BoardSettingsWidget({
           <div className="space-y-1.5">
             <p className={FIELD_LABEL}>Color theme</p>
             <div
-              className="grid grid-cols-3 gap-2 sm:grid-cols-5"
+              className="grid grid-cols-3 gap-2"
               role="radiogroup"
               aria-label="Color theme"
             >

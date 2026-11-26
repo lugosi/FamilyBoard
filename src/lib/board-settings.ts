@@ -42,6 +42,11 @@ export const BOARD_THEMES = [
     swatch: { surface: "#1f150d", accent: "#f0922b" },
   },
   {
+    id: "github",
+    label: "GitHub Dark",
+    swatch: { surface: "#0d1117", accent: "#1f6feb" },
+  },
+  {
     id: "plum",
     label: "Plum",
     swatch: { surface: "#1f1024", accent: "#e164b4" },
