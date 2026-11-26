@@ -2628,55 +2628,36 @@ export function Board({
                 />
               </div>
             ) : null}
-            {widgetsExpanded ? (
-              navActionsSlot
-                ? createPortal(
-                    <div className="ml-auto flex items-center gap-2">
-                      <WidgetsExpandToggle
-                        expanded
-                        onToggle={() => setWidgetsExpanded(false)}
-                        className="h-9 w-9 lg:hidden"
-                      />
-                      <button
-                        type="button"
-                        className={`inline-flex h-9 w-9 items-center justify-center rounded-md border ${
-                          widgetArrangeMode
-                            ? "border-sky-500 bg-sky-600 text-white hover:bg-sky-500"
-                            : "border-slate-700 bg-slate-900/80 text-slate-300 hover:border-slate-500 hover:text-white"
-                        }`}
-                        onClick={() => setWidgetArrangeMode((v) => !v)}
-                        aria-pressed={widgetArrangeMode}
-                        aria-label={
-                          widgetArrangeMode ? "Done arranging widgets" : "Arrange widgets"
-                        }
-                        title={
-                          widgetArrangeMode ? "Done arranging widgets" : "Arrange widgets"
-                        }
-                      >
-                        <GearIcon className="h-5 w-5" />
-                      </button>
-                    </div>,
-                    navActionsSlot,
-                  )
-                : null
-            ) : (
-            <div className="sticky top-0 z-10 flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/95 p-2 shadow-lg shadow-slate-950/40 backdrop-blur sm:p-2.5">
-              <p className="min-w-0 flex-1 truncate text-sm font-medium text-slate-300 sm:text-base">
-                Board widgets
-              </p>
-              <button
-                type="button"
-                className={`rounded-md px-2.5 py-1.5 text-sm font-medium sm:text-base ${
-                  widgetArrangeMode
-                    ? "bg-sky-600 text-white hover:bg-sky-500"
-                    : "border border-slate-700 text-slate-200 hover:border-slate-500"
-                }`}
-                onClick={() => setWidgetArrangeMode((v) => !v)}
-              >
-                {widgetArrangeMode ? "Done" : "Arrange"}
-              </button>
-            </div>
-            )}
+            {navActionsSlot
+              ? createPortal(
+                  <div className="ml-auto flex items-center gap-2">
+                    <WidgetsExpandToggle
+                      expanded={widgetsExpanded}
+                      onToggle={() => setWidgetsExpanded((v) => !v)}
+                      className="h-9 w-9 lg:hidden"
+                    />
+                    <button
+                      type="button"
+                      className={`inline-flex h-9 w-9 items-center justify-center rounded-md border ${
+                        widgetArrangeMode
+                          ? "border-sky-500 bg-sky-600 text-white hover:bg-sky-500"
+                          : "border-slate-700 bg-slate-900/80 text-slate-300 hover:border-slate-500 hover:text-white"
+                      }`}
+                      onClick={() => setWidgetArrangeMode((v) => !v)}
+                      aria-pressed={widgetArrangeMode}
+                      aria-label={
+                        widgetArrangeMode ? "Done arranging widgets" : "Arrange widgets"
+                      }
+                      title={
+                        widgetArrangeMode ? "Done arranging widgets" : "Arrange widgets"
+                      }
+                    >
+                      <GearIcon className="h-5 w-5" />
+                    </button>
+                  </div>,
+                  navActionsSlot,
+                )
+              : null}
             {(() => {
               const widgetNodes: Record<BoardWidgetKey, ReactNode> = {
               clock: (
