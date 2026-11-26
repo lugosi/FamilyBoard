@@ -36,10 +36,12 @@ export type WikiErrorCode =
 
 export class WikiError extends Error {
   code: WikiErrorCode;
-  constructor(code: WikiErrorCode, message: string) {
+  existingPath?: string;
+  constructor(code: WikiErrorCode, message: string, existingPath?: string) {
     super(message);
     this.name = "WikiError";
     this.code = code;
+    this.existingPath = existingPath;
   }
 }
 
@@ -438,7 +440,7 @@ async function putFile(
   if (res.status === 409 || (res.status === 422 && sha)) {
     throw new WikiError("conflict", `${rel} changed since it was read; reload and try again`);
   }
-  if (res.status === 422) throw new WikiError("exists", `A page already exists at ${rel}`);
+  if (res.status === 422) throw new WikiError("exists", `A page already exists at ${rel}`, rel);
   if (res.status === 404) {
     // Race: repo became empty, or Contents refused while Git Data still works for empty seed.
     if (!sha && (await repoLooksEmpty(cfg))) {
@@ -491,7 +493,7 @@ export async function createWikiPage(input: {
         squash(p.path.split("/").pop()!.replace(/\.md$/i, "")) === squash(title)),
   );
   if (twin) {
-    throw new WikiError("exists", `“${twin.title}” already exists at ${twin.path}; add to that page instead`);
+    throw new WikiError("exists", `“${twin.title}” already exists at ${twin.path}; add to that page instead`, twin.path);
   }
   const content = composeNewPage({
     title,

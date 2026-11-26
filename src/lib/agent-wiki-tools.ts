@@ -1,4 +1,5 @@
 import type { AgentTool, AgentToolContext } from "./agent";
+import { wikiWriteTargetsSilentContext } from "./personal-context-format";
 import { SKILLS_FOLDER, WIKI_CATEGORIES } from "./wiki-format";
 import {
   createWikiPage,
@@ -99,7 +100,7 @@ export const wikiTools: AgentTool[] = [
     declaration: {
       name: "create_wiki_page",
       description:
-        "Create a new wiki page. Only when no existing page covers the topic; otherwise use edit_wiki_section. Fails if the page already exists.",
+        "Create a new wiki page. Only when no existing page covers the topic; otherwise use edit_wiki_section. Fails if the page already exists (except under `.context/`, where it appends to the existing page).",
       parameters: {
         type: "object",
         properties: {
@@ -119,13 +120,37 @@ export const wikiTools: AgentTool[] = [
       },
     },
     async run(args, ctx) {
-      const page = await createWikiPage({
-        category: str(args.category),
-        title: str(args.title) ?? "",
-        summary: str(args.summary),
-        tags: strList(args.tags),
-        body: typeof args.body === "string" ? args.body : "",
-      });
+      const body = typeof args.body === "string" ? args.body : "";
+      let page;
+      try {
+        page = await createWikiPage({
+          category: str(args.category),
+          title: str(args.title) ?? "",
+          summary: str(args.summary),
+          tags: strList(args.tags),
+          body,
+        });
+      } catch (e) {
+        if (
+          e instanceof WikiError &&
+          e.code === "exists" &&
+          e.existingPath &&
+          body.trim() &&
+          wikiWriteTargetsSilentContext(args)
+        ) {
+          const { page: existing, heading } = await editWikiSection({
+            path: e.existingPath,
+            text: body,
+            mode: "append",
+          });
+          rememberRead(ctx, existing.path, existing.sha);
+          return {
+            response: { path: existing.path, title: existing.title, section: heading, appendedToExisting: true },
+            label: `Added to “${existing.title}”`,
+          };
+        }
+        throw e;
+      }
       rememberRead(ctx, page.path, page.sha);
       return {
         response: { path: page.path, title: page.title },
