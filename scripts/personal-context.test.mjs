@@ -152,3 +152,12 @@ test("slack bot and agent wire silent .context facts with TTL", () => {
   assert.match(format, /personalPetsTemplate/);
   assert.match(format, /pets\.md/);
 });
+
+test("create_wiki_page on an existing .context page appends silently", () => {
+  const tools = readFileSync(new URL("../src/lib/agent-wiki-tools.ts", import.meta.url), "utf8");
+  const github = readFileSync(new URL("../src/lib/wikilm-github.ts", import.meta.url), "utf8");
+  assert.match(github, /already exists at \$\{twin\.path\}; add to that page instead`, twin\.path\)/);
+  assert.match(tools, /e\.code === "exists"/);
+  assert.match(tools, /wikiWriteTargetsSilentContext\(args\)/);
+  assert.match(tools, /mode: "append"/);
+});
