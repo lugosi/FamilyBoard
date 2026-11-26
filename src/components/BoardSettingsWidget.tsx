@@ -6,7 +6,7 @@ import type { BoardSettingsSnapshot } from "@/components/useBoardSettings";
 const FIELD_LABEL =
   "text-sm font-medium uppercase tracking-wide text-slate-300 sm:text-base";
 
-function GearIcon({ className }: { className: string }) {
+export function GearIcon({ className }: { className: string }) {
   return (
     <svg
       aria-hidden
