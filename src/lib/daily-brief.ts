@@ -24,7 +24,7 @@ import {
 } from "./daily-brief-store";
 import { getDefaultTimeZone, readGoogleTokens } from "./google";
 import { fetchHouseDashboard } from "./house-dashboard";
-import { markdownTablesForSlack } from "./markdown-slack";
+import { markdownForSlack } from "./markdown-slack";
 import { isSlackConfigured, postSlackMessage } from "./slack";
 import { listTodos } from "./todos";
 import { fetchOpenMeteo } from "./weather";
@@ -127,7 +127,7 @@ async function deliverSlack(
       // chat.postMessage accepts a user id and opens/uses the DM channel.
       await postSlackMessage({
         channel: userId,
-        text: markdownTablesForSlack(text, { timeZone: getDefaultTimeZone() }),
+        text: markdownForSlack(text, { timeZone: getDefaultTimeZone() }),
       });
       out.push({ userId, ok: true });
     } catch (e) {
