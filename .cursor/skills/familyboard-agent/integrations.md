@@ -109,6 +109,7 @@ Env: `PETLIBRO_EMAIL`, `PETLIBRO_PASSWORD`, optional `PETLIBRO_REGION`, `PETLIBR
 
 - OAuth + Web Playback SDK (`streaming` scope) — re-link if scopes change.
 - Snapshot: now-playing + devices; control: play/pause/next/seek/volume/transfer.
+- Agent `spotify_control` (`agent-device-tools.ts`): `play` only resumes. `play_album` (query + optional artist) searches albums; `play_mood` (query keywords) searches **playlists**; both then `PUT /me/player/play?device_id=<active>` with `context_uri` (logic + errors in `spotify-play.ts`, tests in `scripts/spotify-play.test.mjs`). No `/recommendations` (restricted for new apps); mood = playlist search, so Spotify-curated editorial playlists may not appear. Needs an **active** device (else a clear error listing devices) and Premium; scopes already present (`user-modify-playback-state`; search needs none).
 - Board: known-device map; green tint (`#1DB954`) when `is_playing`.
 
 ## Hue (`src/lib/hue.ts`)
