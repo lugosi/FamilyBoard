@@ -1,10 +1,12 @@
 import type { AgentTool, AgentToolContext } from "./agent";
+import { checkRewriteWikiRead, recordWikiRead } from "./agent-wiki-reads";
 import { wikiWriteTargetsSilentContext } from "./personal-context-format";
 import { SKILLS_FOLDER, WIKI_CATEGORIES } from "./wiki-format";
 import {
   createWikiPage,
   deleteWikiPage,
   editWikiSection,
+  getWikilmGithubConfig,
   moveWikiPage,
   readWikiPage,
   rewriteWikiPage,
@@ -24,12 +26,12 @@ function strList(v: unknown): string[] | undefined {
   return undefined;
 }
 
-function readKey(path: string): string {
-  return path.replace(/^\/+/, "").replace(/\.md$/i, "").toLowerCase();
+function currentBasePath(): string {
+  return getWikilmGithubConfig()?.basePath ?? "";
 }
 
 function rememberRead(ctx: AgentToolContext, path: string, sha: string | undefined) {
-  if (sha) ctx.wikiReads.set(readKey(path), { path, sha });
+  recordWikiRead(ctx.wikiReads, path, sha, currentBasePath());
 }
 
 const pageCategories = WIKI_CATEGORIES.filter((c) => c.id !== SKILLS_FOLDER);
@@ -198,7 +200,7 @@ export const wikiTools: AgentTool[] = [
     declaration: {
       name: "rewrite_wiki_page",
       description:
-        "Replace a whole page (body and/or title, summary, tags) to restructure it. Requires read_wiki_page on that page earlier in this request; the full new body must keep everything worth keeping.",
+        "Replace a whole page (body and/or title, summary, tags) to restructure it. Requires calling read_wiki_page on that page earlier in this turn (even if read in an earlier message); the full new body must keep everything worth keeping.",
       parameters: {
         type: "object",
         properties: {
@@ -211,15 +213,18 @@ export const wikiTools: AgentTool[] = [
         required: ["path"],
       },
     },
+    beforeStage(args, ctx) {
+      const check = checkRewriteWikiRead(ctx.wikiReads, str(args.path) ?? "", currentBasePath());
+      return check.ok ? undefined : check.error;
+    },
     async run(args, ctx) {
-      const path = str(args.path) ?? "";
-      const read = ctx.wikiReads.get(readKey(path));
-      if (!read) {
-        throw new WikiError("invalid", "Call read_wiki_page on this page first, then rewrite it");
+      const check = checkRewriteWikiRead(ctx.wikiReads, str(args.path) ?? "", currentBasePath());
+      if (!check.ok) {
+        throw new WikiError("invalid", check.error);
       }
       const page = await rewriteWikiPage({
-        path: read.path,
-        expectedSha: read.sha,
+        path: check.read.path,
+        expectedSha: check.read.sha,
         body: typeof args.body === "string" && args.body.trim() ? args.body : undefined,
         meta: { title: str(args.title), summary: str(args.summary), tags: strList(args.tags) },
       });

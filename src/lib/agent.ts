@@ -63,6 +63,7 @@ import {
   type PendingWriteItem,
 } from "./agent-pending-writes";
 import { wikiTools } from "./agent-wiki-tools";
+import { restoreWikiReadsMap } from "./agent-wiki-reads";
 import { readGoogleSheet } from "./sheets";
 import { wikiWriteTargetsSilentContext } from "./personal-context-format";
 import {
@@ -72,7 +73,11 @@ import {
   SKILLS_FOLDER,
   WIKI_CATEGORIES,
 } from "./wiki-format";
-import { isWikilmGithubConfigured, listWikiPages } from "./wikilm-github";
+import {
+  getWikilmGithubConfig,
+  isWikilmGithubConfigured,
+  listWikiPages,
+} from "./wikilm-github";
 
 const MAX_TOOL_ROUNDS = 10;
 const WIKI_INDEX_BUDGET = 12_000;
@@ -137,6 +142,12 @@ type ToolOutcome = {
 
 export type AgentTool = {
   declaration: GeminiFunctionDeclaration;
+  /**
+   * Optional precondition check run before staging a write tool for approval
+   * (or executing it in a tool round). Returning an error string rejects the call
+   * inside the tool loop so the model can recover and retry in the same turn.
+   */
+  beforeStage?: (args: Record<string, unknown>, ctx: AgentToolContext) => string | undefined;
   run: (args: Record<string, unknown>, ctx: AgentToolContext) => Promise<ToolOutcome>;
 };
 
@@ -775,7 +786,7 @@ function buildSystemPrompt(input: {
       ...WIKI_CATEGORIES.map((c) => `  ${c.id}/ — ${c.hint}`),
       "The index below lists every page as \"path — title: summary [tags]\". It has no page contents: call read_wiki_page before answering from a page, and search_wiki when the index doesn't point to an obvious page. If the wiki doesn't have the answer, say so; never invent private family facts or quote a page you did not read.",
       "Family wiki (outside `.context/`): save when someone asks to save/remember/note something, agrees when you offer, or when a Slack personal-context write-back also belongs on a shared person/pet page (propose that edit — it needs Approve). Look for an existing page first (e.g. the pet's or person's page) and add with edit_wiki_section: mode append under the fitting heading, or replace to correct a section. Otherwise create_wiki_page in the best folder with a one-line summary, a few tags, and ## sections. Prefer one page per person or topic over many tiny pages.",
-      "Use rewrite_wiki_page only to restructure a page you read in this request. Move or delete pages only when explicitly asked. After saving, say which page you changed.",
+      "Use rewrite_wiki_page only to restructure a page after calling read_wiki_page on it in this turn (even if you read it in an earlier message). Move or delete pages only when explicitly asked. After saving, say which page you changed.",
       "=== WIKI INDEX ===",
       input.wikiIndex || "(wiki unavailable right now; tools may still work)",
       "=== END WIKI INDEX ===",
@@ -955,6 +966,9 @@ export async function runFamilyAgent(input: {
       });
     }
 
+    // Snapshot reads from prior rounds so a parallel [read_wiki_page, rewrite_wiki_page]
+    // in one model turn cannot bypass reading the page contents first.
+    const readsBeforeRound = new Map(ctx.wikiReads);
     const responses: GeminiPart[] = [];
     for (const part of calls) {
       const call = part.functionCall!;
@@ -968,18 +982,29 @@ export async function runFamilyAgent(input: {
         !wikiWriteTargetsSilentContext(call.args ?? {})
       ) {
         const args = call.args ?? {};
-        const label = previewWriteLabel(call.name, args, ctx.timeZone);
-        staged.push({ tool: call.name, args, label });
-        response = {
-          status: "pending_approval",
-          message:
-            "Not written yet. The family must approve this change first. Summarize it and wait.",
-          preview: label,
-        };
-        actions.push({ tool: call.name, ok: true, label: `Proposed: ${label}` });
+        const preError = tool.beforeStage?.(args, { ...ctx, wikiReads: readsBeforeRound });
+        if (preError) {
+          response = { error: preError };
+          actions.push({ tool: call.name, ok: false, label: `${call.name} failed: ${preError}` });
+        } else {
+          const label = previewWriteLabel(call.name, args, ctx.timeZone);
+          staged.push({ tool: call.name, args, label });
+          response = {
+            status: "pending_approval",
+            message:
+              "Not written yet. The family must approve this change first. Summarize it and wait.",
+            preview: label,
+          };
+          actions.push({ tool: call.name, ok: true, label: `Proposed: ${label}` });
+        }
       } else {
         try {
-          const outcome = await tool.run(call.args ?? {}, ctx);
+          const args = call.args ?? {};
+          const preError = tool.beforeStage?.(args, { ...ctx, wikiReads: readsBeforeRound });
+          if (preError) {
+            throw new Error(preError);
+          }
+          const outcome = await tool.run(args, ctx);
           response = outcome.response;
           actions.push({ tool: call.name, ok: true, label: outcome.label });
           if (outcome.quickActions?.length) quickActions = outcome.quickActions;
@@ -1073,7 +1098,7 @@ export async function resolvePendingApproval(input: {
     redirectUri: input.redirectUri || batch.redirectUri,
     timeZone: packed.timeZone,
     channel: batch.channel,
-    wikiReads: new Map(Object.entries(batch.wikiReads)),
+    wikiReads: restoreWikiReadsMap(batch.wikiReads, getWikilmGithubConfig()?.basePath ?? ""),
     skipWriteApproval: true,
   };
   const actions: AgentAction[] = [];
