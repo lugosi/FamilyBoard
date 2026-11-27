@@ -3,6 +3,7 @@ import { executeCatlinkAction, getCatlinkConfig, type CatlinkAction } from "./ca
 import { fetchHouseDashboard, formatHouseDashboardText } from "./house-dashboard";
 import { controlHueArea, isHueConfigured, listHueAreas } from "./hue";
 import { readSpotifyTokens, requireSpotifyOAuthEnv, spotifyApiFetch } from "./spotify";
+import { playSpotifyContext } from "./spotify-play";
 
 const str = (v: unknown): string | undefined =>
   typeof v === "string" && v.trim() ? v.trim() : undefined;
@@ -138,13 +139,30 @@ export function buildDeviceTools(ready: {
       declaration: {
         name: "spotify_control",
         description:
-          "Control Spotify on the family's active speaker: play, pause, next, previous, or set volume (0–100).",
+          "Control Spotify on the family's active speaker. play resumes whatever was last playing and cannot choose content. To start specific content use play_album (query = album title, optional artist) for requests like \"play Abbey Road\", or play_mood (query = mood/genre/activity keywords, e.g. \"chill cooking\") for requests like \"play something chill for cooking\". Also pause, next, previous, set_volume (0–100).",
         parameters: {
           type: "object",
           properties: {
             action: {
               type: "string",
-              enum: ["play", "pause", "next", "previous", "set_volume"],
+              enum: [
+                "play",
+                "pause",
+                "next",
+                "previous",
+                "set_volume",
+                "play_album",
+                "play_mood",
+              ],
+            },
+            query: {
+              type: "string",
+              description:
+                "For play_album: album title. For play_mood: short mood/genre/activity keywords for a playlist search, e.g. \"chill cooking\"",
+            },
+            artist: {
+              type: "string",
+              description: "For play_album only: artist name to disambiguate",
             },
             volumePercent: {
               type: "number",
@@ -156,6 +174,25 @@ export function buildDeviceTools(ready: {
       },
       async run(args) {
         const action = str(args.action) ?? "";
+        if (action === "play_album" || action === "play_mood") {
+          const kind = action === "play_album" ? "album" : "playlist";
+          const played = await playSpotifyContext(spotifyApiFetch, {
+            kind,
+            query: str(args.query) ?? "",
+            artist: str(args.artist),
+          });
+          return {
+            response: {
+              ok: true,
+              action,
+              kind: played.kind,
+              name: played.name,
+              by: played.owner,
+              device: played.device,
+            },
+            label: `Spotify · ${played.name}`,
+          };
+        }
         let endpoint = "";
         let method: "PUT" | "POST" = "PUT";
         switch (action) {

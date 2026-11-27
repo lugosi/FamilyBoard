@@ -45,6 +45,14 @@ Feature: WikiLLM AI tab
     Then the assistant calls house_dashboard and shows lights / litter / music / weather when linked
     And the reply includes tappable quick-action chips (web) or a "reply with one" action list (Slack)
 
+  Scenario: Assistant plays an album or mood on the active speaker
+    Given auth status has spotifyLinked true and geminiConfigured true
+    And a Spotify speaker is active
+    When I send "Play Abbey Road" or "Play something chill for cooking" (AI tab or Slack)
+    Then the assistant calls spotify_control with play_album or play_mood
+    And the reply names the album or playlist and the speaker, and music starts
+    And with no active speaker the reply asks to open Spotify on a speaker instead of failing silently
+
   Scenario: Assistant updates the calendar
     Given auth status has googleLinked true and geminiConfigured true
     When I send "Add dentist next Tuesday at 3pm"

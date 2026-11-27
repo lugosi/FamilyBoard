@@ -685,7 +685,7 @@ function buildSystemPrompt(input: {
       );
     }
     if (input.devices.spotify) {
-      bits.push("Spotify: spotify_control for play, pause, next, previous, or set_volume.");
+      bits.push("Spotify: spotify_control for pause, next, previous, set_volume, resume (play), play_album (a named album), or play_mood (a mood/activity playlist search). Use play_album/play_mood when asked to play specific music; plain play only resumes.");
     }
     if (input.devices.catlink) {
       bits.push("CatLink litter box: catlink_control for clean_now, refill_litter, change_bag, reset_bin.");
