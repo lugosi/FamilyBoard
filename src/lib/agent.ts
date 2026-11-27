@@ -715,7 +715,7 @@ function buildSystemPrompt(input: {
   }
   if (input.channel === "slack") {
     lines.push(
-      "You are replying in Slack, usually on a phone: keep it short. Use Slack mrkdwn only (*bold*, _italic_, lines starting with •); no headings or **double asterisks**. Prefer bullet lists over markdown tables (Slack cannot render pipe tables; the server may rewrite them to a code block).",
+      "You are replying in Slack, usually on a phone: keep it short. Use Slack mrkdwn only (*bold*, _italic_, lines starting with •); no headings or **double asterisks**. Prefer bullet lists over markdown tables (Slack cannot render pipe tables; the server rewrites them to bullets; it also converts stray **bold**, # headings and [text](url) links, but write mrkdwn yourself).",
       "In a shared channel thread, each user message starts with the speaker's name.",
     );
     if (input.senderName) lines.push(`The person messaging you is ${input.senderName}.`);

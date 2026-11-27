@@ -37,7 +37,7 @@ import {
   SLACK_SECTION_TEXT_CHARS,
 } from "./slack";
 import { getDefaultTimeZone } from "./google";
-import { markdownTablesForSlack } from "./markdown-slack";
+import { markdownForSlack } from "./markdown-slack";
 
 /** Prose in the Approve message section — leave room for the review blocks. */
 const SLACK_APPROVAL_LEAD_CHARS = Math.min(SLACK_SECTION_TEXT_CHARS, 2400);
@@ -431,7 +431,7 @@ async function handle(msg: Incoming): Promise<void> {
     ].filter((c, i, arr) => arr.findIndex((x) => x.title === c.title) === i);
     // Same ```chart payload as the AI tab — upload PNGs, strip fences from text.
     // Slack can't render GFM tables → mobile bullets (+ Cal day link when date known).
-    const body = markdownTablesForSlack(
+    const body = markdownForSlack(
       stripChatChartFences(raw, charts.length ? "remove" : "caption"),
       { timeZone: getDefaultTimeZone() },
     );
@@ -542,7 +542,7 @@ async function handleInteractive(payload: SlackInteractivePayload): Promise<void
       redirectUri: getBackgroundGoogleRedirectUri(),
     });
     const footer = slackActionFooter(result.actions);
-    const text = markdownTablesForSlack(`${result.reply}${footer}`, {
+    const text = markdownForSlack(`${result.reply}${footer}`, {
       timeZone: getDefaultTimeZone(),
     });
     const statusLine = approve ? "✅ *Approved* — changes applied." : "🚫 *Denied* — nothing was written.";

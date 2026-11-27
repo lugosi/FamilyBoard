@@ -168,3 +168,80 @@ test("markdownTablesForSlack is idempotent after rewrite", () => {
   const once = markdownTablesForSlack(input, OPTS);
   assert.equal(markdownTablesForSlack(once, OPTS), once);
 });
+
+import { markdownForSlack, markdownToSlackMrkdwn } from "../src/lib/markdown-slack.ts";
+import { clipSlackText, splitSlackText } from "../src/lib/slack.ts";
+
+test("markdownToSlackMrkdwn converts bold, strike, headings and rules", () => {
+  assert.equal(markdownToSlackMrkdwn("**Hi** there ~~old~~ __x__"), "*Hi* there ~old~ *x*");
+  assert.equal(markdownToSlackMrkdwn("***both***"), "*_both_*");
+  assert.equal(markdownToSlackMrkdwn("## Plan **today**"), "*Plan today*");
+  assert.equal(markdownToSlackMrkdwn("# **Title**"), "*Title*");
+  assert.equal(markdownToSlackMrkdwn("a\n---\nb"), "a\n──────────\nb");
+});
+
+test("markdownToSlackMrkdwn converts links without touching underscores in URLs", () => {
+  assert.equal(
+    markdownToSlackMrkdwn("See [the doc](https://x.com/a_b_c?q=1) and **[go](https://y.com/p_q_r)**"),
+    "See <https://x.com/a_b_c?q=1|the doc> and *<https://y.com/p_q_r|go>*",
+  );
+  assert.equal(markdownToSlackMrkdwn("https://x.com/a__b__c"), "https://x.com/a__b__c");
+  assert.equal(markdownToSlackMrkdwn("![pic](https://x.com/i.png)"), "<https://x.com/i.png|pic>");
+  assert.equal(markdownToSlackMrkdwn("[a|b](https://x.com)"), "<https://x.com|a b>");
+});
+
+test("markdownToSlackMrkdwn rewrites bullets and task lists but keeps *bold* lines", () => {
+  const out = markdownToSlackMrkdwn("* one\n- two\n  - nested\n- [ ] todo\n- [x] done\n*Key*: v");
+  assert.equal(out, "• one\n• two\n  • nested\n☐ todo\n☑ done\n*Key*: v");
+});
+
+test("markdownToSlackMrkdwn leaves code alone and drops fence language tags", () => {
+  const src = "**a**\n```js\nconst x = **y**; // - z\n# not heading\n```\nUse `**raw**` ok";
+  assert.equal(
+    markdownToSlackMrkdwn(src),
+    "*a*\n```\nconst x = **y**; // - z\n# not heading\n```\nUse `**raw**` ok",
+  );
+  assert.equal(markdownToSlackMrkdwn("~~~\ncode\n~~~"), "```\ncode\n```");
+  assert.equal(markdownToSlackMrkdwn("```\nunclosed"), "```\nunclosed\n```");
+});
+
+test("markdownToSlackMrkdwn is idempotent", () => {
+  const once = markdownToSlackMrkdwn("## H\n**b** [l](https://a.com/x_y_z)\n* i\n```py\nx\n```");
+  assert.equal(markdownToSlackMrkdwn(once), once);
+});
+
+test("table cells keep snake_case, links and escaped pipes", () => {
+  const out = markdownForSlack(
+    "| Name | Link |\n| --- | --- |\n| my_var_name | [Doc](https://x.com/a_b_c) |\n| a \\| b | **bold** |",
+    OPTS,
+  );
+  assert.match(out, /my_var_name/);
+  assert.match(out, /<https:\/\/x\.com\/a_b_c\|Doc>/);
+  assert.match(out, /\*a \| b\*: bold/);
+  assert.doesNotMatch(out, /\*\*/);
+});
+
+test("splitSlackText closes and reopens a code fence cut by a split", () => {
+  const body = Array.from({ length: 40 }, (_, i) => `line ${i} ${"x".repeat(30)}`).join("\n");
+  const chunks = splitSlackText(`intro\n\`\`\`\n${body}\n\`\`\`\nafter`, 400);
+  assert.ok(chunks.length > 2);
+  for (const c of chunks) {
+    assert.ok(c.length <= 400, `chunk length ${c.length}`);
+    assert.equal((c.match(/```/g) ?? []).length % 2, 0, c);
+  }
+});
+
+test("splitSlackText and clipSlackText never cut a Slack link token", () => {
+  const link = "<https://example.com/some/long/path|a label with spaces>";
+  const text = `${"w ".repeat(180)}${link} tail`;
+  for (const c of splitSlackText(text, 372)) {
+    const opens = (c.match(/</g) ?? []).length;
+    const closes = (c.match(/>/g) ?? []).length;
+    assert.equal(opens, closes, c);
+  }
+  const clipped = clipSlackText(`${"w ".repeat(10)}${link}`, 40);
+  assert.doesNotMatch(clipped, /</);
+  const fenced = clipSlackText(`\`\`\`\n${"y".repeat(100)}`, 40);
+  assert.ok(fenced.length <= 40);
+  assert.equal((fenced.match(/```/g) ?? []).length % 2, 0);
+});

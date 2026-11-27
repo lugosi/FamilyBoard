@@ -163,22 +163,51 @@ export const SLACK_SAFE_TEXT_CHARS = 3500;
 /** Block Kit section mrkdwn max is 3000. */
 export const SLACK_SECTION_TEXT_CHARS = 2900;
 
-/** Split long Slack text on paragraph/line boundaries for thread replies. */
+const FENCE_CLOSE = "\n```";
+const FENCE_OPEN = "```\n";
+
+function hasOpenFence(text: string): boolean {
+  return ((text.match(/```/g) ?? []).length) % 2 === 1;
+}
+
+/** Last index where a cut would not split a Slack `<url|label>` token. */
+function safeTokenCut(text: string, cut: number): number {
+  const open = text.lastIndexOf("<", cut - 1);
+  if (open < 0 || open < cut - 300 || text.lastIndexOf(">", cut - 1) > open) return cut;
+  return open > 0 ? open : cut;
+}
+
+/**
+ * Split long Slack text on paragraph/line boundaries for thread replies.
+ * A code fence cut by a split is closed in that chunk and reopened in the next
+ * so each message renders on its own; `<url|label>` tokens are never cut.
+ */
 export function splitSlackText(text: string, maxChars = SLACK_SAFE_TEXT_CHARS): string[] {
   const raw = text.replace(/\s+$/u, "");
   if (!raw) return [" "];
   if (raw.length <= maxChars) return [raw];
 
   const chunks: string[] = [];
+  const budget = maxChars - FENCE_CLOSE.length;
   let rest = raw;
   while (rest.length > maxChars) {
-    const window = rest.slice(0, maxChars);
+    const window = rest.slice(0, budget);
     let cut = Math.max(window.lastIndexOf("\n\n"), window.lastIndexOf("\n"));
-    if (cut < maxChars * 0.4) cut = window.lastIndexOf(" ");
-    if (cut < maxChars * 0.4) cut = maxChars;
-    const piece = rest.slice(0, cut).replace(/\s+$/u, "");
-    chunks.push(piece || rest.slice(0, maxChars));
-    rest = rest.slice(piece ? cut : maxChars).replace(/^\s+/u, "");
+    if (cut < budget * 0.4) cut = window.lastIndexOf(" ");
+    if (cut < budget * 0.4) cut = budget;
+    cut = safeTokenCut(rest, cut);
+    let piece = rest.slice(0, cut).replace(/\s+$/u, "");
+    if (!piece) {
+      piece = rest.slice(0, budget);
+      cut = budget;
+    }
+    let next = rest.slice(cut).replace(/^\s+/u, "");
+    if (hasOpenFence(piece)) {
+      piece += FENCE_CLOSE;
+      next = FENCE_OPEN + next;
+    }
+    chunks.push(piece);
+    rest = next;
   }
   if (rest) chunks.push(rest);
   return chunks.length ? chunks : [" "];
@@ -188,7 +217,10 @@ export function splitSlackText(text: string, maxChars = SLACK_SAFE_TEXT_CHARS): 
 export function clipSlackText(text: string, maxChars = SLACK_SECTION_TEXT_CHARS): string {
   const t = text.trim() || " ";
   if (t.length <= maxChars) return t;
-  return `${t.slice(0, Math.max(0, maxChars - 1))}…`;
+  let head = t.slice(0, Math.max(0, maxChars - 1));
+  if (hasOpenFence(head)) head = head.slice(0, Math.max(0, maxChars - 1 - FENCE_CLOSE.length));
+  head = head.slice(0, safeTokenCut(head, head.length));
+  return `${head}…${hasOpenFence(head) ? FENCE_CLOSE : ""}`;
 }
 
 /** Block Kit Approve / Deny row for a staged calendar/wiki write. */
@@ -259,8 +291,8 @@ export async function postSlackText(input: {
 }): Promise<{ ts: string; channel: string }> {
   // Dynamic import keeps this file loadable by node:test (extensionless
   // static imports break under Node ESM). Idempotent if caller already rewrote.
-  const { markdownTablesForSlack } = await import("./markdown-slack");
-  const text = markdownTablesForSlack(input.text);
+  const { markdownForSlack } = await import("./markdown-slack");
+  const text = markdownForSlack(input.text);
   const chunks = splitSlackText(text);
   const first = await postSlackMessage({
     channel: input.channel,

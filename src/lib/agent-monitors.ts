@@ -25,7 +25,7 @@ import { runDailyBrief } from "./daily-brief";
 import { readDailyBriefStore } from "./daily-brief-store";
 import { isGeminiConfigured } from "./gemini";
 import { getDefaultTimeZone } from "./google";
-import { markdownTablesForSlack } from "./markdown-slack";
+import { markdownForSlack } from "./markdown-slack";
 import { isSlackConfigured, postSlackMessage } from "./slack";
 import { listSlackDeliveryTargets, type SlackDeliveryTarget } from "./wiki-slack-people";
 
@@ -90,7 +90,7 @@ async function deliverSlack(
     try {
       await postSlackMessage({
         channel: userId,
-        text: markdownTablesForSlack(text, { timeZone }),
+        text: markdownForSlack(text, { timeZone }),
       });
       out.push({ userId, ok: true });
     } catch (e) {

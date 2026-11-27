@@ -43,16 +43,56 @@ export type SlackTableFormatOpts = {
   timeZone?: string;
 };
 
-/** Strip common markdown emphasis so Slack mrkdwn stays clean. */
-export function cleanSlackTableCell(s: string): string {
-  return s
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/__(.+?)__/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
-    .replace(/_(.+?)_/g, "$1")
-    .replace(/`+/g, "'")
+const MD_LINK_RE =
+  /!?\[([^\]\n]*)\]\(\s*<?((?:https?:\/\/|mailto:)[^\s)>]*(?:\([^\s)]*\)[^\s)>]*)*)>?(?:\s+"[^"]*")?\s*\)/gi;
+
+function slackLink(url: string, label: string): string {
+  const text = label
+    .replace(/\*\*|__|~~|`/g, "")
+    .replace(/[|<>]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  return text && text !== url ? `<${url}|${text}>` : `<${url}>`;
+}
+
+/**
+ * Hide spans that must not be touched by emphasis rewriting (inline code,
+ * existing Slack `<...>` tokens, bare URLs, converted links).
+ */
+function protectSpans(text: string, spans: string[]): string {
+  const hold = (m: string) => {
+    spans.push(m);
+    return `\u0000${spans.length - 1}\u0000`;
+  };
+  return text
+    .replace(/`{1,3}[^`\n]+?`{1,3}/g, hold)
+    .replace(MD_LINK_RE, (_m, label: string, url: string) => hold(slackLink(url, label)))
+    .replace(/<[^<>\s][^<>\n]*>/g, hold)
+    .replace(/https?:\/\/[^\s<>]+/gi, hold);
+}
+
+function restoreSpans(text: string, spans: string[]): string {
+  let out = text;
+  // Converted links may themselves sit inside a held span; unwrap until stable.
+  for (let n = 0; n < 3 && out.includes("\u0000"); n += 1) {
+    out = out.replace(/\u0000(\d+)\u0000/g, (_m, i: string) => spans[Number(i)] ?? "");
+  }
+  return out;
+}
+
+/** Strip common markdown emphasis so Slack mrkdwn stays clean. */
+export function cleanSlackTableCell(s: string): string {
+  const spans: string[] = [];
+  return restoreSpans(
+    protectSpans(s.replace(/\u0000/g, ""), spans)
+      .replace(/\*\*(.+?)\*\*/g, "$1")
+      .replace(/(^|[^\w])__(.+?)__(?=[^\w]|$)/g, "$1$2")
+      .replace(/(^|[^\w*])\*(?!\s)(.+?)(?<!\s)\*(?=[^\w*]|$)/g, "$1$2")
+      .replace(/(^|[^\w])_(?!\s)(.+?)(?<!\s)_(?=[^\w]|$)/g, "$1$2")
+      .replace(/\s+/g, " ")
+      .trim(),
+    spans,
+  ).replace(/`+/g, "'");
 }
 
 /**
@@ -65,7 +105,7 @@ export function splitTableRow(line: string): string[] | null {
   let body = trimmed;
   if (body.startsWith("|")) body = body.slice(1);
   if (body.endsWith("|")) body = body.slice(0, -1);
-  const cells = body.split("|").map((c) => c.trim());
+  const cells = body.split(/(?<!\\)\|/).map((c) => c.replace(/\\\|/g, "|").trim());
   if (cells.length < 2) return null;
   if (!trimmed.startsWith("|") && cells.some((c) => c.length > 48)) return null;
   return cells;
@@ -378,4 +418,66 @@ function tryConsumeTable(
   if (!looksLikeTableBlock(rows)) return null;
   if (rows.length < 2) return null;
   return { rows, next: i };
+}
+
+const FENCE_LINE_RE = /^\s*(```|~~~)/;
+
+/**
+ * Rewrite GitHub-flavoured markdown (which the model still emits despite the
+ * Slack prompt) into Slack mrkdwn: `**bold**`, `# headings`, `[t](url)`, `* ` /
+ * `- ` bullets, `~~strike~~`, task boxes, rules and fence language tags.
+ * Leaves code fences, inline code, Slack tokens and bare URLs untouched.
+ * Idempotent, so reply paths may apply it more than once.
+ */
+export function markdownToSlackMrkdwn(text: string): string {
+  const lines = text.replace(/\r\n?/g, "\n").replace(/\u0000/g, "").split("\n");
+  const out: string[] = [];
+  let inFence = false;
+
+  for (const line of lines) {
+    const fence = FENCE_LINE_RE.exec(line);
+    const ticks = (line.match(/```|~~~/g) ?? []).length;
+    if (fence && (inFence || ticks % 2 === 1)) {
+      if (inFence) {
+        out.push("```");
+        inFence = false;
+      } else {
+        out.push("```");
+        inFence = true;
+      }
+      continue;
+    }
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
+
+    const spans: string[] = [];
+    let t = protectSpans(line, spans);
+
+    if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(t)) {
+      out.push("──────────");
+      continue;
+    }
+    const heading = /^\s{0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*$/.exec(t);
+    if (heading) {
+      t = `*${heading[1]!.replace(/\*\*|__|(?<![\w*])\*(?![\w*])/g, "").replace(/^\*+|\*+$/g, "").trim()}*`;
+    } else {
+      t = t.replace(/^(\s*)[-*+]\s+\[([ xX])\]\s+/, (_m, ind: string, c: string) => `${ind}${c === " " ? "☐" : "☑"} `);
+      t = t.replace(/^(\s*)[-*+]\s+(?=\S)/, "$1• ");
+      t = t
+        .replace(/\*\*\*(?=\S)(.+?)(?<=\S)\*\*\*/g, "*_$1_*")
+        .replace(/\*\*(?=\S)(.+?)(?<=\S)\*\*/g, "*$1*")
+        .replace(/(^|[^\w])__(?=\S)(.+?)(?<=\S)__(?=[^\w]|$)/g, "$1*$2*")
+        .replace(/~~(?=\S)(.+?)(?<=\S)~~/g, "~$1~");
+    }
+    out.push(restoreSpans(t, spans));
+  }
+  if (inFence) out.push("```");
+  return out.join("\n");
+}
+
+/** Full Slack pipeline: pipe tables → bullets, then GFM → mrkdwn. */
+export function markdownForSlack(text: string, opts: SlackTableFormatOpts = {}): string {
+  return markdownToSlackMrkdwn(markdownTablesForSlack(text, opts));
 }
