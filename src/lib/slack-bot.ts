@@ -369,7 +369,7 @@ async function handle(msg: Incoming): Promise<void> {
     const turns: GeminiMessage[] = [...(await getChatHistory(key)), userTurn];
 
     const { isStravaConfigured, slackAccountKey } = await import("./strava");
-    // Layer A.5 POC: `.context/<SlackUserId>/` wiki folder for continuity past chat TTL.
+    // Layer A.5: `.context/<SlackUserId>/` wiki folder for continuity past chat TTL.
     let personalContext: {
       slackUserId: string;
       folder: string;

@@ -1,6 +1,6 @@
 import type { AgentTool, AgentToolContext } from "./agent";
 import { checkRewriteWikiRead, recordWikiRead } from "./agent-wiki-reads";
-import { wikiWriteTargetsSilentContext } from "./personal-context-format";
+import { canReadContextPath, wikiWriteTargetsContext } from "./personal-context-format";
 import { SKILLS_FOLDER, WIKI_CATEGORIES } from "./wiki-format";
 import {
   createWikiPage,
@@ -52,9 +52,10 @@ export const wikiTools: AgentTool[] = [
         required: ["query"],
       },
     },
-    async run(args) {
+    async run(args, ctx) {
       const query = str(args.query) ?? "";
-      const results = await searchWiki(query, { category: str(args.category), limit: 8 });
+      const found = await searchWiki(query, { category: str(args.category), limit: 40 });
+      const results = found.filter((r) => canReadContextPath(r.path, ctx.contextOwnerId)).slice(0, 8);
       return {
         response: {
           results: results.map(({ path, title, summary, tags, snippet }) => ({
@@ -81,6 +82,9 @@ export const wikiTools: AgentTool[] = [
     },
     async run(args, ctx) {
       const page = await readWikiPage(str(args.path) ?? "");
+      if (!canReadContextPath(page.path, ctx.contextOwnerId)) {
+        throw new WikiError("not_found", "That page isn't available.");
+      }
       rememberRead(ctx, page.path, page.sha);
       const content =
         page.body.length > MAX_READ_CHARS ? `${page.body.slice(0, MAX_READ_CHARS)}\n…(truncated)` : page.body;
@@ -108,7 +112,7 @@ export const wikiTools: AgentTool[] = [
         properties: {
           category: {
             type: "string",
-            description: `${pageCategories.map((c) => `${c.id}: ${c.hint}`).join("; ")}. For Slack continuity only: \`.context/<SlackUserId>\` (silent write, no Approve).`,
+            description: `${pageCategories.map((c) => `${c.id}: ${c.hint}`).join("; ")}. For Slack continuity only: your own \`.context/<SlackUserId>\` (silent unless the turn has attachments or web content).`,
           },
           title: { type: "string", description: "Short page title, e.g. 'Maya' or 'Wi-Fi'" },
           summary: { type: "string", description: "One line describing what the page holds" },
@@ -138,7 +142,7 @@ export const wikiTools: AgentTool[] = [
           e.code === "exists" &&
           e.existingPath &&
           body.trim() &&
-          wikiWriteTargetsSilentContext(args)
+          wikiWriteTargetsContext(args)
         ) {
           const { page: existing, heading } = await editWikiSection({
             path: e.existingPath,

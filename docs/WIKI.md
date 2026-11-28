@@ -37,13 +37,13 @@ One page per person or topic, in a folder:
 | `travel/` | Trips, packing lists, documents, loyalty numbers |
 | `notes/` | Anything else |
 | `todos/` | Open family tasks — especially `todos/list.md` (inbox scan + assistant keep this checklist current) |
-| `.context/` | Hidden Slack continuity folders (`.context/<SlackUserId>/…`). Not listed in the board Wiki browser. POC before private GitHub — still in the shared repo |
+| `.context/` | Hidden Slack continuity folders (`.context/<SlackUserId>/…`). Not listed in the board Wiki browser. Still in the shared repo, not private from whoever holds the wiki token |
 
 Pages directly under the wiki folder still work (shown as **Unfiled**); ask the assistant to file them, or use **Move**. Subfolders up to three levels deep are fine (`school/maya/soccer.md`).
 
-### Hidden `.context/` folders (Slack continuity POC)
+### Hidden `.context/` folders (Slack continuity)
 
-When someone DMs the bot, FamilyBoard seeds `.context/<SlackUserId>/` (profile, open-loops, pets, Strava when linked). The Slack assistant gets an **index** of those pages each turn and should `read_wiki_page` matching ones so chats still feel continuous after Slack’s short memory expires. Writes under `.context/` apply **silently** (no Approve) for **any** durable topic (hike prep, trips, work, pets, prefs) — default `open-loops.md`, or create a topic page (`travel.md`, `work.md`, …) when detail warrants it. Not only when someone says “remember”. Shared family wiki pages still need Approve. Link people pages with `slack: U…` when useful. Still shared-repo storage — not private; Layer B personal GitHub later.
+When someone DMs the bot, FamilyBoard seeds `.context/<SlackUserId>/` (profile, open-loops, pets, Strava when linked). The Slack assistant gets an **index** of those pages each turn and should `read_wiki_page` matching ones so chats still feel continuous after Slack’s short memory expires. Create/edit writes inside the speaker's **own** `.context/<theirId>/` apply **silently** (no Approve) for **any** durable topic (hike prep, trips, work, pets, prefs) — default `open-loops.md`, or create a topic page (`travel.md`, `work.md`, …) when detail warrants it. Not only when someone says “remember”. Silent writes fall back to Approve when the message has a photo/file or the turn used `fetch_url` / `search_web` / `scan_inbox` / `read_google_sheet`, and move/delete/rewrite under `.context/` always need Approve. The assistant (`search_wiki`, `read_wiki_page`) and `/api/wiki/page` can read only the speaker's own folder. Shared family wiki pages still need Approve. Link people pages with `slack: U…` when useful. Still shared-repo storage — not private; Layer B personal GitHub later.
 
 **Facts** (under `## Facts`) use dated, weighted lines so prefs don’t go stale unnoticed:
 

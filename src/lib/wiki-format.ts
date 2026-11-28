@@ -780,3 +780,67 @@ export function buildWikiIndex(pages: readonly WikiPageMeta[], budget = 12_000):
   }
   return lines.join("\n");
 }
+
+// ---------- `.context/` write gate (pure; Node-testable) ----------
+
+function isUnderContextOwner(path: string, ownerId: string): boolean {
+  return Boolean(ownerId) && path.startsWith(`${CONTEXT_ROOT}/${ownerId}/`);
+}
+
+/** The only wiki writes that may skip Approve, and only inside the speaker's own folder. */
+export const SILENT_CONTEXT_TOOLS: ReadonlySet<string> = new Set([
+  "create_wiki_page",
+  "edit_wiki_section",
+]);
+
+/** Tools whose output comes from outside the family (files, web, mail, sheets). */
+export const UNTRUSTED_INPUT_TOOLS: ReadonlySet<string> = new Set([
+  "fetch_url",
+  "search_web",
+  "scan_inbox",
+  "read_google_sheet",
+]);
+
+/** True when the user's message carries a photo, file or cached photo reading. */
+export function messageHasUntrustedInput(m: {
+  content: string;
+  images?: readonly unknown[];
+}): boolean {
+  return Boolean(m.images?.length) || /\[(Attached [^\]"]*|Image reading )"/.test(m.content);
+}
+
+/** Canonical wiki path a create/edit call would touch, or null when it can't be resolved. */
+function silentTargetPath(tool: string, args: Record<string, unknown>): string | null {
+  try {
+    if (tool === "edit_wiki_section") {
+      return typeof args.path === "string" ? existingWikiPath(args.path) : null;
+    }
+    const category = typeof args.category === "string" ? args.category : undefined;
+    const title = typeof args.title === "string" ? args.title : "";
+    return pathForNewPage(category, title);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Continuity writes skip Approve only for create/edit inside `.context/<speakerId>/`,
+ * and only when the turn has no attachments or outside content that could be steering the write.
+ */
+export function isSilentContextWrite(
+  tool: string,
+  args: Record<string, unknown>,
+  opts: { ownerId?: string | null; untrustedInput?: boolean },
+): boolean {
+  if (opts.untrustedInput || !opts.ownerId || !SILENT_CONTEXT_TOOLS.has(tool)) return false;
+  const owner = normalizeSlackUserId(opts.ownerId);
+  const target = silentTargetPath(tool, args);
+  if (!owner || !target) return false;
+  return isUnderContextOwner(target, owner);
+}
+
+/** `pagePath` is the canonical path returned by the wiki (relative to the wiki root). */
+export function canReadContextPath(pagePath: string, ownerId?: string | null): boolean {
+  if (!isContextWikiPath(pagePath)) return true;
+  return Boolean(ownerId) && isUnderContextOwner(pagePath, normalizeSlackUserId(ownerId ?? "") ?? "");
+}

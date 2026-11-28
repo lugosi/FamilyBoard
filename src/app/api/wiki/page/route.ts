@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { canReadContextPath } from "@/lib/personal-context-format";
 import {
   isWikilmGithubConfigured,
   readWikiPage,
@@ -21,6 +22,10 @@ export async function GET(request: Request) {
   }
   try {
     const page = await readWikiPage(path);
+    // Personal `.context/` pages are for the Slack assistant only; the shared board never serves them.
+    if (!canReadContextPath(page.path)) {
+      return NextResponse.json({ error: "Page not found" }, { status: 404 });
+    }
     return NextResponse.json({ page });
   } catch (e) {
     const message = e instanceof Error ? e.message : "wiki_error";

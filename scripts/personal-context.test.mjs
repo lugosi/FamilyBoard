@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
+  canReadContextPath,
+  isSilentContextWrite,
+  messageHasUntrustedInput,
   CONTEXT_ROOT,
   existingWikiPath,
   isContextWikiPath,
@@ -132,7 +135,7 @@ test("slack bot and agent wire silent .context facts with TTL", () => {
   assert.match(agent, /latest user message/);
   assert.match(agent, /Skipping write-back is correct/);
   assert.doesNotMatch(agent, /Skipping write-back is a bug/);
-  assert.match(agent, /wikiWriteTargetsSilentContext/);
+  assert.match(agent, /isSilentContextWrite/);
   assert.match(agent, /30×weight/);
   assert.match(agent, /STALE/);
   assert.match(agent, /open-loops\.md/);
@@ -159,6 +162,60 @@ test("create_wiki_page on an existing .context page appends silently", () => {
   const github = readFileSync(new URL("../src/lib/wikilm-github.ts", import.meta.url), "utf8");
   assert.match(github, /already exists at \$\{twin\.path\}; add to that page instead`, twin\.path\)/);
   assert.match(tools, /e\.code === "exists"/);
-  assert.match(tools, /wikiWriteTargetsSilentContext\(args\)/);
+  assert.match(tools, /wikiWriteTargetsContext\(args\)/);
   assert.match(tools, /mode: "append"/);
+});
+
+const ME = "U012ABCDEF";
+const edit = (path) => ({ path, text: "x", mode: "append" });
+
+test("silent write: only create/edit inside the speaker's own folder", () => {
+  const own = { ownerId: ME };
+  assert.equal(isSilentContextWrite("edit_wiki_section", edit(`.context/${ME}/open-loops.md`), own), true);
+  assert.equal(isSilentContextWrite("create_wiki_page", { category: `.context/${ME}`, title: "Hike" }, own), true);
+  assert.equal(isSilentContextWrite("edit_wiki_section", edit(".context/UOTHER99/profile.md"), own), false);
+  assert.equal(isSilentContextWrite("create_wiki_page", { category: ".context/UOTHER99", title: "x" }, own), false);
+  assert.equal(isSilentContextWrite("edit_wiki_section", edit("people/maya.md"), own), false);
+});
+
+test("silent write: traversal and look-alike paths need approval", () => {
+  const own = { ownerId: ME };
+  assert.equal(isSilentContextWrite("edit_wiki_section", edit(`.context/${ME}/../UOTHER99/x.md`), own), false);
+  assert.equal(isSilentContextWrite("edit_wiki_section", edit(`.context/${ME}.md`), own), false);
+  assert.equal(isSilentContextWrite("edit_wiki_section", edit(`.context/${ME}X/x.md`), own), false);
+  assert.equal(isSilentContextWrite("edit_wiki_section", {}, own), false);
+});
+
+test("silent write: move, delete, rewrite are never silent; no owner means no silent writes", () => {
+  const own = { ownerId: ME };
+  const path = `.context/${ME}/profile.md`;
+  for (const tool of ["move_wiki_page", "delete_wiki_page", "rewrite_wiki_page", "save_skill"]) {
+    assert.equal(isSilentContextWrite(tool, { path, newPath: `.context/${ME}/b.md` }, own), false);
+  }
+  assert.equal(isSilentContextWrite("move_wiki_page", { path: "people/maya.md", newPath: `.context/${ME}/x.md` }, own), false);
+  assert.equal(isSilentContextWrite("edit_wiki_section", edit(path), {}), false);
+  assert.equal(isSilentContextWrite("edit_wiki_section", edit(path), { ownerId: null }), false);
+});
+
+test("silent write: untrusted input in the turn forces approval", () => {
+  const args = edit(`.context/${ME}/open-loops.md`);
+  assert.equal(isSilentContextWrite("edit_wiki_section", args, { ownerId: ME, untrustedInput: true }), false);
+  assert.equal(messageHasUntrustedInput({ content: "hi" }), false);
+  assert.equal(messageHasUntrustedInput({ content: "hi", images: [{}] }), true);
+  assert.equal(messageHasUntrustedInput({ content: 'see\n\n[Attached image "a.jpg" (3 KB)]' }), true);
+  assert.equal(messageHasUntrustedInput({ content: '[Attached file "plan.pdf" (PDF)]\ntext' }), true);
+  assert.equal(messageHasUntrustedInput({ content: '[Image reading "a.jpg" (machine-read)]' }), true);
+});
+
+test("context reads: own folder only; shared pages unaffected", () => {
+  assert.equal(canReadContextPath("people/maya.md", ME), true);
+  assert.equal(canReadContextPath("people/maya.md"), true);
+  assert.equal(canReadContextPath(`.context/${ME}/profile.md`, ME), true);
+  assert.equal(canReadContextPath(".context/UOTHER99/profile.md", ME), false);
+  assert.equal(canReadContextPath(`.context/${ME}/profile.md`), false);
+});
+
+test("wiki page API refuses .context pages", () => {
+  const route = readFileSync(new URL("../src/app/api/wiki/page/route.ts", import.meta.url), "utf8");
+  assert.match(route, /canReadContextPath\(page\.path\)/);
 });

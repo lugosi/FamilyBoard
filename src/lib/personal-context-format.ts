@@ -17,6 +17,13 @@ import {
 
 export { CONTEXT_ROOT };
 export {
+  canReadContextPath,
+  isSilentContextWrite,
+  messageHasUntrustedInput,
+  SILENT_CONTEXT_TOOLS,
+  UNTRUSTED_INPUT_TOOLS,
+} from "./wiki-format";
+export {
   bumpFactOnRecurrence,
   CONTEXT_FACT_BASE_TTL_DAYS,
   CONTEXT_FACT_MAX_WEIGHT,
@@ -76,11 +83,8 @@ export function isPersonalContextPath(path: string, slackUserId?: string): boole
   return p === CONTEXT_ROOT || p.startsWith(`${CONTEXT_ROOT}/`);
 }
 
-/**
- * True when a wiki write tool args targets `.context/…` — those apply immediately
- * (no Approve) so continuity can update silently.
- */
-export function wikiWriteTargetsSilentContext(args: Record<string, unknown>): boolean {
+/** True when a wiki tool's args point anywhere under `.context/…`. */
+export function wikiWriteTargetsContext(args: Record<string, unknown>): boolean {
   for (const key of ["path", "newPath"] as const) {
     const raw = args[key];
     if (typeof raw === "string" && isPersonalContextPath(raw)) return true;

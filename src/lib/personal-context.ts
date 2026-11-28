@@ -1,6 +1,7 @@
 /**
- * Slack continuity POC (Layer A.5): hidden `.context/<SlackUserId>/` wiki folders.
- * Writes under that prefix apply immediately (no Approve). Shared family wiki still.
+ * Slack continuity (Layer A.5): hidden `.context/<SlackUserId>/` wiki folders.
+ * The speaker's own folder takes silent create/edit writes (no Approve) when the turn has no
+ * attachments or outside content. Lives in the shared family wiki repo.
  */
 
 import { getDefaultTimeZone } from "./google";
@@ -50,7 +51,10 @@ export {
   personalContextPaths,
   personalFolder,
   PERSONAL_ROOT,
-  wikiWriteTargetsSilentContext,
+  canReadContextPath,
+  isSilentContextWrite,
+  messageHasUntrustedInput,
+  wikiWriteTargetsContext,
 } from "./personal-context-format";
 
 function todayInFamilyZone(): string {

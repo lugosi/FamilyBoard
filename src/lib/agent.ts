@@ -66,7 +66,11 @@ import {
 import { wikiTools } from "./agent-wiki-tools";
 import { restoreWikiReadsMap } from "./agent-wiki-reads";
 import { readGoogleSheet } from "./sheets";
-import { wikiWriteTargetsSilentContext } from "./personal-context-format";
+import {
+  isSilentContextWrite,
+  messageHasUntrustedInput,
+  UNTRUSTED_INPUT_TOOLS,
+} from "./personal-context-format";
 import { imageReadingScope } from "./image-extraction-format";
 import {
   buildWikiIndex,
@@ -134,6 +138,8 @@ export type AgentToolContext = {
   skipWriteApproval?: boolean;
   /** Slack conversation key; scopes cached image readings. */
   conversationKey?: string;
+  /** Slack user id of the speaker; the only `.context/<id>/` folder this request may read or silently write. */
+  contextOwnerId?: string;
 };
 
 type ToolOutcome = {
@@ -703,7 +709,7 @@ function buildSystemPrompt(input: {
     ...AGENT_GROUNDING_RULES,
     ...TOPIC_FOCUS_RULES,
     "Use tools to act; never claim you changed the calendar, todos, or wiki unless a tool call succeeded (and was not pending_approval).",
-    "Calendar writes and family-wiki writes (people/, house/, … — create/edit/move/delete, save_skill) need Approve/Deny first (web and Slack buttons; Slack also accepts reply approve / deny). Summarize what you proposed; do not say you already wrote those. Exception: paths under `.context/<SlackUserId>/` apply immediately with NO Approve — use those for silent personal continuity.",
+    "Calendar writes and family-wiki writes (people/, house/, … — create/edit/move/delete, save_skill) need Approve/Deny first (web and Slack buttons; Slack also accepts reply approve / deny). Summarize what you proposed; do not say you already wrote those. Exception: create_wiki_page / edit_wiki_section inside the speaker's own `.context/<SlackUserId>/` folder apply immediately with NO Approve (silent personal continuity), unless the message has an attachment or you used search_web / fetch_url / scan_inbox / read_google_sheet this turn — then they are proposed like any other write. Moving, deleting or rewriting `.context/` pages always needs Approve, and you cannot read or search other people's `.context/` folders.",
     "Todos are short-term family tasks. When the wiki is configured they live on wiki page todos/list.md (checklist); otherwise a local list. Prefer list_todos / add_todo / update_todo / complete_todo over hand-editing that page. Durable facts still belong in other wiki folders (people, house, …).",
     "Only delete an event when the user explicitly asked to remove or cancel it. If a request is ambiguous (missing day or time), ask one short question instead of guessing.",
     "After a write is approved and applied, confirm in one or two sentences with the local day and time (Pacific).",
@@ -777,7 +783,7 @@ function buildSystemPrompt(input: {
         ? `This is a DM: read and update pages under \`${pc.folder}/\` when the latest message is about them.`
         : "This is a shared channel: prefer open-loops / thin profile for write-back; avoid dumping private detail into the channel reply.",
       "Only read a context page (read_wiki_page) when the latest message matches it; do not open a page for another topic.",
-      "SILENT WRITES (no Approve): edit_wiki_section / create_wiki_page under this folder apply immediately, only for new durable facts the latest message just stated — do not wait for “remember” / “save”. Topic-agnostic: pets, hikes, trips, work, house, training, shopping — anything they may follow up on after chat memory dies.",
+      "SILENT WRITES (no Approve): edit_wiki_section / create_wiki_page under this folder apply immediately (unless the message has an attachment or you used web/file/mail tools this turn; then it is proposed for Approve, so tell them in a few words), only for new durable facts the latest message just stated — do not wait for “remember” / “save”. Topic-agnostic: pets, hikes, trips, work, house, training, shopping — anything they may follow up on after chat memory dies.",
       "Where to put it:",
       `- Default: open-loops.md ## Active — one short bullet for any in-flight topic (hike prep, trip planning, work project, pet illness, house issue, “still deciding …”). Clear when resolved.`,
       `- Topic page: if a theme has lasting detail (gear list, itinerary, work prefs, pet health), use an existing page (pets.md, strava.md, …) or create_wiki_page with category \`${pc.folder}\` and a short title (e.g. hike, travel, work) — silent. Put durable lines under ## Facts.`,
@@ -933,7 +939,7 @@ export async function runFamilyAgent(input: {
   conversationKey?: string;
   /** When true, calendar/wiki write tools run immediately (approve path). */
   skipWriteApproval?: boolean;
-  /** Slack `.context/<user>/` folder index (Layer A.5 continuity POC). */
+  /** Slack `.context/<user>/` folder index (Layer A.5 continuity). */
   personalContext?: {
     slackUserId: string;
     folder: string;
@@ -966,7 +972,12 @@ export async function runFamilyAgent(input: {
     wikiReads: new Map(),
     skipWriteApproval: input.skipWriteApproval,
     conversationKey: input.conversationKey,
+    contextOwnerId: input.personalContext?.slackUserId,
   };
+  let untrustedInput = (() => {
+    const last = input.messages[input.messages.length - 1];
+    return last?.role === "user" && messageHasUntrustedInput(last);
+  })();
   const contents: GeminiContent[] = toGeminiContents(input.messages);
   const actions: AgentAction[] = [];
   const staged: PendingWriteItem[] = [];
@@ -1007,6 +1018,9 @@ export async function runFamilyAgent(input: {
     // Snapshot reads from prior rounds so a parallel [read_wiki_page, rewrite_wiki_page]
     // in one model turn cannot bypass reading the page contents first.
     const readsBeforeRound = new Map(ctx.wikiReads);
+    const roundUntrusted =
+      untrustedInput || calls.some((c) => UNTRUSTED_INPUT_TOOLS.has(c.functionCall!.name));
+    untrustedInput = roundUntrusted;
     const responses: GeminiPart[] = [];
     for (const part of calls) {
       const call = part.functionCall!;
@@ -1025,7 +1039,10 @@ export async function runFamilyAgent(input: {
       } else if (
         WRITE_TOOLS_NEEDING_APPROVAL.has(call.name) &&
         !ctx.skipWriteApproval &&
-        !wikiWriteTargetsSilentContext(call.args ?? {})
+        !isSilentContextWrite(call.name, call.args ?? {}, {
+          ownerId: ctx.contextOwnerId,
+          untrustedInput: roundUntrusted,
+        })
       ) {
         const args = call.args ?? {};
         const preError = tool.beforeStage?.(args, { ...ctx, wikiReads: readsBeforeRound });
