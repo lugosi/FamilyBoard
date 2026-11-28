@@ -7,6 +7,7 @@ import {
   markApprovalResolvedInTurns,
 } from "./agent-pending-writes-format";
 import { markPendingBatch } from "./agent-pending-writes";
+import { scrubImageTurnReplies } from "./image-extraction-format";
 
 export {
   expireStaleApprovalsInTurns,
@@ -22,7 +23,7 @@ export type StoredChatAttachment = {
   kind: "sheet" | "text" | "image";
   summary: string;
   text: string;
-  /** Image bytes are not persisted — only metadata + OCR/text summary. */
+  /** Image bytes are not persisted, and neither is the model's reply to an image turn. */
   mimeType?: string;
 };
 
@@ -90,7 +91,7 @@ export function titleFromTurns(turns: StoredChatTurn[]): string {
 /** Drop large image payloads before writing to disk; clear expired approvals. */
 export function sanitizeTurnsForStorage(turns: StoredChatTurn[]): StoredChatTurn[] {
   const { turns: withExpiry } = expireStaleApprovalsInTurns(turns);
-  return withExpiry.slice(-MAX_TURNS).map((t) => ({
+  return scrubImageTurnReplies(withExpiry.slice(-MAX_TURNS)).map((t) => ({
     ...t,
     attachments: t.attachments?.map(({ name, kind, summary, text, mimeType }) => ({
       name,

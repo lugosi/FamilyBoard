@@ -17,6 +17,12 @@ import {
   stripChatChartFences,
   type ChatChartSpec,
 } from "./chat-chart";
+import {
+  IMAGE_REPLY_SCRUBBED,
+  imageReadingScope,
+  readingsPrompt,
+} from "./image-extraction-format";
+import { cacheImageReadings, listReadings } from "./image-extractions";
 import { clearChatHistory, getChatHistory, saveChatHistory } from "./chat-memory";
 import {
   clipSlackText,
@@ -226,6 +232,7 @@ export function toIncoming(
 
 async function readSlackFiles(
   files: SlackFile[],
+  scope: string,
 ): Promise<{ attachments: ChatAttachment[]; problems: string[] }> {
   const attachments: ChatAttachment[] = [];
   const problems: string[] = [];
@@ -246,6 +253,7 @@ async function readSlackFiles(
     }
   }
   if (files.length > MAX_ATTACHMENTS) problems.push(`I only read the first ${MAX_ATTACHMENTS} files.`);
+  await cacheImageReadings(scope, attachments);
   return { attachments, problems };
 }
 
@@ -339,7 +347,7 @@ async function handle(msg: Incoming): Promise<void> {
       const { registerSlackDailyBriefUser } = await import("./daily-brief-store");
       await registerSlackDailyBriefUser(msg.user);
     }
-    const { attachments, problems } = await readSlackFiles(msg.files);
+    const { attachments, problems } = await readSlackFiles(msg.files, imageReadingScope("slack", key));
     if (!msg.text && !attachments.length) {
       await reply(problems.join("\n") || "I couldn't read that file.");
       return;
@@ -399,8 +407,13 @@ async function handle(msg: Incoming): Promise<void> {
         e instanceof Error ? e.message : e,
       );
     }
+    // Cached photo readings stand in for image bytes from earlier turns; never saved to history.
+    const readingBlock = readingsPrompt(await listReadings(imageReadingScope("slack", key)));
+    const agentTurns = readingBlock
+      ? [...turns.slice(0, -1), { ...userTurn, content: `${userTurn.content}\n\n${readingBlock}` }]
+      : turns;
     const result = await runFamilyAgent({
-      messages: turns,
+      messages: agentTurns,
       redirectUri: getBackgroundGoogleRedirectUri(),
       channel: "slack",
       senderName: name,
@@ -414,7 +427,7 @@ async function handle(msg: Incoming): Promise<void> {
     // Don't keep image bytes in the 30‑minute chat memory.
     await saveChatHistory(key, [
       ...turns.map(({ role, content }) => ({ role, content })),
-      { role: "model", content: result.reply },
+      { role: "model", content: images.length ? IMAGE_REPLY_SCRUBBED : result.reply },
     ]);
     const changed = result.actions.filter((a) => !a.ok || !READ_ONLY_TOOLS.has(a.tool));
     const footer = slackActionFooter(changed);
