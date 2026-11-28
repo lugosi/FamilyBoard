@@ -62,13 +62,19 @@ function monitorErrorLabel(error: string): string {
   return error;
 }
 
+function sameSlackUser(a: string, b: string): boolean {
+  return a.trim().toUpperCase() === b.trim().toUpperCase();
+}
+
 function slackRecipientSummary(
   ids: string[] | undefined,
   targets: { userId: string; name: string }[],
 ): string {
   const list = ids ?? [];
   if (!list.length) return "Slack (everyone listed)";
-  const names = list.map((id) => targets.find((t) => t.userId === id)?.name || id);
+  const names = list.map(
+    (id) => targets.find((t) => sameSlackUser(t.userId, id))?.name || id,
+  );
   return `Slack · ${names.join(", ")}`;
 }
 
@@ -475,6 +481,7 @@ export function WikiLlm({
   const [monitors, setMonitors] = useState<AgentMonitorRow[]>([]);
   const [monitorsEnabled, setMonitorsEnabled] = useState(true);
   const [slackTargets, setSlackTargets] = useState<SlackDeliveryTarget[]>([]);
+  const [slackNameError, setSlackNameError] = useState<string | null>(null);
   const [monitorForm, setMonitorForm] = useState(DEFAULT_MONITOR_FORM);
   const [editingMonitorId, setEditingMonitorId] = useState<string | null>(null);
   const [wikiFocus, setWikiFocus] = useState<{ path: string; nonce: number } | null>(null);
@@ -699,11 +706,13 @@ export function WikiLlm({
         enabled?: boolean;
         monitors?: AgentMonitorRow[];
         slackTargets?: SlackDeliveryTarget[];
+        slackNameError?: string | null;
       };
       if (signalArg?.aborted) return;
       setMonitorsEnabled(json.enabled !== false);
       setMonitors(json.monitors ?? []);
       setSlackTargets(json.slackTargets ?? []);
+      setSlackNameError(json.slackNameError ?? null);
     } catch {
       /* optional */
     }
@@ -1980,6 +1989,9 @@ export function WikiLlm({
                       {monitorForm.deliverSlack && status?.slackConfigured ? (
                         <fieldset className="grid gap-1.5 rounded-md border border-slate-800 bg-slate-950/50 px-2.5 py-2">
                           <legend className="px-1 text-sm text-slate-500">Who gets the DM?</legend>
+                          {slackNameError ? (
+                            <p className="text-xs text-amber-200">{slackNameError}</p>
+                          ) : null}
                           {slackTargets.length === 0 ? (
                             <p className="text-xs text-slate-500">
                               Add <code className="text-slate-400">slack: U…</code> to a wiki people page,
@@ -1996,7 +2008,9 @@ export function WikiLlm({
                               </p>
                               <div className="flex flex-wrap gap-2">
                                 {slackTargets.map((t) => {
-                                  const checked = monitorForm.slackUserIds.includes(t.userId);
+                                  const checked = monitorForm.slackUserIds.some((id) =>
+                                    sameSlackUser(id, t.userId),
+                                  );
                                   return (
                                     <label
                                       key={t.userId}
@@ -2013,7 +2027,7 @@ export function WikiLlm({
                                           setMonitorForm((f) => ({
                                             ...f,
                                             slackUserIds: checked
-                                              ? f.slackUserIds.filter((id) => id !== t.userId)
+                                              ? f.slackUserIds.filter((id) => !sameSlackUser(id, t.userId))
                                               : [...f.slackUserIds, t.userId],
                                           }))
                                         }
@@ -2129,12 +2143,17 @@ export function WikiLlm({
                                         if (!res.ok) {
                                           throw new Error(json.error || `Failed (${res.status})`);
                                         }
+                                        const problem = json.error ? monitorErrorLabel(json.error) : "";
+                                        if (problem) setError(problem);
+                                        const label = isBrief ? "Morning brief" : "Check";
                                         setNote(
-                                          json.webSessionId
-                                            ? `${isBrief ? "Morning brief" : "Check"} ran · opened chat`
-                                            : json.skipped
-                                              ? `Skipped (${json.skipped})`
-                                              : `${isBrief ? "Morning brief" : "Check"} ran`,
+                                          problem
+                                            ? `${label} ran, but Slack did not deliver`
+                                            : json.webSessionId
+                                              ? `${label} ran · opened chat`
+                                              : json.skipped
+                                                ? `Skipped (${json.skipped})`
+                                                : `${label} ran`,
                                         );
                                         await refreshMonitors();
                                         await refreshSessionList();
