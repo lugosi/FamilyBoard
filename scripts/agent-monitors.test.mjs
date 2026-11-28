@@ -24,7 +24,9 @@ test("scheduled prompt always reports, and a Slack send with nobody to message i
   const src = readFileSync(new URL("../src/lib/agent-monitors.ts", import.meta.url), "utf8");
   assert.match(src, /monitorDueSlot/);
   assert.match(src, /dueCronSlot/);
+  assert.match(src, /not a live or real-time watch/);
   assert.match(src, /Always answer in this reply/);
+  assert.match(src, /fetch_url/);
   assert.match(src, /no_slack_recipients/);
   assert.match(src, /Nothing new to report/);
   assert.match(src, /listSlackDeliveryTargets/);

@@ -413,7 +413,7 @@ const searchTools: Tool[] = [
     declaration: {
       name: "fetch_url",
       description:
-        "Fetch a public http(s) URL and return readable text (HTML stripped; PDFs extracted to text). Use for concrete links in skills or messages — gym class schedules, PDF flyers/schedules, ICS/calendar feeds, static timetable pages, CSV. Not for Google Search (use search_web) or private Google Docs/Sheets (use read_google_sheet). Blocks private/local hosts.",
+        "Fetch a public http(s) URL and return readable text (HTML stripped; PDFs extracted to text). Use for a concrete link in a skill, message, or scheduled check — gym schedules, PDF flyers, ICS feeds, timetables, CSV, or a product page when the check asks for the price shown there. One fetch is a snapshot of that page, not a live watch. Not for Google Search (use search_web) or private Google Docs/Sheets (use read_google_sheet). Blocks private/local hosts.",
       parameters: {
         type: "object",
         properties: {

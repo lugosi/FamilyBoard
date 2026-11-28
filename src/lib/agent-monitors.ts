@@ -27,7 +27,7 @@ import { readDailyBriefStore } from "./daily-brief-store";
 import { isGeminiConfigured } from "./gemini";
 import { getDefaultTimeZone } from "./google";
 import { markdownForSlack } from "./markdown-slack";
-import { isSlackConfigured, postSlackMessage } from "./slack";
+import { getSlackUserName, isSlackConfigured, postSlackMessage } from "./slack";
 
 export type AgentMonitorRunResult = {
   id: string;
@@ -61,7 +61,13 @@ export function buildMonitorPrompt(monitor: AgentMonitor): string {
   bits.push("");
   bits.push(monitor.prompt.trim());
   bits.push(
-    "Always answer in this reply with the result (for a price check: the current price, and whether it crossed the alert). Say so when nothing changed. Do not stay silent, and do not treat a wiki write as a substitute for this reply.",
+    "This run is one scheduled snapshot, not a live or real-time watch. A price or other fact can change before the next check; that is expected. Do not refuse, and do not decline because the value might change later.",
+  );
+  bits.push(
+    "If the check includes a page or product URL, call fetch_url on it and report the price or other fact printed in that result. If that text has no price, call search_web and use only figures that appear there. If neither shows a number, say the page did not include one — do not invent a price.",
+  );
+  bits.push(
+    "Always answer in this reply with that snapshot and whether it crossed any alert in the check. Say so when nothing changed. Do not stay silent, and do not treat a wiki write as a substitute for this reply.",
   );
   return bits.join("\n");
 }
@@ -119,6 +125,23 @@ function monitorReplyText(reply: string): string {
   const text = reply.trim();
   if (!text || text === "Done.") return "Checked. Nothing new to report.";
   return reply.trim();
+}
+
+async function slackFailureNote(
+  fails: { userId: string; error?: string }[],
+): Promise<string> {
+  const parts: string[] = [];
+  for (const fail of fails) {
+    let who = fail.userId;
+    try {
+      who = (await getSlackUserName(fail.userId)) || fail.userId;
+    } catch {
+      who = fail.userId;
+    }
+    const why = (fail.error || "failed").replace(/^Slack [^:]+:\s*/, "");
+    parts.push(`${who}: ${why}`);
+  }
+  return `slack_failed:${parts.join("; ")}`;
 }
 
 async function deliverSlack(
@@ -240,7 +263,7 @@ async function runMorningBriefMonitor(
   const slackFails = result.slack.filter((s) => !s.ok);
   const error =
     slackFails.length > 0
-      ? `slack_failed:${slackFails.map((s) => s.userId).join(",")}`
+      ? await slackFailureNote(slackFails)
       : monitor.deliverSlack && result.slack.length === 0
         ? isSlackConfigured()
           ? "no_slack_recipients"
@@ -397,7 +420,7 @@ export async function runAgentMonitor(
     const slackFails = slack.filter((s) => !s.ok);
     const error =
       slackFails.length > 0
-        ? `slack_failed:${slackFails.map((s) => s.userId).join(",")}`
+        ? await slackFailureNote(slackFails)
         : slackNote
           ? slackNote
           : monitor.deliverWeb && !webSessionId
