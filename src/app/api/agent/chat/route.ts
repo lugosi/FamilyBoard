@@ -8,6 +8,8 @@ import {
   imagePromptNote,
   sanitizeAttachments,
 } from "@/lib/attachments";
+import { findReading, hashImageData, readingsPrompt } from "@/lib/image-extraction-format";
+import { listReadings } from "@/lib/image-extractions";
 import { boardAccountKey, normalizeBoardMemberId } from "@/lib/strava";
 
 type ChatMessage = {
@@ -37,18 +39,29 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  const messages: GeminiMessage[] = (body.messages ?? [])
-    .filter((m) => m.role !== "system")
-    .map((m) => {
+  const readings = await listReadings("board");
+  const incoming = (body.messages ?? []).filter((m) => m.role !== "system");
+  const messages: GeminiMessage[] = incoming
+    .map((m, idx) => {
       const role =
         m.role === "model" || m.role === "assistant" ? ("model" as const) : ("user" as const);
       const files = role === "user" ? sanitizeAttachments(m.attachments) : [];
       const text = m.content?.trim() ?? "";
       const note = imagePromptNote(files);
       const filePrompt = attachmentsToPrompt(files);
-      const extras = [filePrompt, note].filter(Boolean).join("\n\n");
+      const cached = new Set<string>();
+      const known = files.flatMap((f) => {
+        const hit = f.kind === "image" && f.data ? findReading(readings, "board", hashImageData(f.data), Date.now()) : null;
+        if (hit && f.data) cached.add(f.data);
+        return hit ? [hit] : [];
+      });
+      const extras = [filePrompt, note, readingsPrompt(known)].filter(Boolean).join("\n\n");
       const content = extras ? `${text || "(see attached)"}\n\n${extras}` : text;
-      const images = imageAttachments(files).map(({ mimeType, data }) => ({ mimeType, data }));
+      const isLast = idx === incoming.length - 1;
+      // Once an image has a cached reading, only the newest turn carries the bytes.
+      const images = imageAttachments(files)
+        .filter(({ data }) => isLast || !cached.has(data))
+        .map(({ mimeType, data }) => ({ mimeType, data }));
       return {
         role,
         content,

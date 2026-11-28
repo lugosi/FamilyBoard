@@ -5,6 +5,7 @@ import {
   MAX_ATTACHMENTS,
   type ChatAttachment,
 } from "@/lib/attachments";
+import { cacheImageReadings } from "@/lib/image-extractions";
 
 /** Convert uploaded files (multipart field "file") into text attachments for the chat. */
 export async function POST(request: Request) {
@@ -38,5 +39,6 @@ export async function POST(request: Request) {
   if (!attachments.length) {
     return NextResponse.json({ error: errors.join(" ") }, { status: 400 });
   }
+  await cacheImageReadings("board", attachments);
   return NextResponse.json({ attachments, errors });
 }
