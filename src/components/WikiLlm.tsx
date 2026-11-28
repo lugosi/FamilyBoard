@@ -44,6 +44,19 @@ const DEFAULT_MONITOR_FORM = {
   slackUserIds: [] as string[],
 };
 
+function freshMonitorForm(slackOn: boolean) {
+  return { ...DEFAULT_MONITOR_FORM, deliverSlack: slackOn };
+}
+
+function monitorErrorLabel(error: string): string {
+  if (error === "no_slack_recipients") return "Slack is on, but nobody to message";
+  if (error === "slack_not_configured") return "Slack isn’t configured";
+  if (error === "nowhere_to_deliver") return "Neither chat nor Slack is on";
+  if (error === "web_session_failed") return "Couldn’t save the chat update";
+  if (error.startsWith("slack_failed")) return "Slack didn’t accept the message";
+  return error;
+}
+
 const PRICE_WATCH_EXAMPLE =
   "Check this product page and tell me the current price. Alert me if it drops below $40: https://example.com/product";
 
@@ -723,6 +736,15 @@ export function WikiLlm({
       setError(e instanceof Error ? e.message : "Failed to load AI tab");
     }
   }, [refreshMonitors]);
+
+  useEffect(() => {
+    if (!status?.slackConfigured || editingMonitorId) return;
+    setMonitorForm((f) => {
+      if (f.deliverSlack || f.prompt.trim() || f.title.trim()) return f;
+      if (f.schedule !== DEFAULT_MONITOR_FORM.schedule) return f;
+      return { ...f, deliverSlack: true };
+    });
+  }, [status?.slackConfigured, editingMonitorId]);
 
   useEffect(() => {
     if (!active) return;
@@ -1761,7 +1783,7 @@ export function WikiLlm({
                               const json = (await res.json()) as { error?: string };
                               if (!res.ok) throw new Error(json.error || `Failed (${res.status})`);
                               const wasEdit = Boolean(editingMonitorId);
-                              setMonitorForm(DEFAULT_MONITOR_FORM);
+                              setMonitorForm(freshMonitorForm(Boolean(status?.slackConfigured)));
                               setEditingMonitorId(null);
                               setNote(wasEdit ? "Check updated" : "Check saved — it’ll run on that schedule");
                               await refreshMonitors();
@@ -1919,7 +1941,7 @@ export function WikiLlm({
                             className="text-sky-300 underline underline-offset-2 hover:text-sky-200"
                             onClick={() => {
                               setEditingMonitorId(null);
-                              setMonitorForm(DEFAULT_MONITOR_FORM);
+                              setMonitorForm(freshMonitorForm(Boolean(status?.slackConfigured)));
                             }}
                           >
                             Cancel edit
@@ -1948,13 +1970,13 @@ export function WikiLlm({
                               Add <code className="text-slate-400">slack: U…</code> to a wiki people page,
                               or have someone DM the bot (they’ll show up as registered).
                               {monitorForm.slackUserIds.length === 0
-                                ? " Empty selection → all registered morning-brief subscribers."
+                                ? " With nobody listed, this check will say Slack had no one to message."
                                 : ""}
                             </p>
                           ) : (
                             <>
                               <p className="text-xs text-slate-500">
-                                Leave everyone unchecked to DM all registered subscribers. Wiki people
+                                Leave everyone unchecked to DM every person listed here. Wiki people
                                 need <code className="text-slate-400">slack: U…</code> in frontmatter.
                               </p>
                               <div className="flex flex-wrap gap-2">
@@ -2042,7 +2064,7 @@ export function WikiLlm({
                                       })
                                     : "not yet"}
                                   {m.lastError ? (
-                                    <span className="text-amber-200"> · {m.lastError}</span>
+                                    <span className="text-amber-200"> · {monitorErrorLabel(m.lastError)}</span>
                                   ) : null}
                                 </div>
                               </div>
@@ -2175,7 +2197,7 @@ export function WikiLlm({
                                           );
                                           if (editingMonitorId === m.id) {
                                             setEditingMonitorId(null);
-                                            setMonitorForm(DEFAULT_MONITOR_FORM);
+                                            setMonitorForm(freshMonitorForm(Boolean(status?.slackConfigured)));
                                           }
                                           await refreshMonitors();
                                         } finally {

@@ -20,14 +20,14 @@ import {
   MORNING_BRIEF_MONITOR_ID,
   type AgentMonitor,
 } from "./agent-monitors-store";
-import { cronMatches, cronSlotKey, describeCron, zonedCronParts } from "./cron";
+import { cronSlotKey, describeCron, dueCronSlot } from "./cron";
+import { listSlackDeliveryTargets, type SlackDeliveryTarget } from "./wiki-slack-people";
 import { runDailyBrief } from "./daily-brief";
 import { readDailyBriefStore } from "./daily-brief-store";
 import { isGeminiConfigured } from "./gemini";
 import { getDefaultTimeZone } from "./google";
 import { markdownForSlack } from "./markdown-slack";
 import { isSlackConfigured, postSlackMessage } from "./slack";
-import { listSlackDeliveryTargets, type SlackDeliveryTarget } from "./wiki-slack-people";
 
 export type AgentMonitorRunResult = {
   id: string;
@@ -60,23 +60,65 @@ export function buildMonitorPrompt(monitor: AgentMonitor): string {
   }
   bits.push("");
   bits.push(monitor.prompt.trim());
+  bits.push(
+    "Always answer in this reply with the result (for a price check: the current price, and whether it crossed the alert). Say so when nothing changed. Do not stay silent, and do not treat a wiki write as a substitute for this reply.",
+  );
   return bits.join("\n");
 }
 
+function createdSlot(monitor: AgentMonitor): string | null {
+  const created = Date.parse(monitor.createdAt);
+  if (!Number.isFinite(created)) return null;
+  return cronSlotKey(new Date(created), monitor.timeZone);
+}
+
+/** Cron slot this monitor should run for `now`, or null when it is not due. */
+export function monitorDueSlot(monitor: AgentMonitor, now: Date): string | null {
+  if (!monitor.enabled) return null;
+  return dueCronSlot(
+    monitor.cron,
+    now,
+    monitor.timeZone,
+    monitor.lastRunSlot,
+    createdSlot(monitor),
+  );
+}
+
 function isDue(monitor: AgentMonitor, now: Date): boolean {
-  if (!monitor.enabled) return false;
-  const parts = zonedCronParts(now, monitor.timeZone);
-  if (!cronMatches(monitor.cron, parts)) return false;
-  const slot = cronSlotKey(now, monitor.timeZone);
-  return monitor.lastRunSlot !== slot;
+  return monitorDueSlot(monitor, now) !== null;
+}
+
+/** Explicit recipients, or everyone the picker can DM (wiki people + registered). */
+export function monitorSlackRecipients(explicit: string[], fallback: string[]): string[] {
+  if (explicit.length) return [...explicit];
+  const out: string[] = [];
+  for (const id of fallback) {
+    if (id && !out.includes(id)) out.push(id);
+  }
+  return out;
 }
 
 /** Resolve who gets Slack DMs for this monitor. */
 export async function resolveMonitorSlackUserIds(monitor: AgentMonitor): Promise<string[]> {
   if (!monitor.deliverSlack) return [];
-  if (monitor.slackUserIds.length) return [...monitor.slackUserIds];
-  const store = await readDailyBriefStore();
-  return [...store.slackUserIds];
+  const targets = await listSlackDeliveryTargets();
+  let registered: string[] = [];
+  try {
+    const store = await readDailyBriefStore();
+    registered = store.slackUserIds;
+  } catch {
+    registered = [];
+  }
+  return monitorSlackRecipients(monitor.slackUserIds, [
+    ...targets.map((t) => t.userId),
+    ...registered,
+  ]);
+}
+
+function monitorReplyText(reply: string): string {
+  const text = reply.trim();
+  if (!text || text === "Done.") return "Checked. Nothing new to report.";
+  return reply.trim();
 }
 
 async function deliverSlack(
@@ -199,9 +241,13 @@ async function runMorningBriefMonitor(
   const error =
     slackFails.length > 0
       ? `slack_failed:${slackFails.map((s) => s.userId).join(",")}`
-      : monitor.deliverWeb && !webSessionId
-        ? "web_session_failed"
-        : null;
+      : monitor.deliverSlack && result.slack.length === 0
+        ? isSlackConfigured()
+          ? "no_slack_recipients"
+          : "slack_not_configured"
+        : monitor.deliverWeb && !webSessionId
+          ? "web_session_failed"
+          : null;
 
   await markAgentMonitorRan(monitor.id, {
     slot: opts.slot,
@@ -226,7 +272,8 @@ export async function runAgentMonitor(
   opts?: { force?: boolean; now?: Date },
 ): Promise<AgentMonitorRunResult> {
   const now = opts?.now ?? new Date();
-  const slot = cronSlotKey(now, monitor.timeZone);
+  const dueSlot = monitorDueSlot(monitor, now);
+  const slot = opts?.force ? cronSlotKey(now, monitor.timeZone) : (dueSlot ?? cronSlotKey(now, monitor.timeZone));
 
   if (!areAgentMonitorsEnabled() && !opts?.force) {
     return {
@@ -240,18 +287,6 @@ export async function runAgentMonitor(
     };
   }
 
-  if (!opts?.force && !isDue(monitor, now)) {
-    return {
-      id: monitor.id,
-      title: monitor.title,
-      slot,
-      reply: "",
-      webSessionId: null,
-      slack: [],
-      skipped: "not_due",
-    };
-  }
-
   if (!monitor.enabled && !opts?.force) {
     return {
       id: monitor.id,
@@ -261,6 +296,18 @@ export async function runAgentMonitor(
       webSessionId: null,
       slack: [],
       skipped: "disabled",
+    };
+  }
+
+  if (!opts?.force && !dueSlot) {
+    return {
+      id: monitor.id,
+      title: monitor.title,
+      slot,
+      reply: "",
+      webSessionId: null,
+      slack: [],
+      skipped: "not_due",
     };
   }
 
@@ -301,6 +348,7 @@ export async function runAgentMonitor(
       redirectUri: getBackgroundGoogleRedirectUri(),
       channel: monitor.deliverSlack && !monitor.deliverWeb ? "slack" : "board",
     });
+    const reply = monitorReplyText(result.reply);
 
     let webSessionId: string | null = null;
     if (monitor.deliverWeb) {
@@ -308,7 +356,7 @@ export async function runAgentMonitor(
         webSessionId = await deliverWebSession(
           monitor,
           prompt,
-          result.reply,
+          reply,
           result.actions ?? [],
         );
       } catch (e) {
@@ -320,19 +368,29 @@ export async function runAgentMonitor(
     }
 
     let slack: AgentMonitorRunResult["slack"] = [];
+    let slackNote: string | null = null;
     if (monitor.deliverSlack) {
       try {
-        const userIds = await resolveMonitorSlackUserIds(monitor);
-        slack = await deliverSlack(
-          userIds,
-          formatSlackDelivery(monitor, result.reply),
-          monitor.timeZone || getDefaultTimeZone(),
-        );
+        if (!isSlackConfigured()) {
+          slackNote = "slack_not_configured";
+        } else {
+          const userIds = await resolveMonitorSlackUserIds(monitor);
+          if (!userIds.length) {
+            slackNote = "no_slack_recipients";
+          } else {
+            slack = await deliverSlack(
+              userIds,
+              formatSlackDelivery(monitor, reply),
+              monitor.timeZone || getDefaultTimeZone(),
+            );
+          }
+        }
       } catch (e) {
         console.warn(
           "[agent-monitors] slack failed:",
           e instanceof Error ? e.message : e,
         );
+        slackNote = "slack_failed";
       }
     }
 
@@ -340,9 +398,13 @@ export async function runAgentMonitor(
     const error =
       slackFails.length > 0
         ? `slack_failed:${slackFails.map((s) => s.userId).join(",")}`
-        : monitor.deliverWeb && !webSessionId
-          ? "web_session_failed"
-          : null;
+        : slackNote
+          ? slackNote
+          : monitor.deliverWeb && !webSessionId
+            ? "web_session_failed"
+            : !monitor.deliverWeb && !monitor.deliverSlack
+              ? "nowhere_to_deliver"
+              : null;
 
     await markAgentMonitorRan(monitor.id, {
       slot,
@@ -358,7 +420,7 @@ export async function runAgentMonitor(
       id: monitor.id,
       title: monitor.title,
       slot,
-      reply: result.reply,
+      reply,
       webSessionId,
       slack,
       ...(error ? { error } : {}),

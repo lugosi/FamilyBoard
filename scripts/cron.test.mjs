@@ -5,6 +5,7 @@ import {
   cronForSchedulePreset,
   cronMatches,
   cronSlotKey,
+  dueCronSlot,
   describeCron,
   isValidCron,
   parseCron,
@@ -46,6 +47,25 @@ test("zonedCronParts + slot key are stable in Pacific", () => {
   assert.equal(parts.minute, 0);
   assert.equal(parts.dayOfWeek, 4); // Thursday
   assert.equal(cronSlotKey(atSeven, tz), "2026-11-19T07:00");
+});
+
+test("dueCronSlot catches a missed morning minute and does not repeat it", () => {
+  const tz = "America/Los_Angeles";
+  // 2026-11-19 09:40 PST
+  const atNineForty = new Date("2026-11-19T17:40:00.000Z");
+  assert.equal(dueCronSlot("0 9 * * *", atNineForty, tz, null, null), "2026-11-19T09:00");
+  assert.equal(
+    dueCronSlot("0 9 * * *", atNineForty, tz, "2026-11-19T09:00", null),
+    null,
+  );
+  // Created at 09:10, after this morning's slot — don't run yesterday's either.
+  assert.equal(
+    dueCronSlot("0 9 * * *", atNineForty, tz, null, "2026-11-19T09:10"),
+    null,
+  );
+  // 08:00 PST, monitor created this morning: yesterday's 09:00 is before it existed.
+  const atEight = new Date("2026-11-19T16:00:00.000Z");
+  assert.equal(dueCronSlot("0 9 * * *", atEight, tz, null, "2026-11-19T08:00"), null);
 });
 
 test("describeCron covers common shapes", () => {

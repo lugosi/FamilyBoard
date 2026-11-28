@@ -284,6 +284,46 @@ export function zonedCronParts(now: Date, timeZone: string): CronParts {
   };
 }
 
+/**
+ * Most recent cron minute at or before `now`, within `lookbackMinutes`.
+ * The 1-minute ticker often misses the exact minute (restart, a slow job).
+ * Callers use this to send that run once instead of waiting for the next day.
+ */
+export function latestMatchingCronSlot(
+  expr: string,
+  now: Date,
+  timeZone: string,
+  lookbackMinutes = 20 * 60,
+): string | null {
+  if (!isValidCron(expr)) return null;
+  const span = Math.max(0, Math.floor(lookbackMinutes));
+  for (let i = 0; i <= span; i++) {
+    const t = new Date(now.getTime() - i * 60_000);
+    if (!cronMatches(expr, zonedCronParts(t, timeZone))) continue;
+    return cronSlotKey(t, timeZone);
+  }
+  return null;
+}
+
+/**
+ * Slot to run now, or null. Skips slots before the monitor existed and slots
+ * already covered by `lastRunSlot` (a later manual run counts).
+ */
+export function dueCronSlot(
+  expr: string,
+  now: Date,
+  timeZone: string,
+  lastRunSlot: string | null,
+  notBeforeSlot: string | null = null,
+  lookbackMinutes = 20 * 60,
+): string | null {
+  const slot = latestMatchingCronSlot(expr, now, timeZone, lookbackMinutes);
+  if (!slot) return null;
+  if (notBeforeSlot && slot < notBeforeSlot) return null;
+  if (lastRunSlot && lastRunSlot >= slot) return null;
+  return slot;
+}
+
 /** Stable slot id so a 1-min ticker does not double-fire the same cron minute. */
 export function cronSlotKey(now: Date, timeZone: string): string {
   const p = zonedCronParts(now, timeZone);
