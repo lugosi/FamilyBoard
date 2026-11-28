@@ -511,6 +511,7 @@ export function WikiLlm({
     }
   }, []);
   const loadedOnceRef = useRef(false);
+  const slackDefaultedRef = useRef(false);
   const sessionsLoadedRef = useRef(false);
   const chatAbortRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -741,6 +742,14 @@ export function WikiLlm({
       if (statusJson.slackConfigured) {
         const slackRes = await fetch("/api/slack", { signal: signalArg });
         setSlack(await parseJsonSafe<SlackSnapshot>(slackRes));
+        if (!slackDefaultedRef.current) {
+          slackDefaultedRef.current = true;
+          setMonitorForm((f) => {
+            if (f.deliverSlack || f.prompt.trim() || f.title.trim()) return f;
+            if (f.schedule !== DEFAULT_MONITOR_FORM.schedule) return f;
+            return { ...f, deliverSlack: true };
+          });
+        }
       } else {
         setSlack(null);
       }
@@ -751,15 +760,6 @@ export function WikiLlm({
       setError(e instanceof Error ? e.message : "Failed to load AI tab");
     }
   }, [refreshMonitors]);
-
-  useEffect(() => {
-    if (!status?.slackConfigured || editingMonitorId) return;
-    setMonitorForm((f) => {
-      if (f.deliverSlack || f.prompt.trim() || f.title.trim()) return f;
-      if (f.schedule !== DEFAULT_MONITOR_FORM.schedule) return f;
-      return { ...f, deliverSlack: true };
-    });
-  }, [status?.slackConfigured, editingMonitorId]);
 
   useEffect(() => {
     if (!active) return;
