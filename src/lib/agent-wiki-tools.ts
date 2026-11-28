@@ -102,7 +102,7 @@ export const wikiTools: AgentTool[] = [
     declaration: {
       name: "create_wiki_page",
       description:
-        "Create a new wiki page. Only when no existing page covers the topic; otherwise use edit_wiki_section. Fails if the page already exists (except under `.context/`, where it appends to the existing page).",
+        "Create a new wiki page. Only when no existing page covers the topic; otherwise use edit_wiki_section. Fails if the page already exists (except under `.context/`, where it appends to the existing page). Write only what the latest user message is about.",
       parameters: {
         type: "object",
         properties: {
@@ -164,7 +164,7 @@ export const wikiTools: AgentTool[] = [
     declaration: {
       name: "edit_wiki_section",
       description:
-        "Safely add to or correct one section of an existing page without touching the rest. mode 'append' adds text at the end of the section (creating the section if missing); 'replace' swaps that section's content. Omit section to append at the end of the page.",
+        "Safely add to or correct one section of an existing page without touching the rest. mode 'append' adds text at the end of the section (creating the section if missing); 'replace' swaps that section's content. Omit section to append at the end of the page. The text must be about the latest user message, not an earlier topic in the thread.",
       parameters: {
         type: "object",
         properties: {
