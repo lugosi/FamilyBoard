@@ -17,6 +17,10 @@ const STOP = new Set([
   "about","active","after","again","also","and","another","are","around","back","because","been","before","being","best","could","doing","does","down","each","facts","from","have","having","here","into","just","like","more","need","notes","only","onto","over","page","place","please","really","right","save","saved","section","should","some","something","still","than","that","them","then","there","these","they","this","those","very","want","what","when","where","which","wiki","with","would","your",
 ]);
 
+/** Context fact lines end in created/updated/weight metadata that is not the topic. */
+const FACT_META =
+  /\s*·\s*created:\s*\d{4}-\d{2}-\d{2}\s*·\s*updated:\s*\d{4}-\d{2}-\d{2}\s*·\s*weight:\s*\d+/gi;
+
 const FOLLOW_UP =
   /^(yes|yeah|yep|yup|ok|okay|sure|please|do it|go ahead|sounds good)\b/i;
 
@@ -97,7 +101,7 @@ function sameToken(contentToken: string, userToken: string): boolean {
 
 function sharesTopic(latest: string, written: string): boolean {
   const user = tokens(latest);
-  const content = tokens(written);
+  const content = tokens(written.replace(FACT_META, ""));
   if (!content.length) return false;
   let shared = 0;
   let alien = 0;

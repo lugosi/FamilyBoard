@@ -67,6 +67,30 @@ test("GTA message can append a note about the hotel script and autosave to open-
   );
 });
 
+const FACT_SUFFIX = " · created: 2026-11-28 · updated: 2026-11-28 · weight: 2";
+
+test("fact metadata suffix does not count as topic", () => {
+  const messages = thread(GTA_MESSAGE);
+  assert.equal(
+    offTopicWikiWriteError(messages, "edit_wiki_section", {
+      path: ".context/U123/open-loops.md",
+      section: "Active",
+      text: `- GTA hotel script broke before a manual save${FACT_SUFFIX}`,
+      mode: "append",
+    }),
+    undefined,
+  );
+  assert.match(
+    offTopicWikiWriteError(messages, "edit_wiki_section", {
+      path: ".context/U123/open-loops.md",
+      section: "Active",
+      text: `- Race 2 Kart #67 32.958s at Culver City${FACT_SUFFIX}`,
+      mode: "append",
+    }) ?? "",
+    /Blocked/,
+  );
+});
+
 test("afternoon delight mission rejects kart laps but allows its own note", () => {
   const messages = thread("lugosi: Doing afternoon delight mission now");
   assert.match(
