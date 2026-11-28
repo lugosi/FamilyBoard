@@ -129,14 +129,15 @@ test("slack bot and agent wire silent .context facts with TTL", () => {
   assert.match(bot, /ensurePets:\s*true/);
   const agent = readFileSync(new URL("../src/lib/agent.ts", import.meta.url), "utf8");
   assert.match(agent, /PERSONAL CONTEXT/);
-  assert.match(agent, /WRITE-BACK REQUIRED/);
+  assert.match(agent, /latest user message/);
+  assert.match(agent, /Skipping write-back is correct/);
+  assert.doesNotMatch(agent, /Skipping write-back is a bug/);
   assert.match(agent, /wikiWriteTargetsSilentContext/);
   assert.match(agent, /30×weight/);
   assert.match(agent, /STALE/);
   assert.match(agent, /open-loops\.md/);
   assert.match(agent, /Topic-agnostic/);
   assert.match(agent, /create_wiki_page with category/);
-  assert.match(agent, /MUST have called a silent/);
   assert.match(agent, /apply immediately with NO Approve/);
   assert.match(agent, /hikes, trips, work/);
   const facts = readFileSync(

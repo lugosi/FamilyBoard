@@ -40,6 +40,7 @@ const CAT_DIET_SKILL = `skills/cat-diet.md — Cat diet & hydration (Petlibro + 
  */
 const SHOPPING_LISTS_SKILL = `skills/shopping-lists.md — Shopping lists (Black Friday, wishlists, gifts) + local retail near Santa Monica CA: When adding an item to a shopping / Black Friday / wishlist / gift list and no product URL was given, add the item first (add_todo with shopping=true, or edit_wiki_section / create_wiki_page on the list), then offer an Amazon product search link from the tool's suggestedAmazonSearchUrl (or https://www.amazon.com/s?k=<urlencoded name>). Prefer the returned quickActions chips; if they accept, call update_todo with that url (or rewrite the wiki checklist line as [Item](url)). Prefer a specific product URL the family pastes over a search URL. Never invent ASINs, prices, or stock. When asked if something is available locally / in-store near Santa Monica (or West LA), call search_web for "<item> in stock near Santa Monica CA" (or a named store: Target, Best Buy, Apple, Costco, Whole Foods, REI, …); then fetch_url concrete store/product pages from those results. Report store + neighborhood/distance when known; say when stock is unconfirmed. Offer Amazon and local options together when helpful. If wiki page skills/shopping-lists.md exists, read_wiki_page it and prefer those steps.`;
 import { AGENT_GROUNDING_RULES } from "./agent-grounding";
+import { offTopicWikiWriteError, TOPIC_FOCUS_RULES } from "./agent-topic-focus";
 import {
   amazonProductSearchUrl,
   extractUrlFromText,
@@ -700,6 +701,7 @@ function buildSystemPrompt(input: {
     "You are the FamilyBoard home assistant for one family. Be brief, warm, and practical.",
     `It is now ${nowDescription(input.timeZone)} (${input.timeZone}, today ${todayDateKey(input.timeZone)}). Resolve relative dates ("tomorrow", "next Tuesday") against this. Weeks start Monday.`,
     ...AGENT_GROUNDING_RULES,
+    ...TOPIC_FOCUS_RULES,
     "Use tools to act; never claim you changed the calendar, todos, or wiki unless a tool call succeeded (and was not pending_approval).",
     "Calendar writes and family-wiki writes (people/, house/, … — create/edit/move/delete, save_skill) need Approve/Deny first (web and Slack buttons; Slack also accepts reply approve / deny). Summarize what you proposed; do not say you already wrote those. Exception: paths under `.context/<SlackUserId>/` apply immediately with NO Approve — use those for silent personal continuity.",
     "Todos are short-term family tasks. When the wiki is configured they live on wiki page todos/list.md (checklist); otherwise a local list. Prefer list_todos / add_todo / update_todo / complete_todo over hand-editing that page. Durable facts still belong in other wiki folders (people, house, …).",
@@ -769,21 +771,21 @@ function buildSystemPrompt(input: {
     const pc = input.personalContext;
     const dm = pc.depth === "dm";
     lines.push(
-      "=== PERSONAL CONTEXT (this Slack person) — WRITE-BACK REQUIRED ===",
+      "=== PERSONAL CONTEXT (this Slack person) ===",
       `Hidden continuity folder: \`${pc.folder}/\` (survives Slack chat memory expiry). Index only below — no bodies.`,
       dm
-        ? `This is a DM: read and update pages under \`${pc.folder}/\` when relevant.`
+        ? `This is a DM: read and update pages under \`${pc.folder}/\` when the latest message is about them.`
         : "This is a shared channel: prefer open-loops / thin profile for write-back; avoid dumping private detail into the channel reply.",
-      "If the ask matches a listed context page, call read_wiki_page on that path before answering from it.",
-      "SILENT WRITES (no Approve): edit_wiki_section / create_wiki_page under this folder apply immediately. Do this yourself — do not wait for “remember” / “save”. Topic-agnostic: pets, hikes, trips, work, house, training, shopping — anything they may follow up on after chat memory dies.",
+      "Only read a context page (read_wiki_page) when the latest message matches it; do not open a page for another topic.",
+      "SILENT WRITES (no Approve): edit_wiki_section / create_wiki_page under this folder apply immediately, only for new durable facts the latest message just stated — do not wait for “remember” / “save”. Topic-agnostic: pets, hikes, trips, work, house, training, shopping — anything they may follow up on after chat memory dies.",
       "Where to put it:",
       `- Default: open-loops.md ## Active — one short bullet for any in-flight topic (hike prep, trip planning, work project, pet illness, house issue, “still deciding …”). Clear when resolved.`,
       `- Topic page: if a theme has lasting detail (gear list, itinerary, work prefs, pet health), use an existing page (pets.md, strava.md, …) or create_wiki_page with category \`${pc.folder}\` and a short title (e.g. hike, travel, work) — silent. Put durable lines under ## Facts.`,
       `- profile.md ## Facts — how they like to be addressed, standing prefs that aren’t topic-specific.`,
       `Fact line exactly: \`- <text> · created: YYYY-MM-DD · updated: YYYY-MM-DD · weight: N\`. New → created=updated=today, weight 1 (prefs) or 2 (episodes). Same fact again → bump weight (max 5) + refresh updated. Fresh for 30×weight days — do NOT trust STALE facts.`,
-      "Before you finish a Slack turn that discussed something durable (plans, prefs, ongoing situations — any topic), you MUST have called a silent `.context/` write in this turn unless that exact fact is already fresh in the index. Skipping write-back is a bug.",
+      "Write back only what the latest user message just added. If it is a question or a new subject, answer it and do not update notes from an earlier topic. Skipping write-back is correct when the latest message adds nothing new.",
       "Do not announce wiki paths or “I saved to the wiki” unless they asked you to remember something. Stamp page frontmatter updated when you edit.",
-      "Family wiki outside `.context/` still needs Approve — after silent `.context/` write, you may also propose that shared-page edit. Do not invent personal facts. Chat memory may be empty after ~30 minutes — rely on fresh context.",
+      "Family wiki outside `.context/` still needs Approve — after a silent `.context/` write, you may also propose a shared-page edit, only when the latest message is about that page. Do not invent personal facts. Chat memory may be empty after ~30 minutes — rely on fresh context.",
       "=== PERSONAL INDEX ===",
       pc.index,
       "=== END PERSONAL INDEX ===",
@@ -819,7 +821,7 @@ function buildSystemPrompt(input: {
       "Family wiki: private markdown pages holding anything worth remembering (people, house, school, health, travel, recipes, notes). Folders:",
       ...WIKI_CATEGORIES.map((c) => `  ${c.id}/ — ${c.hint}`),
       "The index below lists every page as \"path — title: summary [tags]\". It has no page contents: call read_wiki_page before answering from a page, and search_wiki when the index doesn't point to an obvious page. If the wiki doesn't have the answer, say so; never invent private family facts or quote a page you did not read.",
-      "Family wiki (outside `.context/`): save when someone asks to save/remember/note something, agrees when you offer, or when a Slack personal-context write-back also belongs on a shared person/pet page (propose that edit — it needs Approve). Look for an existing page first (e.g. the pet's or person's page) and add with edit_wiki_section: mode append under the fitting heading, or replace to correct a section. Otherwise create_wiki_page in the best folder with a one-line summary, a few tags, and ## sections. Prefer one page per person or topic over many tiny pages.",
+      "Family wiki (outside `.context/`), only when that page is about the latest message: save when someone asks to save/remember/note something, agrees when you offer, or when a Slack personal-context write-back also belongs on a shared person/pet page (propose that edit — it needs Approve). Look for an existing page first (e.g. the pet's or person's page) and add with edit_wiki_section: mode append under the fitting heading, or replace to correct a section. Otherwise create_wiki_page in the best folder with a one-line summary, a few tags, and ## sections. Prefer one page per person or topic over many tiny pages.",
       "Use rewrite_wiki_page only to restructure a page after calling read_wiki_page on it in this turn (even if you read it in an earlier message). Move or delete pages only when explicitly asked. After saving, say which page you changed.",
       "=== WIKI INDEX ===",
       input.wikiIndex || "(wiki unavailable right now; tools may still work)",
@@ -1010,8 +1012,16 @@ export async function runFamilyAgent(input: {
       const call = part.functionCall!;
       const tool = byName.get(call.name);
       let response: Record<string, unknown>;
+      const offTopic = tool ? offTopicWikiWriteError(input.messages, call.name, call.args ?? {}) : undefined;
       if (!tool) {
         response = { error: `Tool ${call.name} is not available` };
+      } else if (offTopic) {
+        response = { error: offTopic };
+        actions.push({
+          tool: call.name,
+          ok: false,
+          label: `${call.name} blocked: different topic than the latest message`,
+        });
       } else if (
         WRITE_TOOLS_NEEDING_APPROVAL.has(call.name) &&
         !ctx.skipWriteApproval &&
