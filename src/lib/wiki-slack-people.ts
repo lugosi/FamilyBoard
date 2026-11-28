@@ -3,7 +3,7 @@
  */
 
 import { readDailyBriefStore } from "./daily-brief-store";
-import { getSlackUserName, isSlackConfigured } from "./slack";
+import { isSlackConfigured, listSlackMembers, matchSlackMember } from "./slack";
 import {
   displayNameForSlackTarget,
   extractSlackUserIdFromPage,
@@ -43,16 +43,28 @@ export async function listWikiSlackPeople(): Promise<
   }
 }
 
+function slackNameError(raw: string | undefined): string | null {
+  if (!raw) return null;
+  if (raw.includes("missing_scope")) {
+    return "Slack can’t list people (missing users:read). Reinstall the FamilyBoard Slack app, then restart.";
+  }
+  const detail = raw.replace(/^Slack [^:]+:\s*/, "");
+  return `Slack names didn’t load (${detail}).`;
+}
+
 /**
  * Combined picker list: wiki people with `slack:` first, then morning-brief
  * subscribers who aren't already covered by a people page.
- * Registered rows start as a member id; Slack display names replace those.
+ * A label that is only a member id is replaced from Slack’s member directory.
  */
-export async function listSlackDeliveryTargets(): Promise<SlackDeliveryTarget[]> {
+export async function loadSlackDeliveryTargets(): Promise<{
+  targets: SlackDeliveryTarget[];
+  nameError: string | null;
+}> {
   const wiki = await listWikiSlackPeople();
   const byId = new Map<string, SlackDeliveryTarget>();
   for (const p of wiki) {
-    byId.set(p.userId, {
+    byId.set(p.userId.toUpperCase(), {
       userId: p.userId,
       name: p.name,
       source: "wiki",
@@ -62,10 +74,11 @@ export async function listSlackDeliveryTargets(): Promise<SlackDeliveryTarget[]>
   try {
     const store = await readDailyBriefStore();
     for (const id of store.slackUserIds) {
-      if (byId.has(id)) continue;
-      byId.set(id, {
+      const key = id.toUpperCase();
+      if (byId.has(key)) continue;
+      byId.set(key, {
         userId: id,
-        name: `Slack ${id.slice(0, 8)}…`,
+        name: id,
         source: "registered",
       });
     }
@@ -73,14 +86,26 @@ export async function listSlackDeliveryTargets(): Promise<SlackDeliveryTarget[]>
     /* optional */
   }
   const targets = [...byId.values()];
+  let nameError: string | null = null;
   if (isSlackConfigured()) {
-    await Promise.all(
-      targets.map(async (target) => {
-        if (!slackTargetNameNeedsLookup(target.name, target.userId)) return;
-        const slackName = await getSlackUserName(target.userId).catch(() => undefined);
-        target.name = displayNameForSlackTarget(target.name, target.userId, slackName);
-      }),
-    );
+    const directory = await listSlackMembers().catch((e: unknown) => ({
+      members: [],
+      error: e instanceof Error ? e.message : String(e),
+    }));
+    nameError = slackNameError(directory.error);
+    for (const target of targets) {
+      const member = matchSlackMember(directory.members, target.userId);
+      if (!member) continue;
+      target.userId = member.id;
+      if (slackTargetNameNeedsLookup(target.name, member.id)) {
+        target.name = displayNameForSlackTarget(target.name, member.id, member.name);
+      }
+    }
   }
-  return targets.sort((a, b) => a.name.localeCompare(b.name));
+  targets.sort((a, b) => a.name.localeCompare(b.name));
+  return { targets, nameError };
+}
+
+export async function listSlackDeliveryTargets(): Promise<SlackDeliveryTarget[]> {
+  return (await loadSlackDeliveryTargets()).targets;
 }

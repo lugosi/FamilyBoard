@@ -262,16 +262,105 @@ export function slackChannelIsUserId(channel: string): boolean {
   return /^[UW][A-Z0-9]+$/.test(channel.trim());
 }
 
-/** Open (or resume) the 1:1 DM and return its D… channel id. chat.postMessage does not deliver to a raw member id. */
+export type SlackMember = { id: string; name: string };
+
+/** Display name, real name, then the Slack handle. Never the raw member id. */
+export function slackMemberLabel(user: {
+  id?: string;
+  name?: string;
+  real_name?: string;
+  profile?: { display_name?: string; real_name?: string };
+}): string {
+  const id = user.id?.trim() || "";
+  const name =
+    user.profile?.display_name?.trim() ||
+    user.profile?.real_name?.trim() ||
+    user.real_name?.trim() ||
+    user.name?.trim() ||
+    "";
+  if (!name || (id && name.toUpperCase() === id.toUpperCase())) return "";
+  return name;
+}
+
+export function matchSlackMember(members: SlackMember[], userId: string): SlackMember | undefined {
+  const want = userId.trim().toUpperCase();
+  if (!want) return undefined;
+  return members.find((m) => m.id.toUpperCase() === want);
+}
+
+type SlackMemberPage = SlackResponse & {
+  members?: {
+    id?: string;
+    name?: string;
+    real_name?: string;
+    deleted?: boolean;
+    is_bot?: boolean;
+    profile?: { display_name?: string; real_name?: string };
+  }[];
+  response_metadata?: { next_cursor?: string };
+};
+
+const memberDirectory: { at: number; members: SlackMember[]; error: string } = {
+  at: 0,
+  members: [],
+  error: "",
+};
+
+/** Workspace members (users.list). Cached. `error` is set when Slack refuses the list. */
+export async function listSlackMembers(): Promise<{ members: SlackMember[]; error?: string }> {
+  if (memberDirectory.members.length && Date.now() - memberDirectory.at < 10 * 60_000) {
+    return {
+      members: memberDirectory.members,
+      ...(memberDirectory.error ? { error: memberDirectory.error } : {}),
+    };
+  }
+  const { botToken } = requireConfig();
+  const members: SlackMember[] = [];
+  let cursor = "";
+  try {
+    for (let page = 0; page < 20; page += 1) {
+      const res = await slackApi<SlackMemberPage>("users.list", botToken, {
+        limit: 200,
+        ...(cursor ? { cursor } : {}),
+      });
+      for (const user of res.members ?? []) {
+        const id = user.id?.trim();
+        if (!id || user.deleted || user.is_bot) continue;
+        const name = slackMemberLabel(user);
+        if (!name) continue;
+        members.push({ id, name });
+      }
+      cursor = res.response_metadata?.next_cursor?.trim() || "";
+      if (!cursor) break;
+    }
+    memberDirectory.at = Date.now();
+    memberDirectory.members = members;
+    memberDirectory.error = "";
+    return { members };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    memberDirectory.error = error;
+    return { members: memberDirectory.members, error };
+  }
+}
+
+/**
+ * Open (or resume) the app’s 1:1 DM and return its D… channel id.
+ * chat.postMessage to a U… id lands in the Slackbot DM, not this app.
+ */
 export async function openSlackDmChannel(userId: string): Promise<string> {
   const { botToken } = requireConfig();
   const res = await slackApi<SlackResponse & { channel?: { id?: string } }>(
     "conversations.open",
     botToken,
-    { users: userId },
+    { users: userId, return_im: true },
   );
-  const id = res.channel?.id?.trim();
-  if (!id) throw new Error("Slack conversations.open returned no channel");
+  const id = res.channel?.id?.trim() ?? "";
+  if (!id.startsWith("D")) {
+    throw new Error(
+      `Slack conversations.open returned ${id || "no channel"} instead of a DM`,
+    );
+  }
   return id;
 }
 
@@ -284,6 +373,9 @@ export async function postSlackMessage(input: {
   const { botToken } = requireConfig();
   let channel = input.channel.trim();
   if (slackChannelIsUserId(channel)) {
+    const directory = await listSlackMembers().catch(() => ({ members: [] as SlackMember[] }));
+    const member = matchSlackMember(directory.members, channel);
+    if (member) channel = member.id;
     channel = await openSlackDmChannel(channel);
   }
   const res = await slackApi<SlackResponse & { ts?: string; channel?: string }>(
@@ -419,18 +511,26 @@ export async function setSlackReaction(input: {
 const nameCache = new Map<string, { name: string; at: number }>();
 
 export async function getSlackUserName(userId: string): Promise<string | undefined> {
-  const cached = nameCache.get(userId);
+  const key = userId.trim().toUpperCase();
+  const cached = nameCache.get(key);
   if (cached && Date.now() - cached.at < 3_600_000) return cached.name;
+  try {
+    const directory = await listSlackMembers();
+    const fromList = matchSlackMember(directory.members, userId)?.name;
+    if (fromList) {
+      nameCache.set(key, { name: fromList, at: Date.now() });
+      return fromList;
+    }
+  } catch {
+    /* fall through to users.info */
+  }
   const { botToken } = requireConfig();
   try {
     const res = await slackApi<SlackResponse & {
-      user?: { real_name?: string; profile?: { display_name?: string; real_name?: string } };
+      user?: { id?: string; name?: string; real_name?: string; profile?: { display_name?: string; real_name?: string } };
     }>("users.info", botToken, { user: userId });
-    const name =
-      res.user?.profile?.display_name?.trim() ||
-      res.user?.profile?.real_name?.trim() ||
-      res.user?.real_name?.trim();
-    if (name) nameCache.set(userId, { name, at: Date.now() });
+    const name = res.user ? slackMemberLabel(res.user) : "";
+    if (name) nameCache.set(key, { name, at: Date.now() });
     return name || undefined;
   } catch {
     return undefined;

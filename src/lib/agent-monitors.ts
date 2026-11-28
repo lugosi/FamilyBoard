@@ -21,7 +21,11 @@ import {
   type AgentMonitor,
 } from "./agent-monitors-store";
 import { cronSlotKey, describeCron, dueCronSlot } from "./cron";
-import { listSlackDeliveryTargets, type SlackDeliveryTarget } from "./wiki-slack-people";
+import {
+  listSlackDeliveryTargets,
+  loadSlackDeliveryTargets,
+  type SlackDeliveryTarget,
+} from "./wiki-slack-people";
 import { runDailyBrief } from "./daily-brief";
 import { readDailyBriefStore } from "./daily-brief-store";
 import { isGeminiConfigured } from "./gemini";
@@ -461,15 +465,17 @@ export async function getAgentMonitorsStatus(): Promise<{
   enabled: boolean;
   monitors: (AgentMonitor & { due: boolean; cronLabel: string })[];
   slackTargets: SlackDeliveryTarget[];
+  slackNameError: string | null;
 }> {
   await ensureMorningBriefMonitor();
   const enabled = areAgentMonitorsEnabled();
   const now = new Date();
   const monitors = await listAgentMonitors();
-  const slackTargets = await listSlackDeliveryTargets();
+  const { targets: slackTargets, nameError: slackNameError } = await loadSlackDeliveryTargets();
   return {
     enabled,
     slackTargets,
+    slackNameError,
     monitors: monitors.map((m) => ({
       ...m,
       due: enabled && isDue(m, now),
