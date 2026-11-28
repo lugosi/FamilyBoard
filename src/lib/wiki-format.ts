@@ -181,6 +181,34 @@ export function normalizeSlackUserId(raw: string | undefined | null): string | n
   return /^U[A-Z0-9]+$/.test(id) ? id : null;
 }
 
+/** True when the label is missing or is just a Slack member id. */
+export function slackTargetNameNeedsLookup(name: string, userId: string): boolean {
+  const wikiName = name.trim();
+  const compact = wikiName.toUpperCase();
+  const id = userId.trim().toUpperCase();
+  return (
+    !wikiName ||
+    compact === id ||
+    /^[UW][A-Z0-9]+$/.test(compact) ||
+    /^SLACK\s+[UW][A-Z0-9]/.test(compact)
+  );
+}
+
+/**
+ * Prefer a real wiki name. When the label is only a Slack id, use the Slack
+ * display name from users.info.
+ */
+export function displayNameForSlackTarget(
+  name: string,
+  userId: string,
+  slackName: string | undefined,
+): string {
+  const wikiName = name.trim();
+  const resolved = slackName?.trim() || "";
+  if (!slackTargetNameNeedsLookup(wikiName, userId)) return wikiName;
+  return resolved || wikiName || userId;
+}
+
 /**
  * Prefer frontmatter `slack:` / `slack_user_id:` / `slack_id:`;
  * fall back to a body line like `Slack: U…` / `Slack ID: U…`.

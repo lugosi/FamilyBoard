@@ -3,7 +3,12 @@
  */
 
 import { readDailyBriefStore } from "./daily-brief-store";
-import { extractSlackUserIdFromPage } from "./wiki-format";
+import { getSlackUserName, isSlackConfigured } from "./slack";
+import {
+  displayNameForSlackTarget,
+  extractSlackUserIdFromPage,
+  slackTargetNameNeedsLookup,
+} from "./wiki-format";
 import { isWikilmGithubConfigured, loadWikiPages } from "./wikilm-github";
 
 export type SlackDeliveryTarget = {
@@ -41,6 +46,7 @@ export async function listWikiSlackPeople(): Promise<
 /**
  * Combined picker list: wiki people with `slack:` first, then morning-brief
  * subscribers who aren't already covered by a people page.
+ * Registered rows start as a member id; Slack display names replace those.
  */
 export async function listSlackDeliveryTargets(): Promise<SlackDeliveryTarget[]> {
   const wiki = await listWikiSlackPeople();
@@ -66,5 +72,15 @@ export async function listSlackDeliveryTargets(): Promise<SlackDeliveryTarget[]>
   } catch {
     /* optional */
   }
-  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const targets = [...byId.values()];
+  if (isSlackConfigured()) {
+    await Promise.all(
+      targets.map(async (target) => {
+        if (!slackTargetNameNeedsLookup(target.name, target.userId)) return;
+        const slackName = await getSlackUserName(target.userId).catch(() => undefined);
+        target.name = displayNameForSlackTarget(target.name, target.userId, slackName);
+      }),
+    );
+  }
+  return targets.sort((a, b) => a.name.localeCompare(b.name));
 }

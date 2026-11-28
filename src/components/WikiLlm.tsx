@@ -53,12 +53,27 @@ function monitorErrorLabel(error: string): string {
   if (error === "slack_not_configured") return "Slack isn’t configured";
   if (error === "nowhere_to_deliver") return "Neither chat nor Slack is on";
   if (error === "web_session_failed") return "Couldn’t save the chat update";
-  if (error.startsWith("slack_failed")) return "Slack didn’t accept the message";
+  if (error.startsWith("slack_failed")) {
+    const detail = error.slice("slack_failed:".length).trim();
+    return detail
+      ? `Slack didn’t accept the message (${detail})`
+      : "Slack didn’t accept the message";
+  }
   return error;
 }
 
+function slackRecipientSummary(
+  ids: string[] | undefined,
+  targets: { userId: string; name: string }[],
+): string {
+  const list = ids ?? [];
+  if (!list.length) return "Slack (everyone listed)";
+  const names = list.map((id) => targets.find((t) => t.userId === id)?.name || id);
+  return `Slack · ${names.join(", ")}`;
+}
+
 const PRICE_WATCH_EXAMPLE =
-  "Check this product page and tell me the current price. Alert me if it drops below $40: https://example.com/product";
+  "Open this product page and report the price it shows. This is a scheduled snapshot, not a live watch — the price can change before the next check. Alert me if this snapshot is below $40: https://example.com/product";
 
 type Status = {
   googleLinked?: boolean;
@@ -2005,7 +2020,7 @@ export function WikiLlm({
                                       />
                                       <span>{t.name}</span>
                                       <span className="text-xs text-slate-500">
-                                        {t.source === "wiki" ? "wiki" : "Slack"}
+                                        {t.source === "wiki" ? "wiki" : "registered"}
                                       </span>
                                     </label>
                                   );
@@ -2024,7 +2039,6 @@ export function WikiLlm({
                       <ul className="grid gap-2">
                         {monitors.map((m) => {
                           const isBrief = m.kind === "morning-brief";
-                          const slackCount = m.slackUserIds?.length ?? 0;
                           return (
                           <li
                             key={m.id}
@@ -2045,9 +2059,7 @@ export function WikiLlm({
                                   {m.enabled ? "" : " · paused"}
                                   {m.deliverWeb ? " · chat" : ""}
                                   {m.deliverSlack
-                                    ? slackCount
-                                      ? ` · Slack (${slackCount})`
-                                      : " · Slack (all registered)"
+                                    ? ` · ${slackRecipientSummary(m.slackUserIds, slackTargets)}`
                                     : ""}
                                 </div>
                                 <div className="truncate text-slate-500" title={m.prompt}>

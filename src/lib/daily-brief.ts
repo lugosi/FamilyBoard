@@ -124,7 +124,7 @@ async function deliverSlack(
   const out: DailyBriefDelivery["slack"] = [];
   for (const userId of userIds) {
     try {
-      // chat.postMessage accepts a user id and opens/uses the DM channel.
+      // postSlackMessage opens the DM (conversations.open) when given a member id.
       await postSlackMessage({
         channel: userId,
         text: markdownForSlack(text, { timeZone: getDefaultTimeZone() }),

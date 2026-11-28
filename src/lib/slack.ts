@@ -257,6 +257,24 @@ export function pendingApprovalBlocks(pendingId: string, summary: string): Slack
   ];
 }
 
+/** Member ids are U… (W… on Enterprise Grid). Channel and DM ids are C…, G…, or D…. */
+export function slackChannelIsUserId(channel: string): boolean {
+  return /^[UW][A-Z0-9]+$/.test(channel.trim());
+}
+
+/** Open (or resume) the 1:1 DM and return its D… channel id. chat.postMessage does not deliver to a raw member id. */
+export async function openSlackDmChannel(userId: string): Promise<string> {
+  const { botToken } = requireConfig();
+  const res = await slackApi<SlackResponse & { channel?: { id?: string } }>(
+    "conversations.open",
+    botToken,
+    { users: userId },
+  );
+  const id = res.channel?.id?.trim();
+  if (!id) throw new Error("Slack conversations.open returned no channel");
+  return id;
+}
+
 export async function postSlackMessage(input: {
   channel: string;
   text: string;
@@ -264,11 +282,15 @@ export async function postSlackMessage(input: {
   blocks?: SlackBlock[];
 }): Promise<{ ts: string; channel: string }> {
   const { botToken } = requireConfig();
+  let channel = input.channel.trim();
+  if (slackChannelIsUserId(channel)) {
+    channel = await openSlackDmChannel(channel);
+  }
   const res = await slackApi<SlackResponse & { ts?: string; channel?: string }>(
     "chat.postMessage",
     botToken,
     {
-      channel: input.channel,
+      channel,
       text: input.text,
       ...(input.threadTs ? { thread_ts: input.threadTs } : {}),
       ...(input.blocks?.length ? { blocks: input.blocks } : {}),
@@ -276,7 +298,7 @@ export async function postSlackMessage(input: {
     },
   );
   if (!res.ts) throw new Error("Slack chat.postMessage returned no ts");
-  return { ts: res.ts, channel: res.channel ?? input.channel };
+  return { ts: res.ts, channel: res.channel ?? channel };
 }
 
 /**
